@@ -21,6 +21,18 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
     try await store.requestAuthorization(toShare: share, read: read)
   }
 
+  /// An earlier run that was killed can leave a workout session alive at the system level. End it first.
+  func endOrphanedSession() async {
+    do {
+      if let orphan = try await store.recoverActiveWorkoutSession() {
+        onEvent?("orphan_session", "ending recovered session in state \(orphan.state.rawValue)")
+        orphan.end()
+      }
+    } catch {
+      onEvent?("orphan_check_error", "\(error)")
+    }
+  }
+
   func start() async throws {
     let config = HKWorkoutConfiguration()
     config.activityType = .crossTraining

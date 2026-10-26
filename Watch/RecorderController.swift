@@ -97,6 +97,7 @@ final class RecorderController: ObservableObject {
 
       wire(writer: writer, motion: motion)
       log("session_start", manifest.sessionId)
+      await workout.endOrphanedSession()
       try await workout.start()
       motion.start(writer: writer)
       motionApi = motion.api
