@@ -110,6 +110,17 @@ final class SessionWriterTests: XCTestCase {
     XCTAssertTrue(m.files?.contains("labels.csv") ?? false)
   }
 
+  func testManifestKeepsLabelSource() throws {
+    var m = manifest("ls")
+    m.labelSource = "coach"
+    m.transitionLabelSeconds = 18
+    let w = try SessionWriter(root: root, manifest: m)
+    try w.finish(endedAtEpochMs: 2_000)
+    let back = try XCTUnwrap(SessionFiles.readManifest(w.folder))
+    XCTAssertEqual(back.labelSource, "coach")
+    XCTAssertEqual(back.transitionLabelSeconds, 18)
+  }
+
   func testSessionIdFormat() {
     let id = SessionFiles.makeSessionId(date: Date(timeIntervalSince1970: 0), suffix: "abc123")
     XCTAssertEqual(id, "19700101T000000Z-abc123")

@@ -42,11 +42,16 @@ public struct SessionManifest: Codable, Equatable {
   public var wrist: String?
   /// Set when the folder was closed after the app stopped unexpectedly (no clean finish).
   public var recovered: Bool?
+  /// "athlete_taps" or "coach". With "coach" the labels follow the plan, and `transition` is a time rule, not an observation.
+  public var labelSource: String?
+  /// For `labelSource` "coach": a run after a station is labelled `transition` for its first this-many seconds.
+  public var transitionLabelSeconds: Int?
 
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
     workoutActivityType: String, motionApi: String, requestedHz: Double, storeHz: Double, cueIntervalSec: Int,
-    audioMode: String? = nil, athlete: String? = nil, wrist: String? = nil
+    audioMode: String? = nil, athlete: String? = nil, wrist: String? = nil,
+    labelSource: String? = nil, transitionLabelSeconds: Int? = nil
   ) {
     self.formatVersion = SessionFormat.version
     self.sessionId = sessionId
@@ -62,6 +67,8 @@ public struct SessionManifest: Codable, Equatable {
     self.audioMode = audioMode
     self.athlete = athlete
     self.wrist = wrist
+    self.labelSource = labelSource
+    self.transitionLabelSeconds = transitionLabelSeconds
   }
 }
 

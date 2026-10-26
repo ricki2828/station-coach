@@ -4,7 +4,7 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 
 | File | Columns | Written |
 |---|---|---|
-| `manifest.json` | `formatVersion`, `sessionId`, `startedAtEpochMs`, `endedAtEpochMs`, `device`, `osVersion`, `appVersion`, `workoutActivityType`, `motionApi`, `requestedHz`, `storeHz`, `cueIntervalSec`, `audioMode`, `athlete` (code such as A1, never a name), `wrist` (`left`/`right`), `recovered` (true if closed after an unexpected stop), `files` | at start, rewritten at finish (`endedAtEpochMs` and `files` are absent from a session that never finished) |
+| `manifest.json` | `formatVersion`, `sessionId`, `startedAtEpochMs`, `endedAtEpochMs`, `device`, `osVersion`, `appVersion`, `workoutActivityType`, `motionApi`, `requestedHz`, `storeHz`, `cueIntervalSec`, `audioMode`, `athlete` (code such as A1, never a name), `wrist` (`left`/`right`), `recovered` (true if closed after an unexpected stop), `labelSource` (`athlete_taps` or `coach`), `transitionLabelSeconds` (coach sessions: a run after a station is labelled `transition` for its first this-many seconds, a time rule and not an observation), `files` | at start, rewritten at finish (`endedAtEpochMs` and `files` are absent from a session that never finished) |
 | `labels.csv` | `epoch_ms,event,activity` | on each tap / undo |
 | `cues.csv` | `epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode` | per cue event |
 | `battery.csv` | `epoch_ms,level,state` | every 60 s |

@@ -90,7 +90,7 @@ final class CoachController: ObservableObject {
   func start() async {
     guard let plan = transfer.plan, recorder.phase == .idle, !active else { return }
     finish = nil
-    await recorder.start(coach: true)
+    await recorder.start(coach: true, transitionSeconds: plan.transitionSeconds)
     guard recorder.phase == .running else { return }
     var m = SessionMachine(plan: plan)
     m.start(at: nowMs)

@@ -71,7 +71,7 @@ final class RecorderController: ObservableObject {
     refreshUnfinished()
   }
 
-  func start(coach: Bool = false) async {
+  func start(coach: Bool = false, transitionSeconds: Int? = nil) async {
     guard phase == .idle else { return }
     coachMode = coach
     phase = .starting
@@ -97,7 +97,9 @@ final class RecorderController: ObservableObject {
         cueIntervalSec: coach ? 0 : cueInterval,
         audioMode: audioMode.rawValue,
         athlete: athlete,
-        wrist: wrist)
+        wrist: wrist,
+        labelSource: coach ? "coach" : "athlete_taps",
+        transitionLabelSeconds: coach ? transitionSeconds : nil)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
       self.writer = writer
       self.motion = motion
