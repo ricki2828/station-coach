@@ -208,6 +208,22 @@ public struct SetupScreen: View {
 // MARK: Sync notice
 
 /// Shown above History when the newest finished session has not arrived.
+public struct InstallWatchCard: View {
+  let onDismiss: () -> Void
+  public init(onDismiss: @escaping () -> Void = {}) { self.onDismiss = onDismiss }
+  public var body: some View {
+    PhoneCard {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Install the watch app").phoneKicker(color: PhoneTheme.amberText)
+        Text("Open the Watch app on your iPhone, find Station Coach and tap Install.")
+          .font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+        TextLinkButton("Dismiss", action: onDismiss)
+      }
+    }
+  }
+}
+
+/// Sync-failed card.
 public struct SyncFailedCard: View {
   public init() {}
   public var body: some View {

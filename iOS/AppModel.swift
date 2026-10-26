@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
   @Published var setup: SetupModel = AppModel.loadSetup()
   @Published private(set) var onboarded: Bool
   @Published var pendingMoment: PendingMoment?
+  /// Onboarding was skipped before the watch app was confirmed, and the nudge has not been dismissed.
+  @Published private(set) var watchNudge: Bool
 
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
@@ -27,6 +29,7 @@ final class AppModel: ObservableObject {
     // Someone who already has sessions on the phone has been through setup; remember it so deleting them all does not bring onboarding back.
     let has = !existingSessionIds.isEmpty
     onboarded = d.bool(forKey: "onboarded") || has
+    watchNudge = d.object(forKey: "onboarding.watchChecked") as? Bool == false && !d.bool(forKey: "onboarding.watchNudgeDismissed")
     if has { d.set(true, forKey: "onboarded") }
     // First run of a build with moments: the sessions already here are history, not news.
     if d.object(forKey: Self.seenKey) == nil, has { d.set(existingSessionIds, forKey: Self.seenKey) }
@@ -66,11 +69,17 @@ final class AppModel: ObservableObject {
   /// `.skipped` still lands on Plan with the recommended session, but never counts as the watch-install check being done.
   func finishOnboarding(_ model: OnboardingModel, outcome: OnboardingOutcome) {
     defaults.set(outcome == .built, forKey: "onboarding.watchChecked")
+    watchNudge = outcome != .built
     setup.division = model.division
     setup.targetSeconds = model.targetSeconds
     defaults.set(true, forKey: "onboarded")
     onboarded = true
     start(.halfSim)
+  }
+
+  func dismissWatchNudge() {
+    defaults.set(true, forKey: "onboarding.watchNudgeDismissed")
+    watchNudge = false
   }
 
   // MARK: Moments

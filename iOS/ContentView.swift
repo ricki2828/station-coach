@@ -92,6 +92,9 @@ struct HomeHost: View {
       ScrollView {
         VStack(spacing: 14) {
           if syncFailed { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20) }
+          if app.watchNudge && !phone.watchAppInstalled {
+            InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
+          }
           HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
                      onStart: { app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan })
         }
