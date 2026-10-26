@@ -1,10 +1,14 @@
 import CoachKit
 import SwiftUI
+#if os(watchOS)
+import WatchKit
+#endif
 
 /// Slim band across the top for the session delta: bone when level or ahead, amber when behind. Never red.
 /// Deliberately small (24 pt numbers in a 28 pt band) so the step's own number stays the loudest thing.
 struct DeltaBand: View {
   let seconds: Int
+  var height: CGFloat = 26
 
   var body: some View {
     Text(Fmt.delta(seconds))
@@ -12,7 +16,7 @@ struct DeltaBand: View {
       .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
       .lineLimit(1)
       .frame(maxWidth: .infinity)
-      .frame(height: 26)
+      .frame(height: height)
       .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
       .accessibilityLabel(seconds == 0 ? "On plan" : "\(Fmt.gap(seconds)) \(seconds > 0 ? "behind" : "ahead of") plan")
   }
@@ -29,6 +33,21 @@ extension EnvironmentValues {
     set { self[DominantProbeKey.self] = newValue }
   }
 }
+
+/// 41 mm and smaller: the step screen drops to tighter heights so nothing clips under the clock inset.
+struct WatchCompactKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
+extension EnvironmentValues {
+  var watchCompact: Bool {
+    get { self[WatchCompactKey.self] }
+    set { self[WatchCompactKey.self] = newValue }
+  }
+}
+
+/// Screens at or under this height (41 mm is 215 pt) use the compact layout.
+let watchCompactMaxHeight: CGFloat = 230
 
 struct HeartChip: View {
   let bpm: Int
@@ -120,6 +139,7 @@ public struct AlarmBanner: View {
 struct NextButton: View {
   let activity: Activity
   let isLast: Bool
+  var height: CGFloat = 56
   let action: () -> Void
   @State private var pressing = false
 
@@ -127,7 +147,7 @@ struct NextButton: View {
     let label = Text(isLast ? "HOLD TO FINISH" : "NEXT")
       .font(.system(size: isLast ? 17 : 22, weight: .heavy))
       .foregroundStyle(Theme.background(activity))
-      .frame(maxWidth: .infinity, minHeight: 56)
+      .frame(maxWidth: .infinity, minHeight: height)
       .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
     if isLast {
       label
@@ -157,6 +177,7 @@ struct StepperButton: View {
   let symbol: String
   let label: String
   let pulse: Bool
+  var size: CGFloat = 44
   let action: () -> Void
 
   var body: some View {
@@ -164,7 +185,7 @@ struct StepperButton: View {
       Text(symbol)
         .font(.system(size: 30, weight: .heavy))
         .foregroundStyle(Theme.bone)
-        .frame(width: 44, height: 44)
+        .frame(width: size, height: size)
         .background(Theme.ink.opacity(0.88), in: Circle())
         .overlay(Circle().stroke(Theme.bone, lineWidth: pulse ? 3 : 0))
     }
@@ -215,6 +236,7 @@ struct RestSetBlock: View {
 /// Shown for a few seconds after a NO REP tap, in the set block's place: takes the last tap back.
 struct NoRepUndoChip: View {
   let count: Int
+  var height: CGFloat = NoRepButton.height
   let action: () -> Void
 
   var body: some View {
@@ -224,7 +246,7 @@ struct NoRepUndoChip: View {
         Text("\(count) noted").font(.system(size: 12, weight: .bold))
       }
       .foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.7)
-      .frame(width: 58, height: NoRepButton.height)
+      .frame(width: 58, height: height)
       .background(Theme.bone, in: RoundedRectangle(cornerRadius: 12))
     }
     .buttonStyle(.plain)
@@ -255,15 +277,28 @@ public struct CoachStepScreen: View {
     self.onMinus = onMinus
   }
 
+  @Environment(\.watchCompact) private var envCompact
+
+  private var compact: Bool {
+    #if os(watchOS)
+    return envCompact || WKInterfaceDevice.current().screenBounds.height <= watchCompactMaxHeight
+    #else
+    return envCompact
+    #endif
+  }
+
   public var body: some View {
     let fg = Theme.text(model.activity)
-    VStack(spacing: 3) {
-      DeltaBand(seconds: model.deltaSeconds)
+    let c = compact
+    VStack(spacing: c ? 2 : 3) {
+      DeltaBand(seconds: model.deltaSeconds, height: c ? 22 : 26)
       HStack(spacing: 4) {
-        Text(model.title.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
+        // The title keeps its room (scaling, never "WALL BA\u{2026}"); the LEFT badge and heart chip give way first.
+        Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.5)
+          .layoutPriority(1)
         if model.kind == .reps {
           // A low-confidence count is flagged in this badge ("LEFT ~"), not inside the number: the digits keep their room.
-          Text(model.approximate ? "LEFT ~" : "LEFT").font(.system(size: 12, weight: .heavy))
+          Text(model.approximate ? "LEFT ~" : "LEFT").font(.system(size: c ? 11 : 12, weight: .heavy)).lineLimit(1)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(fg.opacity(0.18), in: Capsule())
             .accessibilityLabel(model.approximate ? "Reps left, estimated" : "Reps left")
@@ -281,8 +316,8 @@ public struct CoachStepScreen: View {
         }
       }
       .foregroundStyle(fg)
-      .frame(height: 22)
-      dominantRow(fg)
+      .frame(height: c ? 18 : 22)
+      dominantRow(fg, compact: c)
       if model.noRepVisible {
         HStack(spacing: 6) {
           if model.noRepUndo {
@@ -292,23 +327,27 @@ public struct CoachStepScreen: View {
           }
           NoRepButton(count: model.noRepCount, action: onNoRep)
         }
-        .padding(.bottom, 7) // 10 pt in all above NOT HEARD and NEXT
+        .padding(.bottom, c ? 2 : 7) // 10 pt in all above NOT HEARD and NEXT (6 pt on 41 mm)
+      } else if model.noRepUndo {
+        // Throwing has resumed but the chip keeps its 4 s: a mis-tap can still be taken back.
+        NoRepUndoChip(count: model.noRepCount, height: c ? 30 : 36, action: onNoRepUndo)
+          .frame(maxWidth: .infinity).frame(height: c ? 30 : 36)
       } else {
         Text(model.secondary)
           .font(Theme.number(Theme.Size.secondary)).condensed()
           .foregroundStyle(fg.opacity(0.78))
           .lineLimit(1).minimumScaleFactor(0.6)
-          .frame(height: 36)
+          .frame(height: c ? 30 : 36)
           .accessibilityLabel(model.secondaryLabel)
       }
       Spacer(minLength: 0)
       HStack(spacing: 6) {
-        NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
+        NextButton(activity: model.activity, isLast: model.isLast, height: c ? 44 : 56, action: onNext)
         if let onMissed {
           Button(action: onMissed) {
             Text("NOT\nHEARD").font(.system(size: 12, weight: .heavy)).multilineTextAlignment(.center)
               .foregroundStyle(Theme.ink)
-              .frame(width: 56, height: 56)
+              .frame(width: c ? 52 : 56, height: c ? 44 : 56)
               .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14))
           }
           .buttonStyle(.plain)
@@ -318,7 +357,7 @@ public struct CoachStepScreen: View {
     }
     .padding(.horizontal, Theme.Space.watchEdge)
     .padding(.top, 2)
-    .padding(.bottom, 10)
+    .padding(.bottom, c ? 6 : 10)
     .background(Theme.background(model.activity).ignoresSafeArea())
     .overlay(alignment: .bottom) {
       if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
@@ -331,18 +370,18 @@ public struct CoachStepScreen: View {
   @Environment(\.dominantProbe) private var probe
 
   @ViewBuilder
-  private func dominantRow(_ fg: Color) -> some View {
+  private func dominantRow(_ fg: Color, compact c: Bool) -> some View {
     let number = Text(model.dominant)
       .font(Theme.number(Theme.Size.dominant)).condensed()
       .foregroundStyle(probe ?? fg)
       .lineLimit(1)
-      .frame(height: model.noRepVisible ? 48 : 60)
+      .frame(height: c ? 44 : (model.noRepVisible ? 48 : 60))
       .accessibilityLabel(model.dominantLabel)
     if model.kind == .reps {
       HStack(spacing: 0) {
-        StepperButton(symbol: "\u{2212}", label: "One fewer rep", pulse: model.approximate, action: onMinus)
+        StepperButton(symbol: "\u{2212}", label: "One fewer rep", pulse: model.approximate, size: c ? 40 : 44, action: onMinus)
         number.frame(maxWidth: .infinity)
-        StepperButton(symbol: "+", label: "One more rep", pulse: model.approximate, action: onPlus)
+        StepperButton(symbol: "+", label: "One more rep", pulse: model.approximate, size: c ? 40 : 44, action: onPlus)
       }
     } else {
       number.frame(maxWidth: .infinity)

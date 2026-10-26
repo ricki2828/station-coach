@@ -59,12 +59,9 @@ final class CoachController: ObservableObject {
   private var repsByStep: [Int: [Int64]] = [:]
   private var correctionByStep: [Int: Int] = [:]
   private var noRepLog = NoRepLog()
-  /// The Undo chip is up until this time (epoch ms) after a tap.
-  private var noRepUndoUntilMs: Int64 = 0
-  /// The NO REP button is up from the rest (set done, or reps paused 4 s) until the next rep is counted.
-  private var noRepShown = false
-  private var lastSeenCount = 0
-  private var lastRepChangeMs: Int64 = 0
+  /// NO REP button and Undo chip timing (CoachKit).
+  private var noRepRest = NoRepRest()
+  private var noRepShown: Bool { noRepRest.shown }
   private var noRepAnnounced = false
   private var enteredWallBalls = Set<Int>()
   private var lastLabel: Activity?
@@ -120,8 +117,7 @@ final class CoachController: ObservableObject {
     repsByStep = [:]
     correctionByStep = [:]
     noRepLog.reset()
-    noRepUndoUntilMs = 0
-    noRepShown = false
+    noRepRest = NoRepRest()
     noRepAnnounced = false
     enteredWallBalls = []
     lastLabel = nil
@@ -188,11 +184,11 @@ final class CoachController: ObservableObject {
     guard active, noRepShown, let step = machine?.current, step.activity == .wallBalls else { return }
     let set = WallBallProgress.setIndex(repsDone: repsDone(step), sets: step.sets)
     noRepLog.add(NoRepEvent(tMs: nowMs, setIndex: set, stepIndex: step.index))
-    noRepUndoUntilMs = nowMs + Int64(NoRepLog.undoWindowSeconds) * 1000
+    noRepRest.noted(nowMs: nowMs)
     WKInterfaceDevice.current().play(.click)
     if !noRepAnnounced {
       noRepAnnounced = true
-      offer(.wallBallSet, CoachCopy.noRepNoted)
+      offer(.noRep, CoachCopy.noRepNoted)
     }
     refresh()
   }
@@ -200,7 +196,7 @@ final class CoachController: ObservableObject {
   /// Takes back the last NO REP of this step: reps left goes back down.
   func undoNoRep() {
     guard active, let step = machine?.current, noRepLog.undoLast(inStep: step.index) != nil else { return }
-    noRepUndoUntilMs = 0
+    noRepRest.clearUndo()
     WKInterfaceDevice.current().play(.retry)
     refresh()
   }
@@ -221,7 +217,8 @@ final class CoachController: ObservableObject {
     let snap = counter.snapshot()
     repsByStep[step.index] = snap.times.map { Int64(($0 * 1000).rounded()) }
     correctionByStep[step.index] = repCorrection
-    noRepShown = false
+    noRepRest.hide()
+    scheduler.drop(.noRep)
     counter.pause()
   }
 
@@ -234,9 +231,7 @@ final class CoachController: ObservableObject {
       enteredWallBalls.insert(step.index)
       counter.begin(fresh: fresh)
       repCorrection = fresh ? 0 : (correctionByStep[step.index] ?? 0)
-      noRepShown = false
-      lastSeenCount = counter.snapshot().count
-      lastRepChangeMs = nowMs
+      noRepRest.reset(count: counter.snapshot().count, nowMs: nowMs)
       // Sets already passed (an undo back into the step) are not announced again.
       announcedSets = []
       var cumulative = 0
@@ -345,7 +340,7 @@ final class CoachController: ObservableObject {
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
         next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx, noRepVisible: noRepShown, noRepCount: noRepLog.count(inStep: step.index),
-        noRepUndo: now < noRepUndoUntilMs && noRepLog.count(inStep: step.index) > 0)
+        noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)))
       return
     }
     let transition = m.label(at: now) == .transition
@@ -356,22 +351,11 @@ final class CoachController: ObservableObject {
       hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
   }
 
-  /// Raises the NO REP button when a set has just been completed or the reps have paused for 4 s; a new rep drops it.
   private func updateNoRepRest(_ step: PlanStep, count: Int, done: Int) {
-    if count != lastSeenCount {
-      lastSeenCount = count
-      lastRepChangeMs = nowMs
-      noRepShown = false
-      return
-    }
-    guard !noRepShown, count > 0 else { return }
-    let paused = nowMs - lastRepChangeMs >= Self.noRepPauseMs
-    var cumulative = 0
-    let setEnd = step.sets.contains { cumulative += $0; return done == cumulative }
-    if paused || setEnd { noRepShown = true }
+    let was = noRepRest.shown
+    noRepRest.update(nowMs: nowMs, count: count, done: done, sets: step.sets)
+    if was, !noRepRest.shown { scheduler.drop(.noRep) } // throwing resumed: too late to say it
   }
-
-  static let noRepPauseMs: Int64 = 4000
 
   // MARK: Finish
 
