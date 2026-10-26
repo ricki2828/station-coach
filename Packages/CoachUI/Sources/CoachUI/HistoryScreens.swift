@@ -93,9 +93,16 @@ public struct SessionDetailScreen: View {
   let record: SessionRecord
   let onShare: () -> Void
   let onExport: () -> Void
+  let noReps: Int
+  let onSaveCount: ((WallBallEdit) -> Void)?
+  @State private var editing = false
 
-  public init(record: SessionRecord, onShare: @escaping () -> Void = {}, onExport: @escaping () -> Void = {}) {
+  /// `noReps` is the stored no-rep count (0 when none). `onSaveCount` non-nil shows the "Edit count" link.
+  public init(record: SessionRecord, noReps: Int = 0, onSaveCount: ((WallBallEdit) -> Void)? = nil,
+              onShare: @escaping () -> Void = {}, onExport: @escaping () -> Void = {}) {
     self.record = record
+    self.noReps = noReps
+    self.onSaveCount = onSaveCount
     self.onShare = onShare
     self.onExport = onExport
   }
@@ -103,6 +110,7 @@ public struct SessionDetailScreen: View {
   public var body: some View {
     let r = record.result
     let insight = InsightPicker.pick(r)
+    let sets = r.wallBallSets()
     VStack(alignment: .leading, spacing: 20) {
       HeroCard(type: record.type) {
         VStack(alignment: .leading, spacing: 8) {
@@ -137,11 +145,17 @@ public struct SessionDetailScreen: View {
           }
         }
       }
-      let sets = r.wallBallSets()
       if !sets.isEmpty {
         PhoneCard {
           VStack(alignment: .leading, spacing: 10) {
-            Text("Wall-ball sets").phoneKicker()
+            HStack {
+              Text("Wall-ball sets").phoneKicker()
+              Spacer()
+              if onSaveCount != nil { TextLinkButton("Edit count") { editing = true } }
+            }
+            if noReps > 0 {
+              Text(noReps == 1 ? "1 no-rep" : "\(noReps) no-reps").font(.system(size: 17, weight: .heavy)).foregroundStyle(PhoneTheme.amberText)
+            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8, alignment: .top)], alignment: .leading, spacing: 10) {
               ForEach(Array(sets.enumerated()), id: \.offset) { _, s in
                 VStack(spacing: 2) {
@@ -163,6 +177,11 @@ public struct SessionDetailScreen: View {
     .padding(20)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(PhoneTheme.paper)
+    .sheet(isPresented: $editing) {
+      WallBallEditSheet(initial: WallBallEdit(validReps: sets.reduce(0) { $0 + $1.reps }, noReps: noReps),
+                        onSave: { onSaveCount?($0); editing = false }, onCancel: { editing = false })
+        .presentationDetents([.medium])
+    }
   }
 
   private func stationRow(_ row: CoachResult.Row) -> some View {

@@ -90,6 +90,8 @@ extension ScreenCatalog {
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),
       phoneW("detail-full", SessionDetailScreen(record: detailFull)),
       phoneW("detail-partial", SessionDetailScreen(record: detailPartial)),
+      phoneW("detail-no-reps", SessionDetailScreen(record: detailFull, noReps: 3, onSaveCount: { _ in })),
+      phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallEdit(validReps: 97, noReps: 3))),
     ]
   }
 }
