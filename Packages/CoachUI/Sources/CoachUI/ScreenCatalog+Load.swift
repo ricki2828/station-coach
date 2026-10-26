@@ -81,7 +81,7 @@ extension ScreenCatalog {
       loadW("week-summary-xl", loadSummary(.bigJump).environment(\.dynamicTypeSize, .xxxLarge)),
       loadW("week-why", WhyLoadSheet(period: why.compare.current, maxHR: MaxHeartRate.estimate([], now: why.now))),
       loadW("week-card-sofar", onPaper(card(usual))),
-      loadW("week-card-first", onPaper(card(first, note: "Your usual week takes shape after 3 sessions."))),
+      loadW("week-card-first", onPaper(card(first, note: LoadWords.cardNote(first.compare)))),
       loadW("totals-week", onPaper(TrainingTotalsCard(mode: .week, sessions: demo, now: usual.now, calendar: cal))),
       loadW("totals-month", onPaper(TrainingTotalsCard(mode: .month, sessions: demo, now: usual.now, calendar: cal, bestFade: 19))),
       loadW("totals-year", onPaper(TrainingTotalsCard(mode: .year, sessions: demo, now: usual.now, calendar: cal))),
