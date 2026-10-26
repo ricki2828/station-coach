@@ -148,7 +148,7 @@ public enum PlanBuilder {
         add { PlanStep(activity: .run, index: $0, runNumber: i + 1, targetSeconds: runTarget, reps: nil, sets: []) }
         let a = Stations.race[i]
         let reps: Int? = a == .wallBalls ? 100 : nil
-        add { PlanStep(activity: a, index: $0, runNumber: nil, targetSeconds: stationTarget(a), reps: reps, sets: reps.map(Stations.wallBallSets) ?? []) }
+        add { PlanStep(activity: a, index: $0, runNumber: nil, targetSeconds: stationTarget(a), reps: reps, sets: reps.map { Stations.wallBallSets(reps: $0) } ?? []) }
       }
     case .wallBallFocus:
       for i in 0..<3 {
