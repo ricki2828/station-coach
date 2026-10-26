@@ -12,7 +12,7 @@ final class CoachHistoryTests: XCTestCase {
     for step in plan.steps {
       if let until, step.index >= until { break }
       var extra = total
-      if step.isRun, (step.runNumber ?? 0) > 1 { extra += fade ?? 0 }
+      if step.isRun, (step.runNumber ?? 0) > 1 { extra += (fade ?? 0) + plan.transitionSeconds }
       if step.activity == .wallBalls { extra += wallBallsExtra }
       let d = Int64(step.targetSeconds + extra) * 1000
       splits.append(StepSplit(stepIndex: step.index, startMs: t, endMs: t + d))
@@ -98,7 +98,7 @@ final class CoachHistoryTests: XCTestCase {
     let d = record("d", .fullSim, day: 7, fade: 29, total: 20)
     XCTAssertNil(MomentPicker.pick(previous: [a], new: d))
     // A different type is a first.
-    let h = record("h", .halfSim, day: 7, fade: 10)
+    let h = record("h", .halfSim, day: 7, fade: 29)
     XCTAssertEqual(MomentPicker.pick(previous: [a], new: h), .first(.halfSim))
   }
 
