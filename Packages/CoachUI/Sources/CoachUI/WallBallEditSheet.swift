@@ -32,9 +32,9 @@ public struct WallBallEditSheet: View {
         .scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted).fixedSize(horizontal: false, vertical: true)
       PhoneCard {
         VStack(spacing: 16) {
-          counter("Valid reps", value: $edit.validReps)
+          counter("Valid reps", value: $edit.validReps, limit: WallBallCorrection.maxValidReps)
           Divider().overlay(PhoneTheme.hairline)
-          counter("No-reps", value: $edit.noReps)
+          counter("No-reps", value: $edit.noReps, limit: WallBallCorrection.maxNoReps)
         }
       }
       if let errorText {
@@ -50,13 +50,13 @@ public struct WallBallEditSheet: View {
     .background(PhoneTheme.paper)
   }
 
-  private func counter(_ title: String, value: Binding<Int>) -> some View {
+  private func counter(_ title: String, value: Binding<Int>, limit: Int) -> some View {
     HStack(spacing: 12) {
       Text(title).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
       Spacer()
       roundButton("\u{2212}", label: "Fewer \(title.lowercased())") { value.wrappedValue = max(0, value.wrappedValue - 1) }
       Text("\(value.wrappedValue)").scaledStat().foregroundStyle(PhoneTheme.inkText).frame(minWidth: 52)
-      roundButton("+", label: "More \(title.lowercased())") { value.wrappedValue += 1 }
+      roundButton("+", label: "More \(title.lowercased())") { value.wrappedValue = min(limit, value.wrappedValue + 1) }
     }
   }
 

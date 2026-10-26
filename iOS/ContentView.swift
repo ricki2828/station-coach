@@ -72,7 +72,7 @@ struct OnboardingHost: View {
   var body: some View {
     OnboardingFlow(model: Binding(
       get: { var m = model; m.watchAppInstalled = phone.watchAppInstalled; return m },
-      set: { model = $0 }), onOutcome: { app.finishOnboarding(model, outcome: $0) })
+      set: { model = $0 }), onOutcome: { phone.resetSendState(); app.finishOnboarding(model, outcome: $0) })
       .onAppear {
         model.division = app.setup.division
         model.targetSeconds = app.setup.targetSeconds
@@ -96,7 +96,7 @@ struct HomeHost: View {
             InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
           }
           HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
-                     onStart: { app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan })
+                     onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan })
         }
       }
       .background(PhoneTheme.paper)
