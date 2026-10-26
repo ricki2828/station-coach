@@ -15,6 +15,13 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 - Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start").
 - Compare `headphones` in `cues.csv` with what you heard, cue by cue, in each mode. If the report's "finished and not flagged, any route" line is well above the main figure, the route read is unreliable.
 
+## Coached session
+- Build the plan on the phone (Plan tab), tap Send to watch, then open the watch app: the Ready screen shows the session, the target and the athlete chip. START begins the workout session, the recorder and the coach together.
+- NEXT (or a double pinch, if the watch supports it) moves to the next phase. A mistaken NEXT inside 3 s of the last one is ignored. Long press for Undo or End.
+- NOT HEARD sits beside NEXT on every screen. The coach only speaks one cue per 20 s and never over a cue.
+- The wall-ball count is a beta estimate: correct it with + and -.
+- After the session the Summary tab shows the insight, table, chart and share card once the files have reached the phone.
+
 ## During
 - Tap the activity when you start it. Hold the top of the screen to undo a mistaken tap.
 - Tap DIDN'T HEAR (pinned at the top) when you miss a cue, before the next cue. Without taps, "delivered" only means the speech synthesizer finished, not that it was heard.

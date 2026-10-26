@@ -4,7 +4,8 @@ Watch coach for hybrid fitness racing (working name). This repo is Milestone 1: 
 
 - `Watch/` watchOS 10 app: workout session, motion at the highest available rate, tap labels, cue test, battery log, transfer to phone.
 - `iOS/` iOS 17 companion: lists received sessions, exports a zip.
-- `Packages/CoachKit/` testable logic (labels, file writer, rate maths, cue log, transfer tracking).
+- `Packages/CoachKit/` testable logic (labels, file writer, rate maths, cue log, transfer tracking, plan builder, session state machine, cue scheduler and copy, insight picker, wall-ball counter, palette).
+- `Packages/CoachUI/` shared SwiftUI screens (watch and phone), the theme, and the screenshot tests that render every screen state to PNG in CI (artifact `screens`).
 - `tools/m1_report.py` prints the four pass marks for a session folder: `python3 tools/m1_report.py <session-folder>`.
 - `docs/FORMAT.md` session file format. `docs/PROTOCOL.md` how to run a session. `docs/SIGNING.md` what is needed for device builds.
 
