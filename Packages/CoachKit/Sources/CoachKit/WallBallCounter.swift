@@ -55,7 +55,8 @@ public struct WallBallCounter {
     let threshold = max(Self.minThreshold, 0.5 * envelope)
     let isPeak = prevS > prevPrevS && prevS >= s && prevS > threshold
     if isPeak {
-      recentPeaks.append(prevT)
+      // Noise on the top of one burst can give two maxima a few samples apart: that is one swing.
+      if recentPeaks.last.map({ prevT - $0 >= 0.25 }) ?? true { recentPeaks.append(prevT) }
       recentPeaks.removeAll { prevT - $0 > Self.joggingWindow }
       // Counting starts only once the rhythm is rep-like: no new rep while the arms are swinging in a jog.
       if recentPeaks.count >= Self.joggingPeaks { joggingUntil = prevT + Self.joggingHold }
