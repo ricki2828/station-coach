@@ -8,8 +8,6 @@ import WatchKit
 /// Adapted from run-solo's CuePlayer (AudioToolbox vibration replaced by `WKInterfaceDevice` haptics).
 final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   static let finishTimeout: TimeInterval = 15
-  /// A "didn't hear" tap applies to the latest cue only if it was issued this recently.
-  static let missedWindow: TimeInterval = 30
 
   var audioMode: AudioMode = .shortForm
 
@@ -22,6 +20,9 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   private var nextId = 0
   private var phraseIndex = 0
   private var lastCueId: Int?
+  private var reactivating = false
+  /// A "didn't hear" tap applies to the latest cue only if it was issued within one cue interval.
+  private var missedWindow: TimeInterval = 45
   private var flagged = Set<Int>()
   private var lastCueAt = Date.distantPast
   private var longFormError: String?
@@ -36,10 +37,12 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
       let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 0
       self?.onNote?("route_change", "reason=\(reason) outputs=\(Self.route().outputs.joined(separator: ";"))")
+      if AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable { self?.reactivate("route lost") }
     })
     observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
       let type = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
       self?.onNote?("audio_interruption", "type=\(type)")
+      if AVAudioSession.InterruptionType(rawValue: type) == .ended { self?.reactivate("interruption ended") }
     })
   }
 
@@ -52,16 +55,31 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     do {
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
-      _ = try await session.activate(options: [])
-      longFormError = nil
-      onNote?("audio_mode", "B long-form activated outputs=\(Self.route().outputs.joined(separator: ";"))")
+      let activated = try await session.activate(options: [])
+      longFormError = activated ? nil : "not activated (route picker dismissed?)"
+      onNote?("audio_mode", activated
+        ? "B long-form activated outputs=\(Self.route().outputs.joined(separator: \";\"))"
+        : "B long-form NOT activated (route picker dismissed?)")
     } catch {
       longFormError = "\(error)"
       onNote?("audio_mode", "B long-form activation failed: \(error)")
     }
   }
 
+  /// Mode B only, while cues are running: the long-form session is not re-established by the system
+  /// after headphones drop or a call ends, so ask again (this may show the route picker).
+  private func reactivate(_ why: String) {
+    guard audioMode == .longForm, timer != nil, !reactivating else { return }
+    reactivating = true
+    Task { @MainActor in
+      onNote?("audio_mode", "reactivating: \(why)")
+      await prepare()
+      reactivating = false
+    }
+  }
+
   func start(interval: TimeInterval) {
+    missedWindow = interval
     timer?.invalidate()
     timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in self?.fire() }
   }
@@ -73,11 +91,11 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     release(force: true)
   }
 
-  /// "Didn't hear it": flags the most recent cue, if it was issued within `missedWindow` seconds.
+  /// "Didn't hear it": flags the most recent cue, if it was issued within one cue interval.
   /// Returns false when there is nothing recent to flag.
   @discardableResult
   func markLastMissed() -> Bool {
-    guard let id = lastCueId, Date().timeIntervalSince(lastCueAt) <= Self.missedWindow else { return false }
+    guard let id = lastCueId, Date().timeIntervalSince(lastCueAt) <= missedWindow else { return false }
     if flagged.contains(id) { return true }
     flagged.insert(id)
     let route = Self.route()

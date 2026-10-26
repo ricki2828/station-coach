@@ -11,7 +11,7 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 
 ## During
 - Tap the activity when you start it. Hold the top of the screen to undo a mistaken tap.
-- Tap DIDN'T HEAR (pinned at the top) when you miss a cue, within 30 s of it. Without taps, "delivered" only means the speech synthesizer finished, not that it was heard.
+- Tap DIDN'T HEAR (pinned at the top) when you miss a cue, before the next cue. Without taps, "delivered" only means the speech synthesizer finished, not that it was heard.
 - A red RECORDING AT RISK banner with repeated haptics means the workout session or a motion stream died. Stop, then start a new session.
 
 ## After
