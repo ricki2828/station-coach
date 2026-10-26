@@ -8,12 +8,9 @@ extension ScreenCatalog {
 
   private static func onPaper(_ v: some View) -> some View { v.padding(20).background(PhoneTheme.paper) }
 
-  /// Describes, never orders (the coach's own wording arrives with the app wiring).
-  static let loadUsualLine = "About your usual week. The next full sim is the real test of the fade."
-
   static func loadSummary(_ s: LoadSample, onWhy: @escaping () -> Void = {}) -> WeeklySummaryScreen {
     let d = TrainingLoad.sample(s)
-    return WeeklySummaryScreen(compare: d.compare, weeks: d.weeks, calendar: d.calendar, usualLine: loadUsualLine, onWhy: onWhy)
+    return WeeklySummaryScreen(compare: d.compare, weeks: d.weeks, calendar: d.calendar, onWhy: onWhy)
   }
 
   private static func demoLoad(_ t: SessionType, _ jitter: Int) -> SessionLoad {

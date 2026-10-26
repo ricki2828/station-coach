@@ -588,8 +588,8 @@ public enum LoadWords {
     return "\(int(cur.minutes)) work minutes, usual \(int(u.minutes))."
   }
 
-  /// One suggestion. `usualLine` is the coach's own line (`Recommendation.pick(...).line`) for a usual week.
-  public static func suggestion(_ c: LoadCompare, usualLine: String) -> String? {
+  /// One suggestion, always a description. Never an instruction, and never a coach line from `Recommendation.pick`.
+  public static func suggestion(_ c: LoadCompare) -> String? {
     switch c.state {
     case .noSessions, .returning, .firstWeeks: return nil
     case .compared(let band):
@@ -599,7 +599,7 @@ public enum LoadWords {
         let cap = int(usual * 1.1 / 10) * 10
         return "Next week near \(number(cap)), just above your usual, would balance it, for instance a half sim in place of a full one."
       case .stepUp: return "A good step up. Holding here a week would let it settle."
-      case .usual: return usualLine
+      case .usual: return "A steady week, in line with your usual. That keeps the fade comparisons fair."
       case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
       }
     }

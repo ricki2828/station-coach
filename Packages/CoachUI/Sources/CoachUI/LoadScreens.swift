@@ -260,14 +260,12 @@ public struct WeeklySummaryScreen: View {
   let compare: LoadCompare
   let weeks: [LoadPeriod]
   let calendar: Calendar
-  let usualLine: String
   let onWhy: () -> Void
 
-  public init(compare: LoadCompare, weeks: [LoadPeriod], calendar: Calendar, usualLine: String, onWhy: @escaping () -> Void = {}) {
+  public init(compare: LoadCompare, weeks: [LoadPeriod], calendar: Calendar, onWhy: @escaping () -> Void = {}) {
     self.compare = compare
     self.weeks = weeks
     self.calendar = calendar
-    self.usualLine = usualLine
     self.onWhy = onWhy
   }
 
@@ -308,7 +306,7 @@ public struct WeeklySummaryScreen: View {
       if let changed = LoadWords.whatChanged(compare) {
         Text(changed).scaledFont(17).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
       }
-      if let s = LoadWords.suggestion(compare, usualLine: usualLine) {
+      if let s = LoadWords.suggestion(compare) {
         Text(s).scaledFont(17, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
       }
       VStack(alignment: .leading, spacing: 4) {
