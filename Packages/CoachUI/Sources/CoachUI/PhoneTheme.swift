@@ -53,7 +53,7 @@ public enum PhoneTheme {
   public static func stationColor(_ a: Activity) -> Color { Theme.color(Palette.swatch(for: a).hex) }
 
   /// Phone type. Every number is at least 28 pt.
-  public enum Type {
+  public enum Face {
     public static let statementSize: CGFloat = 44
     public static let heroSize: CGFloat = 72
     public static let statSize: CGFloat = 28
@@ -68,21 +68,21 @@ public enum PhoneTheme {
 
 public extension View {
   /// Hero headline: condensed heavy caps.
-  func phoneStatement(size: CGFloat = PhoneTheme.Type.statementSize) -> some View {
+  func phoneStatement(size: CGFloat = PhoneTheme.Face.statementSize) -> some View {
     self.font(.system(size: size, weight: .heavy)).fontWidth(.condensed).textCase(.uppercase).tracking(-0.5)
   }
 
-  func phoneHero(size: CGFloat = PhoneTheme.Type.heroSize) -> some View {
+  func phoneHero(size: CGFloat = PhoneTheme.Face.heroSize) -> some View {
     self.font(Theme.number(size)).fontWidth(.condensed).monospacedDigit()
   }
 
   func phoneStat() -> some View {
-    self.font(PhoneTheme.Type.stat).fontWidth(.condensed).monospacedDigit()
+    self.font(PhoneTheme.Face.stat).fontWidth(.condensed).monospacedDigit()
   }
 
   /// Card label: 13 pt heavy caps, +1 tracking.
   func phoneKicker(color: Color = PhoneTheme.muted) -> some View {
-    self.font(PhoneTheme.Type.kicker).textCase(.uppercase).tracking(1).foregroundStyle(color)
+    self.font(PhoneTheme.Face.kicker).textCase(.uppercase).tracking(1).foregroundStyle(color)
   }
 }
 
