@@ -267,6 +267,7 @@ public struct MondaySummaryCard: View {
           Button { onToggle(!state.switchOn) } label: {
             ZStack(alignment: state.switchOn ? .trailing : .leading) {
               Capsule().fill(state.switchOn ? PhoneTheme.inkText : PhoneTheme.hairline).frame(width: 56, height: 34)
+                .overlay(Capsule().stroke(state.switchOn ? PhoneTheme.inkText : PhoneTheme.muted, lineWidth: 1.5))
               Circle().fill(Color.white).frame(width: 28, height: 28).padding(3)
             }
             .frame(minWidth: 56, minHeight: 44)
