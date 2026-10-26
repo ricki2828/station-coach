@@ -7,8 +7,6 @@ jobs:
   # No `secrets: inherit`, so this always takes the skip path: it proves the lane exists and stays green without an account.
   testflight-skip-path:
     uses: ./.github/workflows/testflight.yml
-    with:
-      called: true
   report-tool:
     runs-on: ubuntu-latest
     steps:

@@ -1,16 +1,13 @@
 name: testflight
 # Archives the iPhone app with the embedded watch app, signs it and uploads it to TestFlight.
 # Run it from the Actions tab, or push a tag named beta-*. Without the four secrets it skips and succeeds.
-# ci.yml also calls it (without secrets, `called: true`) so the skip path is exercised on every push.
+# ci.yml also calls it (without secrets) so the skip path is exercised on every push.
 # Never add `secrets: inherit` to that call: every push would then upload, and the build number would become ci's run number.
-# The secrets live in the `testflight` Environment (docs/SIGNING.md), which a called run does not use.
+# The secrets live in the `testflight` Environment (docs/SIGNING.md). In a called workflow the `github` context is the
+# caller's (`github.workflow` is `ci`), so a call from ci.yml can never select that environment.
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      called:
-        type: boolean
-        default: false
   push:
     tags: ["beta-*"]
 
@@ -20,7 +17,7 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-latest
-    environment: ${{ !inputs.called && 'testflight' || '' }}
+    environment: ${{ github.workflow == 'testflight' && 'testflight' || '' }}
     outputs:
       ready: ${{ steps.gate.outputs.ready }}
     steps:
@@ -39,7 +36,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.ready == 'true'
     runs-on: macos-15
-    environment: ${{ !inputs.called && 'testflight' || '' }}
+    environment: ${{ github.workflow == 'testflight' && 'testflight' || '' }}
     concurrency:
       group: testflight
       cancel-in-progress: false
