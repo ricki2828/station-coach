@@ -404,10 +404,10 @@ final class TrainingLoadTests: XCTestCase {
   func testSuggestions() {
     let line = "Time for a full sim. It's the real test of the fade."
     func s(_ k: LoadSample) -> String? { LoadWords.suggestion(TrainingLoad.sample(k).compare, usualLine: line) }
-    XCTAssertEqual(s(.bigJump), "Big week. Keep next week near 530 and make one session a half sim.")
-    XCTAssertEqual(s(.stepUp), "Good step. Hold here a week before adding a session.")
+    XCTAssertEqual(s(.bigJump), "Big week: about double your usual. A lighter week around 530 would balance it, e.g. a half sim instead of a full one.")
+    XCTAssertEqual(s(.stepUp), "A good step up. Holding here a week would let it settle.")
     XCTAssertEqual(s(.usual), line)
-    XCTAssertEqual(s(.lighter), "Lighter week. Back to about 480 next week is fine.")
+    XCTAssertEqual(s(.lighter), "A lighter week. About 480 next week would be back to your usual.")
     XCTAssertEqual(s(.firstWeeks), "Three sessions in and this compares you with your own usual.")
     XCTAssertNil(s(.returning))
   }

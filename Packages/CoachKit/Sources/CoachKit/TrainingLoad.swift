@@ -594,10 +594,11 @@ public enum LoadWords {
       switch band {
       case .bigJump:
         let cap = int(usual * 1.1 / 10) * 10
-        return "Big week. Keep next week near \(number(cap)) and make one session a half sim."
-      case .stepUp: return "Good step. Hold here a week before adding a session."
+        let size = c.isDouble ? "about double your usual" : "\(c.percent ?? 0)% more than your usual"
+        return "Big week: \(size). A lighter week around \(number(cap)) would balance it, e.g. a half sim instead of a full one."
+      case .stepUp: return "A good step up. Holding here a week would let it settle."
       case .usual: return usualLine
-      case .lighter: return "Lighter week. Back to about \(number(int(usual))) next week is fine."
+      case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
       }
     }
   }
