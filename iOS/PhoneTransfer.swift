@@ -203,25 +203,31 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
           let name = (md["name"] as? String).map({ ($0 as NSString).lastPathComponent }),
           let bytes = md["bytes"] as? Int, let total = md["total"] as? Int,
           !sid.isEmpty, !name.isEmpty, sid != "..", name != ".." else { return }
-    // The temporary file is deleted when this returns, so move it now.
-    guard let root = Self.root else { return }
-    // A session already complete on the phone is never overwritten (a watch re-send carries no new data): just re-ack.
-    if DispatchQueue.main.sync(execute: { self.tracker.isComplete(sid) }) {
-      WCSession.default.transferUserInfo(["ack": sid])
-      return
-    }
-    let folder = root.appendingPathComponent(sid, isDirectory: true)
-    let dest = folder.appendingPathComponent(name)
-    var actual = -1
-    do {
-      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-      try? FileManager.default.removeItem(at: dest)
-      try FileManager.default.moveItem(at: file.fileURL, to: dest)
-      actual = ((try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? NSNumber)?.intValue ?? -1
-    } catch {
-      return
-    }
+    // The temporary file is deleted when this returns, so move it to a staging file now. The decision (tracker state lives on main)
+    // is made after the hop, with no blocking wait on the delegate queue.
+    let fm = FileManager.default
+    let staged = fm.temporaryDirectory.appendingPathComponent("incoming-\(UUID().uuidString)")
+    do { try fm.moveItem(at: file.fileURL, to: staged) } catch { return }
     DispatchQueue.main.async {
+      // A session already complete on the phone is never overwritten (a watch re-send carries no new data): just re-ack.
+      if self.tracker.isComplete(sid) {
+        try? fm.removeItem(at: staged)
+        WCSession.default.transferUserInfo(["ack": sid])
+        return
+      }
+      guard let root = Self.root else { try? fm.removeItem(at: staged); return }
+      let folder = root.appendingPathComponent(sid, isDirectory: true)
+      let dest = folder.appendingPathComponent(name)
+      var actual = -1
+      do {
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? fm.removeItem(at: dest)
+        try fm.moveItem(at: staged, to: dest)
+        actual = ((try? fm.attributesOfItem(atPath: dest.path))?[.size] as? NSNumber)?.intValue ?? -1
+      } catch {
+        try? fm.removeItem(at: staged)
+        return
+      }
       self.watchdog.fileArrived(session: sid, at: Date().timeIntervalSinceReferenceDate)
       self.tracker.received(session: sid, name: name, expectedBytes: bytes, actualBytes: actual, total: total)
       if let data = try? JSONEncoder().encode(self.tracker) { UserDefaults.standard.set(data, forKey: self.trackerKey) }
