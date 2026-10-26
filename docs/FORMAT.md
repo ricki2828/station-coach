@@ -16,7 +16,7 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 
 ## Coached sessions
 A session started from the coach (plan from the phone) is the same folder plus `coach.json`, written at the end by the watch:
-`plan` (division, session type, race target, `steps` with per-step targets and wall-ball set structure, `transitionSeconds`), `splits` (`stepIndex`, `startMs`, `endMs`; a step never started has no split, a step not finished has no `endMs`), `early`, `repTimesMs` (heuristic wall-ball rep times, epoch ms), `repCorrection` (net manual +/-), `startedAtEpochMs`, `endedAtEpochMs`.
+`plan` (division, session type, race target, `steps` with per-step targets and wall-ball set structure, `transitionSeconds`), `splits` (`stepIndex`, `startMs`, `endMs`; a step never started has no split, a step not finished has no `endMs`, except that `SessionMachine.end` closes the step in progress when a session ends early, so on an early session the last split has an `endMs` but was quit, not completed), `early`, `repTimesMs` (heuristic wall-ball rep times, epoch ms), `repCorrection` (net manual +/-), `startedAtEpochMs`, `endedAtEpochMs`.
 
 Wall-ball no-reps (all optional; files without them decode as no no-reps):
 - `noReps`: one event per NO REP tap on the watch, in order: `tMs` (epoch ms), `setIndex` (0-based set of the plan step), `stepIndex` (plan step; absent = the first wall-ball step). `repTimesMs` still lists every counted throw, no-reps included.
@@ -57,3 +57,5 @@ Stored rate is the raw rate decimated to at most `storeHz`, settable on the watc
 - No network. No GPS (indoor workout). The elapsed clock drops seconds when the display is dimmed.
 - Cue interval (default 45 s) and motion store rate are settable.
 - Battery is logged every 60 s.
+
+Training load (`TrainingLoad.swift`): on an `early` session the split with the latest `startMs` counts as quit. Its time still counts toward load, but it adds no sim km or station metres, and an early full sim is not counted as a full sim.

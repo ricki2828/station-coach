@@ -15,7 +15,9 @@ public enum HistorySamples {
     let plan = PlanBuilder.build(division: .openMen, target: 5400, type: type)
     let pattern = [-6, 12, 0, 4, -4, -2, -4]
     func build(shift: Int) -> CoachResult {
-      var t: Int64 = 0
+      // Epoch ms, as the watch writes them: the first split starts at the session start.
+      let start = (sat24Oct + startDay * day) * 1000
+      var t = start
       var splits: [StepSplit] = []
       for step in plan.steps {
         if let until, step.index >= until { break }
@@ -30,9 +32,8 @@ public enum HistorySamples {
         var r = s.startMs + 1_000
         for size in wb.sets { for _ in 0..<size { reps.append(r); r += 2_000 }; r += Int64(rest - 2) * 1000 }
       }
-      let start = (sat24Oct + startDay * day) * 1000
       return CoachResult(plan: plan, splits: splits, early: until != nil, repTimesMs: reps, repCorrection: 0,
-                         startedAtEpochMs: start, endedAtEpochMs: start + t)
+                         startedAtEpochMs: start, endedAtEpochMs: t)
     }
     let first = build(shift: 0)
     let shift = fade - (RunFade.fade(first) ?? fade)
