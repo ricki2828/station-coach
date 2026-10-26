@@ -11,8 +11,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var sessions: [SessionSummary] = []
   @Published private(set) var completeIds: Set<String> = []
   @Published private(set) var sendState: SendState = .idle
-  /// The newest session that has a `coach.json`, and its folder name.
-  @Published private(set) var latestCoach: (id: String, result: CoachResult)?
+  /// Every complete session that has a `coach.json`, newest first.
+  @Published private(set) var coachSessions: [SessionRecord] = []
+  @Published private(set) var watchAppInstalled = false
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
 
@@ -76,14 +77,16 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     for id in watchdog.pending where completeIds.contains(id) { watchdog.complete(session: id) }
     saveWatchdog()
     evaluateSync()
-    latestCoach = nil
+    var records: [SessionRecord] = []
     for s in sessions where completeIds.contains(s.id) {
       let url = root.appendingPathComponent(s.id).appendingPathComponent(CoachResult.fileName)
       if let data = try? Data(contentsOf: url), let r = try? JSONDecoder().decode(CoachResult.self, from: data) {
-        latestCoach = (s.id, r)
-        break
+        records.append(SessionRecord(id: s.id, result: r))
       }
     }
+    let sorted = SessionRecord.sorted(records)
+    if sorted != coachSessions { coachSessions = sorted }
+    updateWatchInstalled()
   }
 
   /// Sends the plan to the watch as application context (the latest one wins; delivered when the watch is next awake).
@@ -137,7 +140,20 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   // MARK: WCSessionDelegate
 
-  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+  private func updateWatchInstalled() {
+    guard WCSession.isSupported() else { return }
+    let s = WCSession.default
+    let installed = s.activationState == .activated && s.isPaired && s.isWatchAppInstalled
+    if installed != watchAppInstalled { watchAppInstalled = installed }
+  }
+
+  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    DispatchQueue.main.async { self.updateWatchInstalled() }
+  }
+
+  func sessionWatchStateDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { self.updateWatchInstalled() }
+  }
   func sessionDidBecomeInactive(_ session: WCSession) {}
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 
