@@ -4,6 +4,12 @@ public struct StepSplit: Codable, Equatable {
   public let stepIndex: Int
   public let startMs: Int64
   public var endMs: Int64?
+
+  public init(stepIndex: Int, startMs: Int64, endMs: Int64? = nil) {
+    self.stepIndex = stepIndex
+    self.startMs = startMs
+    self.endMs = endMs
+  }
 }
 
 /// ready -> step 0 -> step 1 -> ... -> finished. `advance` is the NEXT button or the pinch; `undo` goes
