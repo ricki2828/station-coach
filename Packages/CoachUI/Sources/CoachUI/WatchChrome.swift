@@ -8,13 +8,17 @@ public struct WatchChrome<Content: View>: View {
   public static var topInset: CGFloat { 24 }
 
   let content: Content
+  let size: CGSize
 
-  public init(@ViewBuilder _ content: () -> Content) { self.content = content() }
+  public init(size: CGSize = Theme.watch46, @ViewBuilder _ content: () -> Content) {
+    self.size = size
+    self.content = content()
+  }
 
   public var body: some View {
     content
       .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topInset) }
-      .frame(width: Theme.watch46.width, height: Theme.watch46.height)
+      .frame(width: size.width, height: size.height)
       .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
       .overlay(alignment: .topTrailing) {
         Text("10:09").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)

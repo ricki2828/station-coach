@@ -58,6 +58,14 @@ final class CoachController: ObservableObject {
   private var repCorrection = 0
   private var repsByStep: [Int: [Int64]] = [:]
   private var correctionByStep: [Int: Int] = [:]
+  private var noRepLog = NoRepLog()
+  /// The Undo chip is up until this time (epoch ms) after a tap.
+  private var noRepUndoUntilMs: Int64 = 0
+  /// The NO REP button is up from the rest (set done, or reps paused 4 s) until the next rep is counted.
+  private var noRepShown = false
+  private var lastSeenCount = 0
+  private var lastRepChangeMs: Int64 = 0
+  private var noRepAnnounced = false
   private var enteredWallBalls = Set<Int>()
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
@@ -111,6 +119,10 @@ final class CoachController: ObservableObject {
     repCorrection = 0
     repsByStep = [:]
     correctionByStep = [:]
+    noRepLog.reset()
+    noRepUndoUntilMs = 0
+    noRepShown = false
+    noRepAnnounced = false
     enteredWallBalls = []
     lastLabel = nil
     let c = counter
@@ -171,6 +183,28 @@ final class CoachController: ObservableObject {
     refresh()
   }
 
+  /// A rep that did not count: back onto reps left. Only offered in the rest between sets.
+  func noRep() {
+    guard active, noRepShown, let step = machine?.current, step.activity == .wallBalls else { return }
+    let set = WallBallProgress.setIndex(repsDone: repsDone(step), sets: step.sets)
+    noRepLog.add(NoRepEvent(tMs: nowMs, setIndex: set, stepIndex: step.index))
+    noRepUndoUntilMs = nowMs + Int64(NoRepLog.undoWindowSeconds) * 1000
+    WKInterfaceDevice.current().play(.click)
+    if !noRepAnnounced {
+      noRepAnnounced = true
+      offer(.wallBallSet, CoachCopy.noRepNoted)
+    }
+    refresh()
+  }
+
+  /// Takes back the last NO REP of this step: reps left goes back down.
+  func undoNoRep() {
+    guard active, let step = machine?.current, noRepLog.undoLast(inStep: step.index) != nil else { return }
+    noRepUndoUntilMs = 0
+    WKInterfaceDevice.current().play(.retry)
+    refresh()
+  }
+
   func dismissFinish() {
     // Only once the files are closed; before that the finish screen has no DONE.
     guard finish?.saving != true, finish?.undoSecondsLeft == nil else { return }
@@ -187,6 +221,7 @@ final class CoachController: ObservableObject {
     let snap = counter.snapshot()
     repsByStep[step.index] = snap.times.map { Int64(($0 * 1000).rounded()) }
     correctionByStep[step.index] = repCorrection
+    noRepShown = false
     counter.pause()
   }
 
@@ -199,6 +234,9 @@ final class CoachController: ObservableObject {
       enteredWallBalls.insert(step.index)
       counter.begin(fresh: fresh)
       repCorrection = fresh ? 0 : (correctionByStep[step.index] ?? 0)
+      noRepShown = false
+      lastSeenCount = counter.snapshot().count
+      lastRepChangeMs = nowMs
       // Sets already passed (an undo back into the step) are not announced again.
       announcedSets = []
       var cumulative = 0
@@ -249,7 +287,7 @@ final class CoachController: ObservableObject {
 
   private func repsDone(_ step: PlanStep) -> Int {
     let total = step.reps ?? 100
-    return min(total, max(0, counter.snapshot().count + repCorrection))
+    return min(total, max(0, counter.snapshot().count + repCorrection - noRepLog.count(inStep: step.index)))
   }
 
   /// Said only while the count is trustworthy: a "Set done" spoken at a wrong count is worse than silence.
@@ -293,6 +331,7 @@ final class CoachController: ObservableObject {
       let done = repsDone(step)
       let left = total - done
       let snap = counter.snapshot()
+      updateNoRepRest(step, count: snap.count, done: done)
       var cumulative = 0
       var setNo = step.sets.count, setSize = step.sets.last ?? 0
       for (k, size) in step.sets.enumerated() {
@@ -305,7 +344,8 @@ final class CoachController: ObservableObject {
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
         next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
-        alarm: common.alarm, approximate: approx)
+        alarm: common.alarm, approximate: approx, noRepVisible: noRepShown, noRepCount: noRepLog.count(inStep: step.index),
+        noRepUndo: now < noRepUndoUntilMs && noRepLog.count(inStep: step.index) > 0)
       return
     }
     let transition = m.label(at: now) == .transition
@@ -315,6 +355,23 @@ final class CoachController: ObservableObject {
       secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
       hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
   }
+
+  /// Raises the NO REP button when a set has just been completed or the reps have paused for 4 s; a new rep drops it.
+  private func updateNoRepRest(_ step: PlanStep, count: Int, done: Int) {
+    if count != lastSeenCount {
+      lastSeenCount = count
+      lastRepChangeMs = nowMs
+      noRepShown = false
+      return
+    }
+    guard !noRepShown, count > 0 else { return }
+    let paused = nowMs - lastRepChangeMs >= Self.noRepPauseMs
+    var cumulative = 0
+    let setEnd = step.sets.contains { cumulative += $0; return done == cumulative }
+    if paused || setEnd { noRepShown = true }
+  }
+
+  static let noRepPauseMs: Int64 = 4000
 
   // MARK: Finish
 
@@ -326,7 +383,7 @@ final class CoachController: ObservableObject {
     let ended = m.endMs ?? nowMs
     let allReps = repsByStep.values.flatMap { $0 }.sorted()
     let result = CoachResult(plan: m.plan, splits: m.splits, early: early, repTimesMs: allReps, repCorrection: correctionByStep.values.reduce(0, +),
-                             startedAtEpochMs: started, endedAtEpochMs: ended)
+                             startedAtEpochMs: started, endedAtEpochMs: ended, noReps: noRepLog.events)
     let saved = writeResult(result)
 
     let best = result.bestWorstStations

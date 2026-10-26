@@ -27,10 +27,17 @@ public struct StepScreenModel: Equatable {
   public var alarm: String?
   /// Rep count is a low-confidence estimate: show "~" and pulse the +/- buttons.
   public var approximate: Bool
+  /// A wall-ball rest: the NO REP button takes the place of the set line.
+  public var noRepVisible: Bool
+  /// No-reps tapped so far in this station.
+  public var noRepCount: Int
+  /// Within a few seconds of a tap: an UNDO chip takes the set block's place.
+  public var noRepUndo: Bool
 
   public init(kind: Kind, activity: Activity, title: String, badge: String? = nil, dominant: String, dominantLabel: String,
               secondary: String, secondaryLabel: String, next: String, isLast: Bool = false, deltaSeconds: Int,
-              hrBpm: Int? = nil, hrOff: Bool = false, toast: String? = nil, alarm: String? = nil, approximate: Bool = false) {
+              hrBpm: Int? = nil, hrOff: Bool = false, toast: String? = nil, alarm: String? = nil, approximate: Bool = false,
+              noRepVisible: Bool = false, noRepCount: Int = 0, noRepUndo: Bool = false) {
     self.kind = kind
     self.activity = activity
     self.title = title
@@ -47,6 +54,9 @@ public struct StepScreenModel: Equatable {
     self.toast = toast
     self.alarm = alarm
     self.approximate = approximate
+    self.noRepVisible = noRepVisible
+    self.noRepCount = noRepCount
+    self.noRepUndo = noRepUndo
   }
 }
 

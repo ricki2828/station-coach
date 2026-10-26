@@ -173,17 +173,80 @@ struct StepperButton: View {
   }
 }
 
+/// Wall-ball rest control: a rep that did not count goes back onto reps left. Outlined, not filled, so it never reads
+/// as NOT HEARD (amber) or NEXT (ink). At least 44 pt tall.
+struct NoRepButton: View {
+  static let height: CGFloat = 44
+  let count: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Text(count > 0 ? "NO REP \u{00D7}\(count)" : "NO REP")
+        .font(.system(size: 20, weight: .heavy)).foregroundStyle(Theme.bone)
+        .lineLimit(1).minimumScaleFactor(0.6)
+        .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height)
+        .background(Theme.ink.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.bone, lineWidth: 3))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(count > 0 ? "No rep. \(count) noted. Tap to add another" : "No rep. Adds one rep back")
+  }
+}
+
+/// The set line in the rest row, small enough to sit beside NO REP: "SET 4" over "15 reps".
+struct RestSetBlock: View {
+  let text: String
+  let label: String
+
+  var body: some View {
+    let parts = text.components(separatedBy: " \u{00B7} ")
+    VStack(spacing: 0) {
+      Text(parts[0].uppercased()).font(.system(size: 17, weight: .heavy))
+      if parts.count > 1 { Text("\(parts[1]) reps").font(.system(size: 13, weight: .bold)).opacity(0.8) }
+    }
+    .lineLimit(1).minimumScaleFactor(0.7)
+    .frame(width: 58, height: NoRepButton.height)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(label)
+  }
+}
+
+/// Shown for a few seconds after a NO REP tap, in the set block's place: takes the last tap back.
+struct NoRepUndoChip: View {
+  let count: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 0) {
+        Text("UNDO").font(.system(size: 15, weight: .heavy))
+        Text("\(count) noted").font(.system(size: 12, weight: .bold))
+      }
+      .foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.7)
+      .frame(width: 58, height: NoRepButton.height)
+      .background(Theme.bone, in: RoundedRectangle(cornerRadius: 12))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Undo the last no rep")
+  }
+}
+
 /// Run, time-based station and rep station: one dominant number each. Max three items besides the delta.
 public struct CoachStepScreen: View {
   let model: StepScreenModel
   var onNext: () -> Void = {}
   var onPlus: () -> Void = {}
   var onMinus: () -> Void = {}
+  var onNoRep: () -> Void = {}
+  var onNoRepUndo: () -> Void = {}
   /// M1's "didn't hear" control, pinned beside NEXT on every coach screen. Nil hides it.
   var onMissed: (() -> Void)?
   var onAlarm: () -> Void = {}
 
-  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil, onAlarm: @escaping () -> Void = {}) {
+  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onNoRep: @escaping () -> Void = {}, onNoRepUndo: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil, onAlarm: @escaping () -> Void = {}) {
+    self.onNoRep = onNoRep
+    self.onNoRepUndo = onNoRepUndo
     self.onMissed = onMissed
     self.onAlarm = onAlarm
     self.model = model
@@ -220,12 +283,24 @@ public struct CoachStepScreen: View {
       .foregroundStyle(fg)
       .frame(height: 22)
       dominantRow(fg)
-      Text(model.secondary)
-        .font(Theme.number(Theme.Size.secondary)).condensed()
-        .foregroundStyle(fg.opacity(0.78))
-        .lineLimit(1).minimumScaleFactor(0.6)
-        .frame(height: 36)
-        .accessibilityLabel(model.secondaryLabel)
+      if model.noRepVisible {
+        HStack(spacing: 6) {
+          if model.noRepUndo {
+            NoRepUndoChip(count: model.noRepCount, action: onNoRepUndo)
+          } else {
+            RestSetBlock(text: model.secondary, label: model.secondaryLabel)
+          }
+          NoRepButton(count: model.noRepCount, action: onNoRep)
+        }
+        .padding(.bottom, 7) // 10 pt in all above NOT HEARD and NEXT
+      } else {
+        Text(model.secondary)
+          .font(Theme.number(Theme.Size.secondary)).condensed()
+          .foregroundStyle(fg.opacity(0.78))
+          .lineLimit(1).minimumScaleFactor(0.6)
+          .frame(height: 36)
+          .accessibilityLabel(model.secondaryLabel)
+      }
       Spacer(minLength: 0)
       HStack(spacing: 6) {
         NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
@@ -261,7 +336,7 @@ public struct CoachStepScreen: View {
       .font(Theme.number(Theme.Size.dominant)).condensed()
       .foregroundStyle(probe ?? fg)
       .lineLimit(1)
-      .frame(height: 60)
+      .frame(height: model.noRepVisible ? 48 : 60)
       .accessibilityLabel(model.dominantLabel)
     if model.kind == .reps {
       HStack(spacing: 0) {

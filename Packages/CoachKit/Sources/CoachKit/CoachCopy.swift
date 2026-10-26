@@ -67,6 +67,9 @@ public enum CoachCopy {
     return parts.joined(separator: " ")
   }
 
+  /// Spoken on the first NO REP tap only.
+  public static let noRepNoted = "No rep noted."
+
   public static func wallBallSetDone(nextSet: Int?) -> String {
     guard let n = nextSet else { return "Set done. Last one done. Breathe." }
     return "Set done. Breathe. Next \(Fmt.word(n))."

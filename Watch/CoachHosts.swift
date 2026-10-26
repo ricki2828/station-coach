@@ -47,6 +47,8 @@ struct CoachRunningHost: View {
           onNext: { coach.advance() },
           onPlus: { coach.adjustReps(1) },
           onMinus: { coach.adjustReps(-1) },
+          onNoRep: { coach.noRep() },
+          onNoRepUndo: { coach.undoNoRep() },
           onMissed: { recorder.flagMissedCue() },
           onAlarm: { recorder.dismissAlarm() })
       } else {
