@@ -1,24 +1,32 @@
 name: testflight
 # Archives the iPhone app with the embedded watch app, signs it and uploads it to TestFlight.
 # Run it from the Actions tab, or push a tag named beta-*. Without the four secrets it skips and succeeds.
-# ci.yml also calls it (without secrets) so the skip path is exercised on every push.
+# ci.yml also calls it (without secrets, `called: true`) so the skip path is exercised on every push.
+# Never add `secrets: inherit` to that call: every push would then upload, and the build number would become ci's run number.
+# The secrets live in the `testflight` Environment (docs/SIGNING.md), which a called run does not use.
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      called:
+        type: boolean
+        default: false
   push:
     tags: ["beta-*"]
 
-concurrency:
-  group: testflight
-  cancel-in-progress: false
+permissions:
+  contents: read
 
 jobs:
   gate:
     runs-on: ubuntu-latest
+    environment: ${{ !inputs.called && 'testflight' || '' }}
     outputs:
       ready: ${{ steps.gate.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - id: gate
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -31,14 +39,21 @@ jobs:
     needs: gate
     if: needs.gate.outputs.ready == 'true'
     runs-on: macos-15
+    environment: ${{ !inputs.called && 'testflight' || '' }}
+    concurrency:
+      group: testflight
+      cancel-in-progress: false
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       BUNDLE_PREFIX: ${{ vars.BUNDLE_PREFIX }}
+      # This workflow's own run counter: it only ever rises, and the watch and phone get the same number.
       BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Select Xcode 26
         run: tools/ci/select-xcode.sh
@@ -59,7 +74,10 @@ jobs:
           import os, re
           team, prefix = os.environ["APPLE_TEAM_ID"], os.environ.get("BUNDLE_PREFIX", "")
           s = open("project.yml").read()
-          s = s.replace('    SWIFT_VERSION: "5.0"\n', '    SWIFT_VERSION: "5.0"\n    DEVELOPMENT_TEAM: ' + team + '\n    CODE_SIGN_STYLE: Automatic\n', 1)
+          anchor = '    SWIFT_VERSION: "5.0"\n'
+          if anchor not in s:
+              raise SystemExit("project.yml no longer has the SWIFT_VERSION line this step anchors on; update the step")
+          s = s.replace(anchor, anchor + '    DEVELOPMENT_TEAM: ' + team + '\n    CODE_SIGN_STYLE: Automatic\n', 1)
           if prefix:
               if not re.fullmatch(r"[A-Za-z0-9.-]+", prefix):
                   raise SystemExit("BUNDLE_PREFIX has characters a bundle id cannot hold")
@@ -84,7 +102,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" | tail -n 60
 
-      - name: Export the .ipa
+      - name: Export and upload to TestFlight
         run: |
           set -o pipefail
           cat > "$RUNNER_TEMP/export.plist" <<PLIST
@@ -94,7 +112,7 @@ jobs:
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>$APPLE_TEAM_ID</string>
             <key>signingStyle</key><string>automatic</string>
-            <key>destination</key><string>export</string>
+            <key>destination</key><string>upload</string>
             <key>uploadSymbols</key><true/>
           </dict></plist>
           PLIST
@@ -104,14 +122,6 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -n 40
-          ls "$RUNNER_TEMP/export"
-
-      - name: Upload to TestFlight
-        env:
-          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc
-        run: |
-          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP"/export/*.ipa \
-            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
           echo "Uploaded build $BUILD_NUMBER. It shows in TestFlight after processing (usually 5-30 minutes)."
 
       - name: Remove the API key
