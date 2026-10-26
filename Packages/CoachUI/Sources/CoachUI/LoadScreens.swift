@@ -128,7 +128,7 @@ public struct LoadBars: View {
           Text(bar.label)
             .font(.system(size: compactLabels ? 11 : 13, weight: bar.isCurrent ? .heavy : .semibold))
             .foregroundStyle(bar.isCurrent ? PhoneTheme.inkText : PhoneTheme.muted)
-            .lineLimit(1)
+            .lineLimit(1).minimumScaleFactor(compactLabels ? 1 : 0.6)
             .frame(height: 18)
           Text(bar.soFar ? "SO FAR" : " ").font(.system(size: 10, weight: .heavy)).tracking(0.5)
             .foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize()
