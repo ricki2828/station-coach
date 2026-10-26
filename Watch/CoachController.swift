@@ -71,6 +71,7 @@ final class CoachController: ObservableObject {
     guard let plan = transfer.plan else { return transfer.planChecked ? .noPlan : .loading }
     var chips: [String] = []
     if !CueRunner.route().headphones { chips.append("No headphones: cues by vibration") }
+    if recorder.heartRateWarning { chips.append("Heart rate off. The coach still works.") }
     if let m = recorder.statusMessage, recorder.phase == .idle, !m.hasPrefix("Saved") { chips.append(m) }
     let device = WKInterfaceDevice.current()
     device.isBatteryMonitoringEnabled = true
@@ -216,6 +217,7 @@ final class CoachController: ObservableObject {
   // MARK: Tick
 
   private func tick() {
+    recorder.checkHeartRate()
     if active, let m = machine, let step = m.current {
       applyLabel()
       let elapsed = m.stepElapsedSeconds(at: nowMs)
@@ -268,7 +270,7 @@ final class CoachController: ObservableObject {
     let delta = m.deltaSeconds(at: now)
     let elapsed = m.stepElapsedSeconds(at: now)
     let next = m.next.map { "Next: \($0.name)" } ?? "Next: Finish"
-    let common = (hr: recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
+    let common = (hr: recorder.hrOff ? nil : recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
     let target = "/ \(Fmt.clock(step.targetSeconds))"
     let targetLabel = "Target \(Fmt.spoken(step.targetSeconds))"
     if step.activity == .wallBalls {
@@ -287,7 +289,7 @@ final class CoachController: ObservableObject {
         kind: .reps, activity: .wallBalls, title: step.name, dominant: "\(left)",
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
-        next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, toast: common.toast,
+        next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx)
       return
     }
@@ -296,7 +298,7 @@ final class CoachController: ObservableObject {
       kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Transition" : nil,
       dominant: Fmt.clock(elapsed), dominantLabel: "\(step.isRun ? "Run" : "Station") time, \(Fmt.spoken(elapsed))",
       secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
-      hrBpm: common.hr, toast: common.toast, alarm: common.alarm)
+      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
   }
 
   // MARK: Finish

@@ -44,6 +44,19 @@ struct HeartChip: View {
   }
 }
 
+/// Shown instead of the number when no heart-rate samples arrive. Amber: a notice, not an alarm.
+struct HeartOffChip: View {
+  var body: some View {
+    Text("HR OFF")
+      .font(.system(size: 13, weight: .heavy))
+      .foregroundStyle(Theme.ink)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .background(Theme.amber, in: Capsule())
+      .accessibilityLabel("Heart rate off")
+  }
+}
+
 /// Plain arc spinner: `ProgressView` is a UIKit view that ImageRenderer cannot draw.
 struct Spinner: View {
   var color: Color
@@ -198,7 +211,11 @@ public struct CoachStepScreen: View {
             .background(fg.opacity(0.18), in: Capsule())
         }
         Spacer(minLength: 0)
-        if let bpm = model.hrBpm { HeartChip(bpm: bpm) }
+        if model.hrOff {
+          HeartOffChip()
+        } else if let bpm = model.hrBpm {
+          HeartChip(bpm: bpm)
+        }
       }
       .foregroundStyle(fg)
       .frame(height: 22)

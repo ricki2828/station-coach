@@ -83,6 +83,7 @@ public enum ScreenCatalog {
       watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("station-time", CoachStepScreen(model: station, onMissed: {})),
       watch("station-time-sled", CoachStepScreen(model: sled, onMissed: {})),
+      watch("run-hr-off", CoachStepScreen(model: { var m = run; m.hrOff = true; m.hrBpm = nil; return m }(), onMissed: {})),
       watch("station-reps", CoachStepScreen(model: walls, onMissed: {})),
       watch("station-reps-low-confidence", CoachStepScreen(model: lowConf, onMissed: {})),
       watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
