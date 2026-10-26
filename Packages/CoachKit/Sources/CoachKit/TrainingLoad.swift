@@ -1,7 +1,8 @@
 import Foundation
 
 // Training load: minutes of work x how hard it was (1 very easy to 5 very hard), per session, then summed by week, month and year.
-// Station Coach sessions only. The step weights below are assumed, not measured, and are labelled as estimates wherever they show.
+// Station Coach sessions only. Where heart rate is missing the step weights are assumed (calibrated to the athlete's own heart rate
+// where there is enough of it) and are labelled as estimates wherever they show. Zones are Edwards-style.
 
 public enum LoadBasis: String, Equatable {
   /// 80% or more of the session had a heart-rate sample.
@@ -30,7 +31,8 @@ public struct SessionLoad: Equatable {
   /// Work minutes x weight (zone 1...5 where heart rate covers, the step's assumed weight where it does not).
   public let load: Double
   public let minutes: Double
-  /// Minutes at weight 4 or more (zones 4 and 5, or a step assumed that hard).
+  /// Minutes in zones 4 and 5, from heart-rate-covered time only. Never inferred from the assumed weights; `coverage` says how
+  /// much of the session this speaks for.
   public let hardMinutes: Double
   /// Completed runs x 1 km (indoor, no GPS: plan volume).
   public let simKm: Int
@@ -57,19 +59,13 @@ public struct SessionLoad: Equatable {
     self.coverage = coverage
   }
 
-  /// Assumed weight for a step with no heart rate behind it. RPE-style, an estimate.
-  public static func assumedWeight(_ a: Activity) -> Double {
-    switch a {
-    case .run, .skierg, .row, .farmersCarry: return 3.5
-    case .sledPush, .sledPull, .wallBalls, .burpeeBroadJump, .sandbagLunges: return 4.0
-    case .transition: return 3.0
-    case .rest: return 2.0
-    }
-  }
+  /// Default assumed weight for a step with no heart rate behind it. Set to what a hard sim measures (runs zone 4, stations
+  /// zone 4 to 5) so a session with and without heart rate lands on one scale; `AssumedWeights.calibrated` replaces it per athlete.
+  public static func assumedWeight(_ a: Activity) -> Double { AssumedWeights.defaults.weight(a) }
   public static let afterLastSplitWeight = 2.0
   /// Whole-session weight when the splits cannot be trusted.
   public static let genericWeight = 3.5
-  public static let transitionWeight = 3.0
+  public static let transitionWeight = 3.5
 
   /// Fixed metres a completed station covers.
   public static func metres(_ a: Activity) -> Int {
@@ -83,22 +79,22 @@ public struct SessionLoad: Equatable {
     }
   }
 
-  struct Segment { var start: Int64; var end: Int64; var weight: Double }
+  struct Segment { var start: Int64; var end: Int64; var weight: Double; var activity: Activity? = nil }
 
   /// The session cut into pieces that tile `startedAt..<endedAt`, each with its assumed weight. Runs 2 and later start with
   /// the changeover (`plan.transitionSeconds`) at the transition weight. Time outside any split weighs `afterLastSplitWeight`.
-  static func segments(_ r: CoachResult) -> [Segment] {
+  static func segments(_ r: CoachResult, weights: AssumedWeights = .defaults) -> [Segment] {
     let s = r.startedAtEpochMs
     let e = max(r.endedAtEpochMs, s)
     // Splits are epoch ms, as the watch writes them. Corrupt ones are not re-based: the whole session takes a generic weight.
     guard r.splitsLookValid else { return e > s ? [Segment(start: s, end: e, weight: genericWeight)] : [] }
     var out: [Segment] = []
     var cursor = s
-    func add(_ a: Int64, _ b: Int64, _ w: Double) {
+    func add(_ a: Int64, _ b: Int64, _ act: Activity) {
       let a2 = max(a, cursor), b2 = min(b, e)
       guard b2 > a2 else { return }
       if a2 > cursor { out.append(Segment(start: cursor, end: a2, weight: afterLastSplitWeight)) }
-      out.append(Segment(start: a2, end: b2, weight: w))
+      out.append(Segment(start: a2, end: b2, weight: weights.weight(act), activity: act))
       cursor = b2
     }
     for sp in r.splits.sorted(by: { $0.startMs < $1.startMs }) {
@@ -107,10 +103,10 @@ public struct SessionLoad: Equatable {
       let b = sp.endMs ?? e
       if step.isRun, (step.runNumber ?? 1) > 1 {
         let t = a + Int64(r.plan.transitionSeconds) * 1000
-        add(a, min(t, b), transitionWeight)
-        add(t, b, assumedWeight(step.activity))
+        add(a, min(t, b), .transition)
+        add(t, b, step.activity)
       } else {
-        add(a, b, assumedWeight(step.activity))
+        add(a, b, step.activity)
       }
     }
     if cursor < e { out.append(Segment(start: cursor, end: e, weight: afterLastSplitWeight)) }
@@ -118,13 +114,13 @@ public struct SessionLoad: Equatable {
   }
 
   /// Load for one session. `wallBallReps` defaults to the session's valid reps; pass another count to override it.
-  public static func of(_ result: CoachResult, hr: HeartRateSeries?, maxHR: Int, wallBallReps: Int? = nil) -> SessionLoad {
+  public static func of(_ result: CoachResult, hr: HeartRateSeries?, maxHR: Int, wallBallReps: Int? = nil, weights: AssumedWeights = .defaults) -> SessionLoad {
     let s = result.startedAtEpochMs
     let e = max(result.endedAtEpochMs, s)
     var weighted = 0.0
     var hardMs: Int64 = 0
     var covered: Int64 = 0
-    for seg in segments(result) {
+    for seg in segments(result, weights: weights) {
       var segCovered: Int64 = 0
       if let hr {
         for iv in hr.intervals(from: seg.start, to: seg.end) {
@@ -137,7 +133,6 @@ public struct SessionLoad: Equatable {
       }
       let uncovered = (seg.end - seg.start) - segCovered
       weighted += Double(uncovered) / 60_000 * seg.weight
-      if seg.weight >= 4 { hardMs += uncovered }
       covered += segCovered
     }
     var km = 0
@@ -150,6 +145,47 @@ public struct SessionLoad: Equatable {
     return SessionLoad(load: weighted, minutes: Double(total) / 60_000, hardMinutes: Double(hardMs) / 60_000, simKm: km,
                        wallBallReps: wallBallReps ?? result.validReps, stationMetres: metres,
                        coverage: total > 0 ? Double(covered) / Double(total) : 0)
+  }
+}
+
+/// What a minute of each activity weighs when heart rate is missing.
+public struct AssumedWeights: Equatable {
+  public var byActivity: [Activity: Double]
+
+  public init(byActivity: [Activity: Double]) { self.byActivity = byActivity }
+
+  public static let defaults = AssumedWeights(byActivity: [
+    .run: 4.0, .transition: 3.5,
+    .skierg: 4.5, .row: 4.5, .farmersCarry: 4.5, .sledPush: 4.5, .sledPull: 4.5, .burpeeBroadJump: 4.5, .sandbagLunges: 4.5, .wallBalls: 4.5,
+    .rest: 2.0,
+  ])
+  /// Seconds of heart rate an activity needs before its own mean replaces the default.
+  public static let minCalibrationSeconds = 120.0
+
+  public func weight(_ a: Activity) -> Double { byActivity[a] ?? Self.defaults.byActivity[a] ?? 3.5 }
+
+  /// Per activity, the athlete's own time-weighted mean zone over their heart-rate-covered time in the last 180 days; the default
+  /// where an activity has under `minCalibrationSeconds`. A session with no heart rate then scores on the same scale as one with.
+  public static func calibrated(_ inputs: [LoadInput], maxHR: Int, now: Date) -> AssumedWeights {
+    let cutoff = now.addingTimeInterval(-Double(MaxHeartRate.windowDays) * 86_400)
+    var zoneSeconds: [Activity: Double] = [:]
+    var seconds: [Activity: Double] = [:]
+    for i in inputs where i.record.date >= cutoff && i.record.date <= now && i.record.result.splitsLookValid {
+      guard let hr = i.hr else { continue }
+      for seg in SessionLoad.segments(i.record.result) {
+        guard let act = seg.activity else { continue }
+        for iv in hr.intervals(from: seg.start, to: seg.end) {
+          let sec = Double(iv.endMs - iv.startMs) / 1000
+          zoneSeconds[act, default: 0] += sec * Double(Palette.zone(bpm: iv.bpm, maxHR: maxHR))
+          seconds[act, default: 0] += sec
+        }
+      }
+    }
+    var out = defaults
+    for (act, sec) in seconds where sec >= minCalibrationSeconds {
+      out.byActivity[act] = zoneSeconds[act, default: 0] / sec
+    }
+    return out
   }
 }
 
@@ -225,6 +261,7 @@ public struct LoadInput {
 
 public struct TrainingLoadSummary: Equatable {
   public let sessions: [LoadSession]
+  public let weights: AssumedWeights
   public let maxHR: MaxHeartRate
   /// Ids of sessions left out because their splits looked corrupt.
   public let skippedSessionIds: [String]
@@ -234,14 +271,15 @@ public enum TrainingLoad {
   /// Max HR from all the sessions first, then each session's load against it.
   public static func summarise(_ inputs: [LoadInput], now: Date, wallBallReps: (SessionRecord) -> Int? = { _ in nil }) -> TrainingLoadSummary {
     let max = MaxHeartRate.estimate(inputs.map { HeartRateSession(date: $0.record.date, series: $0.hr) }, now: now)
+    let weights = AssumedWeights.calibrated(inputs, maxHR: max.bpm, now: now)
     let valid = inputs.filter { $0.record.result.splitsLookValid }
     let skipped = inputs.filter { !$0.record.result.splitsLookValid }.map(\.record.id)
     for id in skipped { NSLog("TrainingLoad: skipped session %@, its splits look corrupt", id) }
     let sessions = valid.map { i in
       LoadSession(id: i.record.id, date: i.record.date, type: i.record.type,
-                  load: SessionLoad.of(i.record.result, hr: i.hr, maxHR: max.bpm, wallBallReps: wallBallReps(i.record)))
+                  load: SessionLoad.of(i.record.result, hr: i.hr, maxHR: max.bpm, wallBallReps: wallBallReps(i.record), weights: weights))
     }
-    return TrainingLoadSummary(sessions: sessions, maxHR: max, skippedSessionIds: skipped)
+    return TrainingLoadSummary(sessions: sessions, weights: weights, maxHR: max, skippedSessionIds: skipped)
   }
 }
 
@@ -272,8 +310,12 @@ public struct LoadPeriod: Equatable {
   /// Load from sessions that had no heart rate to speak of.
   public let assumedLoad: Double
   public let sessionsWithHeartRate: Int
+  /// Minutes that had a heart-rate sample behind them.
+  public let heartRateMinutes: Double
 
   public var loadRounded: Int { Int(load.rounded()) }
+  /// Share of the period's minutes with a heart-rate sample, 0...1.
+  public var heartRateShare: Double { minutes > 0 ? heartRateMinutes / minutes : 0 }
   public var hours: Double { minutes / 60 }
   /// More than half the load is an estimate from the plan.
   public var mostlyAssumed: Bool { load > 0 && assumedLoad * 2 > load }
@@ -290,7 +332,8 @@ public struct LoadPeriod: Equatable {
                       hardMinutes: list.reduce(0) { $0 + $1.load.hardMinutes }, simKm: list.reduce(0) { $0 + $1.load.simKm },
                       wallBallReps: list.reduce(0) { $0 + $1.load.wallBallReps }, stationMetres: list.reduce(0) { $0 + $1.load.stationMetres },
                       loadByType: byType, assumedLoad: list.filter { $0.load.basis == .assumed }.reduce(0) { $0 + $1.load.load },
-                      sessionsWithHeartRate: list.filter { $0.load.usedHeartRate }.count)
+                      sessionsWithHeartRate: list.filter { $0.load.usedHeartRate }.count,
+                      heartRateMinutes: list.reduce(0) { $0 + $1.load.minutes * $1.load.coverage })
   }
 }
 
@@ -386,6 +429,8 @@ public struct UsualPeriod: Equatable {
   public let wallBallReps: Double
   public let hardMinutes: Double
   public let minutes: Double
+  /// Mean share of minutes with heart rate across the counted periods.
+  public let heartRateShare: Double
 }
 
 public struct LoadCompare: Equatable {
@@ -421,7 +466,7 @@ public struct LoadCompare: Equatable {
     guard total >= 3, counted.filter({ $0.sessions > 0 }).count >= 2 else { return result(.firstWeeks) }
     func mean(_ f: (LoadPeriod) -> Double) -> Double { counted.reduce(0) { $0 + f($1) } / Double(counted.count) }
     let usual = UsualPeriod(load: mean { $0.load }, fullSims: mean { Double($0.fullSims) }, wallBallReps: mean { Double($0.wallBallReps) },
-                            hardMinutes: mean { $0.hardMinutes }, minutes: mean { $0.minutes })
+                            hardMinutes: mean { $0.hardMinutes }, minutes: mean { $0.minutes }, heartRateShare: mean { $0.heartRateShare })
     let ratio = cur.load / usual.load
     return result(.compared(LoadBand.of(ratio: ratio)), ratio: ratio, usual: usual)
   }
@@ -493,7 +538,8 @@ public enum LoadWords {
     if abs(reps - u.wallBallReps) >= 50, u.wallBallReps == 0 || abs(reps - u.wallBallReps) / u.wallBallReps >= 0.5 {
       return "\(number(cur.wallBallReps)) wall balls, usual \(number(Int(u.wallBallReps.rounded())))."
     }
-    if abs(cur.hardMinutes - u.hardMinutes) >= 10, u.hardMinutes == 0 || abs(cur.hardMinutes - u.hardMinutes) / u.hardMinutes >= 0.5 {
+    // Hard minutes are measured from heart rate only, so they are compared only when both sides mostly had it.
+    if cur.heartRateShare >= 0.5, u.heartRateShare >= 0.5, abs(cur.hardMinutes - u.hardMinutes) >= 10, u.hardMinutes == 0 || abs(cur.hardMinutes - u.hardMinutes) / u.hardMinutes >= 0.5 {
       return "\(Int(cur.hardMinutes.rounded())) hard minutes, usual \(Int(u.hardMinutes.rounded()))."
     }
     return "\(Int(cur.minutes.rounded())) work minutes, usual \(Int(u.minutes.rounded()))."
@@ -584,9 +630,9 @@ public extension TrainingLoad {
   private static func sampleLoad(_ kind: SampleKind, _ hr: SampleHeartRate) -> SessionLoad {
     let coverage: Double = hr == .full ? 1 : hr == .mixed ? 0.5 : 0
     switch kind {
-    case .full: return SessionLoad(load: 240, minutes: 60, hardMinutes: 28, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: coverage)
-    case .half: return SessionLoad(load: 120, minutes: 30, hardMinutes: 12, simKm: 4, wallBallReps: 0, stationMetres: 1_180, coverage: coverage)
-    case .focus: return SessionLoad(load: 100, minutes: 28, hardMinutes: 10, simKm: 3, wallBallReps: 150, stationMetres: 0, coverage: coverage)
+    case .full: return SessionLoad(load: 240, minutes: 60, hardMinutes: 28 * coverage, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: coverage)
+    case .half: return SessionLoad(load: 120, minutes: 30, hardMinutes: 12 * coverage, simKm: 4, wallBallReps: 0, stationMetres: 1_180, coverage: coverage)
+    case .focus: return SessionLoad(load: 100, minutes: 28, hardMinutes: 10 * coverage, simKm: 3, wallBallReps: 150, stationMetres: 0, coverage: coverage)
     }
   }
 

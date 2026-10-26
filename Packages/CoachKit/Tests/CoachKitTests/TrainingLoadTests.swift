@@ -86,16 +86,16 @@ final class TrainingLoadTests: XCTestCase {
   // MARK: session load
 
   func testHeartRateGapsFallBackToStepWeights() {
-    // 120 s of run 1. Heart rate covers 20 s at 100 bpm (zone 1); the other 100 s take the run weight 3.5.
+    // 120 s of run 1. Heart rate covers 20 s at 100 bpm (zone 1); the other 100 s take the run weight 4.0.
     let l = SessionLoad.of(shortRun(), hr: hr([(0, 100), (60_000, 100)]), maxHR: 185)
-    XCTAssertEqual(l.load, 20.0 / 60 * 1 + 100.0 / 60 * 3.5, accuracy: 0.001)
+    XCTAssertEqual(l.load, 20.0 / 60 * 1 + 100.0 / 60 * 4.0, accuracy: 0.001)
     XCTAssertEqual(l.coverage, 20.0 / 120, accuracy: 1e-9)
     XCTAssertEqual(l.basis, .assumed)
   }
 
   func testNoHeartRateUsesStepWeightsOnly() {
     let l = SessionLoad.of(shortRun(), hr: nil, maxHR: 185)
-    XCTAssertEqual(l.load, 2 * 3.5, accuracy: 0.001)
+    XCTAssertEqual(l.load, 2 * 4.0, accuracy: 0.001)
     XCTAssertEqual(l.minutes, 2, accuracy: 1e-9)
     XCTAssertEqual(l.basis, .assumed)
     XCTAssertFalse(l.usedHeartRate)
@@ -167,9 +167,63 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(mixed.basis, .mixed)
     XCTAssertEqual(none.basis, .assumed)
     XCTAssertEqual(withHr.minutes, 60, accuracy: 3)
-    XCTAssertGreaterThan(withHr.load, none.load)
-    XCTAssertTrue((150...320).contains(withHr.load), "\(withHr.load)")
-    XCTAssertTrue((150...320).contains(none.load), "\(none.load)")
+    XCTAssertTrue((200...320).contains(withHr.load), "\(withHr.load)")
+    // The same session with and without heart rate lands on one scale.
+    XCTAssertEqual(none.load, withHr.load, accuracy: withHr.load * 0.10)
+    XCTAssertEqual(mixed.load, withHr.load, accuracy: withHr.load * 0.10)
+  }
+
+  func testCalibratedWeightsTrackTheAthletesOwnHeartRate() {
+    // An athlete who runs the sim at 140 bpm (zone 3 of 190): their no-HR sessions should weigh about 3, not the default 4 to 4.5.
+    let now = Date(timeIntervalSince1970: 1_793_000_000)
+    func rec(_ id: String, daysAgo: Int64) -> SessionRecord {
+      let start = Int64(now.timeIntervalSince1970 * 1000) - daysAgo * 86_400_000
+      return SessionRecord(id: id, result: TrainingLoad.sampleResult(.fullSim, startEpochMs: start))
+    }
+    func easyHr(_ r: CoachResult) -> HeartRateSeries {
+      // Easy through the session, then a short all-out burst after it so the sessions set a max of 190.
+      let easy = stride(from: r.startedAtEpochMs, to: r.endedAtEpochMs, by: 5_000).map { HeartRateSample(epochMs: $0, bpm: 140) }
+      let burst = stride(from: r.endedAtEpochMs, to: r.endedAtEpochMs + 60_000, by: 5_000).map { HeartRateSample(epochMs: $0, bpm: 190) }
+      return HeartRateSeries(samples: easy + burst)
+    }
+    let a = rec("a", daysAgo: 3), b = rec("b", daysAgo: 6), c = rec("c", daysAgo: 9), d = rec("d", daysAgo: 12)
+    let inputs = [a, b, c].map { LoadInput(record: $0, hr: easyHr($0.result)) } + [LoadInput(record: d, hr: nil)]
+    let sum = TrainingLoad.summarise(inputs, now: now)
+    XCTAssertEqual(sum.weights.weight(.run), 3, accuracy: 0.001)
+    XCTAssertEqual(sum.weights.weight(.skierg), 3, accuracy: 0.001)
+    let withHr = sum.sessions.first { $0.id == "a" }!.load.load
+    let none = sum.sessions.first { $0.id == "d" }!.load.load
+    XCTAssertEqual(none, withHr, accuracy: withHr * 0.10)
+    // With too little heart rate the defaults stay.
+    let few = TrainingLoad.summarise([LoadInput(record: d, hr: nil)], now: now)
+    XCTAssertEqual(few.weights, AssumedWeights.defaults)
+  }
+
+  func testHardMinutesComeFromHeartRateOnly() {
+    let r = TrainingLoad.sampleResult(.fullSim)
+    XCTAssertEqual(SessionLoad.of(r, hr: nil, maxHR: 185).hardMinutes, 0)
+    let withHr = SessionLoad.of(r, hr: TrainingLoad.sampleHeartRate(for: r, .full), maxHR: 185)
+    XCTAssertGreaterThan(withHr.hardMinutes, 50)
+    let mixed = SessionLoad.of(r, hr: TrainingLoad.sampleHeartRate(for: r, .mixed), maxHR: 185)
+    XCTAssertLessThan(mixed.hardMinutes, withHr.hardMinutes * 0.7)
+  }
+
+  func testHardMinutesRuleNeedsHeartRateOnBothSides() {
+    // The usual scenario has the same hard minutes each week, so build a +50% hard-minutes week by hand.
+    let d = TrainingLoad.sample(.usual)
+    let mon = d.weekStart
+    func s(_ id: String, _ date: Date, hard: Double, coverage: Double) -> LoadSession {
+      LoadSession(id: id, date: date, type: .halfSim,
+                  load: SessionLoad(load: 100, minutes: 30, hardMinutes: hard, simKm: 4, wallBallReps: 0, stationMetres: 1_180, coverage: coverage))
+    }
+    func week(_ k: Int, hard: Double, coverage: Double) -> [LoadSession] {
+      [0, 2].map { s("w\(k)-\($0)", cal.date(byAdding: .day, value: k * 7 + $0 + 1, to: mon)!, hard: hard, coverage: coverage) }
+    }
+    let prior = (-4 ... -1).flatMap { week($0, hard: 10, coverage: 1) }
+    let covered = LoadCompare.compare(prior + week(0, hard: 30, coverage: 1), periodStart: mon, calendar: cal)
+    XCTAssertEqual(LoadWords.whatChanged(covered), "60 hard minutes, usual 20.")
+    let blind = LoadCompare.compare(prior + week(0, hard: 0, coverage: 0), periodStart: mon, calendar: cal)
+    XCTAssertEqual(LoadWords.whatChanged(blind), "60 work minutes, usual 60.")
   }
 
   // MARK: max heart rate
