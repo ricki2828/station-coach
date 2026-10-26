@@ -321,6 +321,9 @@ final class CoachController: ObservableObject {
       ? "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
       : (d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target")
     let missing = m.plan.stationCount - result.completedStationCount
+    // The cooldown is not the last station: label it rest until the files close (undo re-labels the step).
+    recorder.tap(.rest, haptic: false)
+    lastLabel = .rest
     finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early)
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,

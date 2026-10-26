@@ -17,7 +17,7 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 ## Coached sessions
 A session started from the coach (plan from the phone) is the same folder plus `coach.json`, written at the end by the watch:
 `plan` (division, session type, race target, `steps` with per-step targets and wall-ball set structure, `transitionSeconds`), `splits` (`stepIndex`, `startMs`, `endMs`; a step never started has no split, a step not finished has no `endMs`), `early`, `repTimesMs` (heuristic wall-ball rep times, epoch ms), `repCorrection` (net manual +/-), `startedAtEpochMs`, `endedAtEpochMs`.
-In a coached session the cue timer is off, so `manifest.cueIntervalSec` is `0` and the report does not expect periodic cues; cues come from the coach and are logged in `cues.csv` as before. Coach phase changes write `labels.csv` automatically: `run`, `transition` (the first `transitionSeconds` of a run that follows a station) and the station activities.
+In a coached session the cue timer is off, so `manifest.cueIntervalSec` is `0` and the report does not expect periodic cues; cues come from the coach and are logged in `cues.csv` as before. Coach phase changes write `labels.csv` automatically (and `rest` once the session is finished, until the files close): `run`, `transition` (the first `transitionSeconds` of a run that follows a station) and the station activities.
 The wall-ball rep count is a beta heuristic (peaks in wrist acceleration magnitude) and counts down on the watch; the athlete corrects it with +/-.
 
 ## Labels
