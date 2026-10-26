@@ -183,10 +183,31 @@ final class CoachHistoryTests: XCTestCase {
     XCTAssertEqual(MomentPicker.pick(previous: [a], new: h), .first(.halfSim))
   }
 
-  func testPartialSessionsOnlyGetFirst() {
+  func testPartialSessionsGetNoMoment() {
     let a = record("a", .fullSim, day: 0, fade: 30, total: 10)
     let partial = record("p", .fullSim, day: 7, fade: 5, until: 11)
     XCTAssertNil(MomentPicker.pick(previous: [a], new: partial))
-    XCTAssertEqual(MomentPicker.pick(previous: [], new: partial), .first(.fullSim))
+    XCTAssertNil(MomentPicker.pick(previous: [], new: partial))
+  }
+
+  func testFirstFiresOnceNotAgainAfterAPartial() {
+    let partial = record("p", .fullSim, day: 0, fade: 5, until: 11)
+    let complete = record("c", .fullSim, day: 7, fade: 30)
+    // The partial earned nothing, so the first complete full sim is still the first.
+    XCTAssertEqual(MomentPicker.pick(previous: [partial], new: complete), .first(.fullSim))
+    let second = record("d", .fullSim, day: 14, fade: 29, total: 40)
+    XCTAssertNil(MomentPicker.pick(previous: [partial, complete], new: second))
+  }
+
+  func testLeastFadeNeedsTheFullMargin() {
+    let a = record("a", .fullSim, day: 0, fade: 30, total: 10)
+    XCTAssertEqual(MomentPicker.pick(previous: [a], new: record("b", .fullSim, day: 7, fade: 27, total: 20)), .leastFade(previous: 30))
+    XCTAssertNil(MomentPicker.pick(previous: [a], new: record("c", .fullSim, day: 7, fade: 28, total: 20)))
+  }
+
+  func testBackfilledSessionIsNotJudgedAgainstTheFuture() {
+    let newer = record("n", .fullSim, day: 10, fade: 5)
+    let old = record("o", .fullSim, day: 0, fade: 30)
+    XCTAssertEqual(MomentPicker.pick(previous: [newer], new: old), .first(.fullSim))
   }
 }

@@ -243,26 +243,22 @@ public struct HomeModel: Equatable {
 public enum MomentPicker {
   public static let leastFadeMargin = 3
 
-  /// 1. `.best`: complete, an earlier complete session of the same type, faster total than all of them.
-  /// 2. `.leastFade`: complete, an earlier complete fade, and this fade is at least 3 s below all of them.
-  /// 3. `.first`: first session of its type (a partial counts only against earlier sessions of any completeness;
-  ///    a complete one only against earlier complete ones).
-  /// Partial sessions only ever get `.first`.
+  /// Complete sessions only: a partial never earns a moment, so "your first full sim" fires once, on the first complete one.
+  /// Only sessions that started before `new` count, so a backfilled old session is not judged against the future.
+  /// 1. `.best`: an earlier complete session of the same type, and a faster total than all of them.
+  /// 2. `.leastFade`: an earlier complete fade of the same type, and this fade at least 3 s below all of them.
+  /// 3. `.first`: the first complete session of its type.
   public static func pick(previous: [SessionRecord], new: SessionRecord) -> Moment? {
-    let earlier = previous.filter { $0.id != new.id }
-    let sameType = earlier.filter { $0.type == new.type }
-    if new.isComplete {
-      let completeSame = sameType.filter(\.isComplete)
-      if let best = completeSame.map({ $0.result.totalSeconds }).min(), new.result.totalSeconds < best {
-        return .best(new.type, previousBest: best)
-      }
-      if let fade = new.fade {
-        // Same type only: fade is not comparable between full, half and wall-ball focus sessions.
-        let fades = completeSame.compactMap(\.fade)
-        if let low = fades.min(), fade <= low - leastFadeMargin { return .leastFade(previous: low) }
-      }
-      return completeSame.isEmpty ? .first(new.type) : nil
+    guard new.isComplete else { return nil }
+    let earlier = previous.filter { $0.id != new.id && $0.result.startedAtEpochMs < new.result.startedAtEpochMs }
+    let completeSame = earlier.filter { $0.type == new.type && $0.isComplete }
+    if let best = completeSame.map({ $0.result.totalSeconds }).min(), new.result.totalSeconds < best {
+      return .best(new.type, previousBest: best)
     }
-    return sameType.isEmpty ? .first(new.type) : nil
+    // Same type only: fade is not comparable between full, half and wall-ball focus sessions.
+    if let fade = new.fade, let low = completeSame.compactMap(\.fade).min(), fade <= low - leastFadeMargin {
+      return .leastFade(previous: low)
+    }
+    return completeSame.isEmpty ? .first(new.type) : nil
   }
 }
