@@ -387,8 +387,8 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.stepUp).compare), "600 load, 25% more than your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.bigJump).compare), "960 load, about double your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.lighter).compare), "240 load, 50% less than your usual week (480).")
-    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.firstWeeks).compare), "360 load. Your usual week takes shape after 3 sessions.")
-    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.returning).compare), "240 load. Back after a break. We compare once you have two weeks back.")
+    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.firstWeeks).compare), "360 load. Your usual week takes shape after 3 sessions across 2 weeks.")
+    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.returning).compare), "240 load. Back after a break. Your usual comes back after 3 sessions across 2 weeks.")
   }
 
   func testBandWordsAndWhatChanged() {
@@ -404,12 +404,18 @@ final class TrainingLoadTests: XCTestCase {
   func testSuggestions() {
     let line = "Time for a full sim. It's the real test of the fade."
     func s(_ k: LoadSample) -> String? { LoadWords.suggestion(TrainingLoad.sample(k).compare, usualLine: line) }
-    XCTAssertEqual(s(.bigJump), "Big week: about double your usual. A lighter week around 530 would balance it, for instance a half sim instead of a full one.")
+    XCTAssertEqual(s(.bigJump), "Next week near 530, just above your usual, would balance it, for instance a half sim in place of a full one.")
     XCTAssertEqual(s(.stepUp), "A good step up. Holding here a week would let it settle.")
     XCTAssertEqual(s(.usual), line)
     XCTAssertEqual(s(.lighter), "A lighter week. About 480 next week would be back to your usual.")
-    XCTAssertEqual(s(.firstWeeks), "Three sessions in and this compares you with your own usual.")
+    XCTAssertNil(s(.firstWeeks))
     XCTAssertNil(s(.returning))
+  }
+
+  func testCardNoteOnlyWithoutComparison() {
+    XCTAssertEqual(LoadWords.cardNote(TrainingLoad.sample(.firstWeeks).compare), "Your usual week takes shape after 3 sessions across 2 weeks.")
+    XCTAssertEqual(LoadWords.cardNote(TrainingLoad.sample(.returning).compare), "Back after a break. Your usual comes back after 3 sessions across 2 weeks.")
+    XCTAssertNil(LoadWords.cardNote(TrainingLoad.sample(.usual).compare))
   }
 
   func testFootnoteAndHeartRateLine() {
@@ -436,7 +442,7 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(n(.stepUp)?.body, "600 load, 25% more than your usual week. Tap for what changed.")
     XCTAssertEqual(n(.bigJump)?.body, "960 load, about double your usual week. Tap for what changed.")
     XCTAssertEqual(n(.lighter)?.body, "240 load, 50% less than your usual week. Tap for what changed.")
-    XCTAssertEqual(n(.returning)?.body, "240 load. Back after a break. We compare once you have two weeks back. Tap for what changed.")
+    XCTAssertEqual(n(.returning)?.body, "240 load. Back after a break. Your usual comes back after 3 sessions across 2 weeks. Tap for what changed.")
     XCTAssertEqual(n(.usual, unsent: true)?.body, "480 load, about your usual week. Tap for what changed. (sync your watch for the full week)")
   }
 
@@ -544,11 +550,11 @@ final class TrainingLoadTests: XCTestCase {
     let first = (0..<3).map { load(200, at: month(9, 3 + $0)) } + [load(200, at: month(10, 4))]
     let f = LoadCompare.compare(first, periodStart: oct(), unit: .month, calendar: cal)
     XCTAssertEqual(f.state, .firstWeeks)
-    XCTAssertEqual(LoadWords.headline(f), "200 load. Your usual month takes shape after 3 sessions.")
+    XCTAssertEqual(LoadWords.headline(f), "200 load. Your usual month takes shape after 3 sessions across 2 months.")
     let back = [load(200, at: month(5, 3)), load(200, at: month(6, 3)), load(200, at: month(10, 4))]
     let r = LoadCompare.compare(back, periodStart: oct(), unit: .month, calendar: cal)
     XCTAssertEqual(r.state, .returning)
-    XCTAssertEqual(LoadWords.headline(r), "200 load. Back after a break. We compare once you have two months back.")
+    XCTAssertEqual(LoadWords.headline(r), "200 load. Back after a break. Your usual comes back after 3 sessions across 2 months.")
   }
 
   func testLateStartingFirstMonthDoesNotDragUsualDown() {
@@ -594,7 +600,7 @@ final class TrainingLoadTests: XCTestCase {
     let s = [load(200, at: at(-10)), load(200, at: at(-9)), load(200, at: at(-3)), load(200, at: at(-1)), load(200, at: at(0))]
     let c = LoadCompare.compare(s, periodStart: at(0), calendar: cal)
     XCTAssertEqual(c.state, .returning)
-    XCTAssertEqual(LoadWords.headline(c), "200 load. Back after a break. We compare once you have two weeks back.")
+    XCTAssertEqual(LoadWords.headline(c), "200 load. Back after a break. Your usual comes back after 3 sessions across 2 weeks.")
     // A genuinely new athlete still gets the first-weeks line.
     let fresh = [load(200, at: at(-1)), load(200, at: at(0))]
     XCTAssertEqual(LoadCompare.compare(fresh, periodStart: at(0), calendar: cal).state, .firstWeeks)

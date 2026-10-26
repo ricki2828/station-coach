@@ -561,8 +561,8 @@ public enum LoadWords {
     let load = number(c.current.loadRounded)
     switch c.state {
     case .noSessions: return "No sessions this \(c.unit.word)."
-    case .firstWeeks: return "\(load) load. Your usual \(c.unit.word) takes shape after 3 sessions."
-    case .returning: return "\(load) load. Back after a break. We compare once you have two \(c.unit.word)s back."
+    case .firstWeeks: return "\(load) load. Your usual \(c.unit.word) takes shape after 3 sessions across 2 \(c.unit.word)s."
+    case .returning: return "\(load) load. Back after a break. Your usual comes back after 3 sessions across 2 \(c.unit.word)s."
     case .compared:
       let usual = includeUsual ? c.usualRounded.map { " (\(number($0)))" } ?? "" : ""
       return "\(load) load, \(phrase(c) ?? "")\(usual)."
@@ -591,19 +591,26 @@ public enum LoadWords {
   /// One suggestion. `usualLine` is the coach's own line (`Recommendation.pick(...).line`) for a usual week.
   public static func suggestion(_ c: LoadCompare, usualLine: String) -> String? {
     switch c.state {
-    case .noSessions, .returning: return nil
-    case .firstWeeks: return "Three sessions in and this compares you with your own usual."
+    case .noSessions, .returning, .firstWeeks: return nil
     case .compared(let band):
       let usual = c.usual?.load ?? 0
       switch band {
       case .bigJump:
         let cap = int(usual * 1.1 / 10) * 10
-        let size = c.isDouble ? "about double your usual" : "\(c.percent ?? 0)% more than your usual"
-        return "Big week: \(size). A lighter week around \(number(cap)) would balance it, for instance a half sim instead of a full one."
+        return "Next week near \(number(cap)), just above your usual, would balance it, for instance a half sim in place of a full one."
       case .stepUp: return "A good step up. Holding here a week would let it settle."
       case .usual: return usualLine
       case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
       }
+    }
+  }
+
+  /// The one-line note on the Home card while there is no comparison; nil once there is.
+  public static func cardNote(_ c: LoadCompare) -> String? {
+    switch c.state {
+    case .firstWeeks: return "Your usual \(c.unit.word) takes shape after 3 sessions across 2 \(c.unit.word)s."
+    case .returning: return "Back after a break. Your usual comes back after 3 sessions across 2 \(c.unit.word)s."
+    case .noSessions, .compared: return nil
     }
   }
 
