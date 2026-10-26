@@ -114,7 +114,7 @@ public final class AppendWriter {
   private var handle: FileHandle?
   private var buffer = Data()
   private var errorCount = 0
-  private let autoFlushBytes = 32 * 1024
+  private let autoFlushBytes = 256 * 1024
 
   public init(url: URL, header: String) throws {
     self.url = url
@@ -131,6 +131,15 @@ public final class AppendWriter {
   public func append(_ line: String) {
     queue.async {
       self.buffer.append(Data((line + "\n").utf8))
+      if self.buffer.count >= self.autoFlushBytes { self.writeOut() }
+    }
+  }
+
+  public func append(lines: [String]) {
+    guard !lines.isEmpty else { return }
+    let data = Data((lines.joined(separator: "\n") + "\n").utf8)
+    queue.async {
+      self.buffer.append(data)
       if self.buffer.count >= self.autoFlushBytes { self.writeOut() }
     }
   }
@@ -177,6 +186,9 @@ public final class SessionWriter {
   }
 
   public func append(_ stream: SessionStream, _ line: String) { writers[stream]?.append(line) }
+
+  /// One queue hop for a whole batch of lines (motion arrives in batches).
+  public func append(_ stream: SessionStream, lines: [String]) { writers[stream]?.append(lines: lines) }
 
   public func flushAll() { writers.values.forEach { $0.flush() } }
 

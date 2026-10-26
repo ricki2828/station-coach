@@ -10,6 +10,9 @@ struct HomeView: View {
         Button("Start session") { Task { await recorder.start() } }
           .tint(.green)
         Stepper("Cue every \(recorder.cueInterval)s", value: $recorder.cueInterval, in: 10...300, step: 5)
+        Picker("Store motion", selection: $recorder.storeHz) {
+          ForEach([25, 50, 100, 200], id: \.self) { Text("\($0) Hz").tag($0) }
+        }
         NavigationLink("Sessions") { SessionsView() }
         if let m = recorder.statusMessage {
           Text(m).font(.footnote).foregroundStyle(.secondary)

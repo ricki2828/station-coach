@@ -7,7 +7,6 @@ import Foundation
 /// `CMBatchedSensorManager` (watchOS 10, needs a running workout session) when supported; otherwise
 /// `CMMotionManager` asked for 100 Hz.
 final class MotionRecorder {
-  static let storeHz = 100.0
   static let legacyHz = 100.0
 
   static var batchedSupported: Bool {
@@ -30,11 +29,15 @@ final class MotionRecorder {
 
   private var accelRaw = RateMeter(), accelStored = RateMeter()
   private var motionRaw = RateMeter(), motionStored = RateMeter()
-  private var accelDec = Decimator(targetHz: MotionRecorder.storeHz)
-  private var motionDec = Decimator(targetHz: MotionRecorder.storeHz)
+  private var accelDec: Decimator
+  private var motionDec: Decimator
+  let storeHz: Double
   private var lastRawHz: Double?
 
-  init() {
+  init(storeHz: Double) {
+    self.storeHz = storeHz
+    accelDec = Decimator(targetHz: storeHz)
+    motionDec = Decimator(targetHz: storeHz)
     api = Self.batchedSupported ? "CMBatchedSensorManager" : "CMMotionManager"
   }
 
@@ -83,7 +86,7 @@ final class MotionRecorder {
   private func runBatchedAccel() async {
     do {
       for try await batch in batched.accelerometerUpdates() {
-        for d in batch { accel(t: d.timestamp, x: d.acceleration.x, y: d.acceleration.y, z: d.acceleration.z) }
+        accel(batch: batch.map { ($0.timestamp, $0.acceleration.x, $0.acceleration.y, $0.acceleration.z) })
       }
     } catch {
       onEvent?("accel_stream_error", "\(error)")
@@ -94,7 +97,7 @@ final class MotionRecorder {
   private func runBatchedMotion() async {
     do {
       for try await batch in batched.deviceMotionUpdates() {
-        for d in batch { motion(d) }
+        motion(batch: batch)
       }
     } catch {
       onEvent?("motion_stream_error", "\(error)")
@@ -126,7 +129,7 @@ final class MotionRecorder {
       q.maxConcurrentOperationCount = 1
       legacy.startAccelerometerUpdates(to: q) { [weak self] data, _ in
         guard let d = data else { return }
-        self?.accel(t: d.timestamp, x: d.acceleration.x, y: d.acceleration.y, z: d.acceleration.z)
+        self?.accel(batch: [(d.timestamp, d.acceleration.x, d.acceleration.y, d.acceleration.z)])
       }
     }
     if legacy.isDeviceMotionAvailable {
@@ -134,32 +137,39 @@ final class MotionRecorder {
       q.maxConcurrentOperationCount = 1
       legacy.startDeviceMotionUpdates(to: q) { [weak self] data, _ in
         guard let d = data else { return }
-        self?.motion(d)
+        self?.motion(batch: [d])
       }
     }
   }
 
   // MARK: Samples
 
-  private func accel(t: Double, x: Double, y: Double, z: Double) {
+  private func accel(batch: [(Double, Double, Double, Double)]) {
     lock.lock(); defer { lock.unlock() }
-    accelRaw.add(t)
-    guard accelDec.keep(t) else { return }
-    accelStored.add(t)
-    writer?.append(.accel, Lines.accel(epochUs: epochUs(t), x: x, y: y, z: z))
+    var lines: [String] = []
+    for (t, x, y, z) in batch {
+      accelRaw.add(t)
+      guard accelDec.keep(t) else { continue }
+      accelStored.add(t)
+      lines.append(Lines.accel(epochUs: epochUs(t), x: x, y: y, z: z))
+    }
+    writer?.append(.accel, lines: lines)
   }
 
-  private func motion(_ d: CMDeviceMotion) {
+  private func motion(batch: [CMDeviceMotion]) {
     lock.lock(); defer { lock.unlock() }
-    motionRaw.add(d.timestamp)
-    guard motionDec.keep(d.timestamp) else { return }
-    motionStored.add(d.timestamp)
-    let line = Lines.motion(
-      epochUs: epochUs(d.timestamp),
-      ua: (d.userAcceleration.x, d.userAcceleration.y, d.userAcceleration.z),
-      rr: (d.rotationRate.x, d.rotationRate.y, d.rotationRate.z),
-      g: (d.gravity.x, d.gravity.y, d.gravity.z))
-    writer?.append(.motion, line)
+    var lines: [String] = []
+    for d in batch {
+      motionRaw.add(d.timestamp)
+      guard motionDec.keep(d.timestamp) else { continue }
+      motionStored.add(d.timestamp)
+      lines.append(Lines.motion(
+        epochUs: epochUs(d.timestamp),
+        ua: (d.userAcceleration.x, d.userAcceleration.y, d.userAcceleration.z),
+        rr: (d.rotationRate.x, d.rotationRate.y, d.rotationRate.z),
+        g: (d.gravity.x, d.gravity.y, d.gravity.z)))
+    }
+    writer?.append(.motion, lines: lines)
   }
 
   private func epochUs(_ bootSeconds: Double) -> Int64 { Int64((bootSeconds + bootOffset) * 1_000_000) }

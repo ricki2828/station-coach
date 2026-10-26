@@ -17,6 +17,9 @@ final class RecorderController: ObservableObject {
   @Published var motionApi = "-"
   @Published var rawHz: Int?
   @Published var statusMessage: String?
+  @Published var storeHz: Int {
+    didSet { UserDefaults.standard.set(storeHz, forKey: "storeHz") }
+  }
   @Published var cueInterval: Int {
     didSet { UserDefaults.standard.set(cueInterval, forKey: "cueInterval") }
   }
@@ -31,6 +34,8 @@ final class RecorderController: ObservableObject {
   init() {
     let saved = UserDefaults.standard.integer(forKey: "cueInterval")
     cueInterval = saved > 0 ? saved : 45
+    let hz = UserDefaults.standard.integer(forKey: "storeHz")
+    storeHz = hz > 0 ? hz : 100
   }
 
   func start() async {
@@ -42,7 +47,7 @@ final class RecorderController: ObservableObject {
       let device = WKInterfaceDevice.current()
       device.isBatteryMonitoringEnabled = true
 
-      let motion = MotionRecorder()
+      let motion = MotionRecorder(storeHz: Double(storeHz))
       let started = Date()
       let manifest = SessionManifest(
         sessionId: SessionFiles.makeSessionId(date: started),
@@ -53,7 +58,7 @@ final class RecorderController: ObservableObject {
         workoutActivityType: "crossTraining",
         motionApi: motion.api,
         requestedHz: motion.requestedHz,
-        storeHz: MotionRecorder.storeHz,
+        storeHz: motion.storeHz,
         cueIntervalSec: cueInterval)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
       self.writer = writer

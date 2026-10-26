@@ -77,6 +77,16 @@ final class SessionWriterTests: XCTestCase {
     XCTAssertEqual(a.writeErrors, 0)
   }
 
+  func testBatchAppendKeepsOrder() throws {
+    let url = root.appendingPathComponent("b.csv")
+    let a = try AppendWriter(url: url, header: "h")
+    a.append(lines: ["1", "2"])
+    a.append(lines: [])
+    a.append("3")
+    a.close()
+    XCTAssertEqual(try text(url), "h\n1\n2\n3\n")
+  }
+
   func testSummariesListSessions() throws {
     let w = try SessionWriter(root: root, manifest: manifest("s4"))
     try w.finish(endedAtEpochMs: 2_000)

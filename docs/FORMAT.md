@@ -29,3 +29,19 @@ A cue counts as delivered only if it was `speech` to headphones, `finished`, and
 
 ## Transfer
 The watch sends each file with `WCSession.transferFile`, metadata `{session, name, bytes, total}`. The phone moves it to `Documents/Sessions/<session>/`, and when `total` files have arrived at the announced sizes it sends `{ack: <session>}` back with `transferUserInfo`. The watch keeps a session until it has seen that ack and the athlete chooses "Delete sent".
+
+## Expected motion rates (Apple Watch Series 12, unverified until a device run)
+Ray's watch is a Series 12 (GPS + Cellular). Minimum OS is watchOS 10, the first release with `CMBatchedSensorManager`; nothing lower works for the main path.
+
+| Path | Accelerometer | Device motion | Notes |
+|---|---|---|---|
+| `CMBatchedSensorManager` (main) | up to 800 Hz raw | up to 200 Hz raw | Apple documents these rates for recent watches; needs a running workout session. Expected on Series 12, not yet confirmed. |
+| `CMMotionManager` (fallback) | asked for 100 Hz | asked for 100 Hz | Used if batched is unsupported or its stream errors. The achieved rate may be lower; it is logged in `rates.csv`. |
+
+Stored rate is the raw rate decimated to at most `storeHz`, settable on the watch home screen (25, 50, 100 or 200 Hz; default 100). Device motion cannot store above its raw rate, so 200 only helps if the sensor delivers it. The 50 Hz pass mark needs `storeHz` >= 50.
+
+## Battery-conscious choices
+- Samples are decimated, then written in per-batch groups to a 256 KB in-memory buffer; the file is fsynced once a minute (and the buffer drained when it fills), not per sample.
+- No network. No GPS (indoor workout). The elapsed clock drops seconds when the display is dimmed.
+- Cue interval (default 45 s) and motion store rate are settable.
+- Battery is logged every 60 s.

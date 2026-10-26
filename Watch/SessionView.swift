@@ -4,6 +4,7 @@ import SwiftUI
 struct SessionView: View {
   @EnvironmentObject var recorder: RecorderController
   @State private var confirmStop = false
+  @Environment(\.isLuminanceReduced) private var dimmed
 
   private let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
 
@@ -40,7 +41,7 @@ struct SessionView: View {
         .minimumScaleFactor(0.6)
         .lineLimit(1)
       TimelineView(.periodic(from: .now, by: 1)) { ctx in
-        Text(Self.clock(ctx.date.timeIntervalSince(recorder.startedAt)))
+        Text(Self.clock(ctx.date.timeIntervalSince(recorder.startedAt), seconds: !dimmed))
           .font(.system(.footnote, design: .monospaced))
           .foregroundStyle(.secondary)
       }
@@ -62,8 +63,9 @@ struct SessionView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  static func clock(_ seconds: TimeInterval) -> String {
+  static func clock(_ seconds: TimeInterval, seconds showSeconds: Bool = true) -> String {
     let s = max(0, Int(seconds))
+    if !showSeconds { return String(format: "%d:%02d", s / 3600, (s / 60) % 60) }
     return String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
   }
 }
