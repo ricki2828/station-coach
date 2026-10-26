@@ -52,7 +52,6 @@ struct CoachRunningHost: View {
         ProgressView()
       }
     }
-    .ignoresSafeArea()
     .onLongPressGesture(minimumDuration: 0.8) { coach.showMenu = true }
     .sheet(isPresented: $coach.showMenu) {
       CoachMenuScreen(onUndo: { coach.undo() }, onEnd: { coach.endEarly() }, onCancel: { coach.showMenu = false })

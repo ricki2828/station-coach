@@ -211,7 +211,7 @@ public struct CoachStepScreen: View {
     }
     .padding(.horizontal, Theme.Space.watchEdge)
     .padding(.top, 2)
-    .padding(.bottom, 6)
+    .padding(.bottom, 8)
     .background(Theme.background(model.activity).ignoresSafeArea())
     .overlay(alignment: .bottom) {
       if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
@@ -255,7 +255,7 @@ public struct CoachReadyScreen: View {
 
   public var body: some View {
     ZStack {
-      Theme.ink
+      Theme.ink.ignoresSafeArea()
       VStack(spacing: 6) {
         switch model {
         case .loading:
@@ -276,22 +276,22 @@ public struct CoachReadyScreen: View {
             Text(info.sessionName.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
             Spacer(minLength: 0)
           }
-          Text(info.targetText).font(Theme.number(tight ? Theme.Size.floor + 4 : Theme.Size.dominant)).condensed().lineLimit(1).minimumScaleFactor(0.5)
+          Text(info.targetText).font(Theme.number(tight ? Theme.Size.floor : Theme.Size.dominant)).condensed().lineLimit(1).minimumScaleFactor(0.5)
             .accessibilityLabel("Target \(info.targetText)")
           ForEach(info.chips, id: \.self) { chip in
-            Text(chip).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+            Text(chip).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center)
               .fixedSize(horizontal: false, vertical: true)
               .padding(.horizontal, 8).padding(.vertical, 1)
               .background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
           }
           if let b = info.batteryLine {
-            Text(b).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.amber).multilineTextAlignment(.center)
+            Text(b).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.amber).multilineTextAlignment(.center)
               .fixedSize(horizontal: false, vertical: true)
           }
           Spacer(minLength: 0)
           Button(action: onStart) {
             Text("START").font(.system(size: 22, weight: .heavy)).foregroundStyle(Theme.ink)
-              .frame(maxWidth: .infinity, minHeight: tight ? 48 : 56)
+              .frame(maxWidth: .infinity, minHeight: tight ? 44 : 56)
               .background(Theme.finishFlood, in: RoundedRectangle(cornerRadius: 14))
           }.buttonStyle(.plain)
         }
@@ -323,7 +323,7 @@ public struct CoachFinishScreen: View {
 
   public var body: some View {
     ZStack {
-      (model.early ? Theme.earlyFlood : Theme.finishFlood)
+      (model.early ? Theme.earlyFlood : Theme.finishFlood).ignoresSafeArea()
       VStack(spacing: 4) {
         switch model.mode {
         case .saving:
@@ -375,7 +375,7 @@ public struct CoachMenuScreen: View {
 
   public var body: some View {
     ZStack {
-      Theme.ink
+      Theme.ink.ignoresSafeArea()
       VStack(spacing: 8) {
         row("Undo last step", fill: Theme.bone, text: Theme.ink, action: onUndo)
         row("End session", fill: Theme.amber, text: Theme.ink, action: onEnd)

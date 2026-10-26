@@ -37,7 +37,7 @@ public struct CatalogEntry {
 @MainActor
 public enum ScreenCatalog {
   private static func watch(_ name: String, _ view: some View) -> CatalogEntry {
-    CatalogEntry(name: "watch-\(name)", size: Theme.watch46, view: AnyView(view))
+    CatalogEntry(name: "watch-\(name)", size: Theme.watch46, view: AnyView(WatchChrome { view }))
   }
 
   private static func phone(_ name: String, _ view: some View) -> CatalogEntry {

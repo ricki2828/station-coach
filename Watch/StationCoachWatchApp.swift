@@ -29,7 +29,6 @@ struct RootView: View {
   var body: some View {
     if let finish = coach.finish {
       CoachFinishScreen(model: finish, onDone: { coach.dismissFinish() })
-        .ignoresSafeArea()
     } else {
       switch recorder.phase {
       case .idle: IdleHost()
