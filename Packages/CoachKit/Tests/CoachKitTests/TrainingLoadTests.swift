@@ -104,6 +104,21 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(whole.stationMetres, 2_480)
   }
 
+  func testCorruptSplitsAreNotRebased() {
+    var r = TrainingLoad.sampleResult(.fullSim)
+    XCTAssertTrue(r.splitsLookValid)
+    r.splits = r.splits.map { StepSplit(stepIndex: $0.stepIndex, startMs: $0.startMs - r.startedAtEpochMs, endMs: $0.endMs.map { $0 - r.startedAtEpochMs }) }
+    XCTAssertFalse(r.splitsLookValid)
+    let l = SessionLoad.of(r, hr: nil, maxHR: 185)
+    XCTAssertEqual(l.load, l.minutes * SessionLoad.genericWeight, accuracy: 0.001)
+    XCTAssertEqual(l.simKm, 0)
+    let rec = SessionRecord(id: "bad", result: r)
+    let good = SessionRecord(id: "good", result: TrainingLoad.sampleResult(.fullSim))
+    let sum = TrainingLoad.summarise([LoadInput(record: rec, hr: nil), LoadInput(record: good, hr: nil)], now: Date(timeIntervalSince1970: 1_793_000_000))
+    XCTAssertEqual(sum.skippedSessionIds, ["bad"])
+    XCTAssertEqual(sum.sessions.map(\.id), ["good"])
+  }
+
   func testWallBallRepsComeFromTheCaller() {
     let r = TrainingLoad.sampleResult(.wallBallFocus)
     XCTAssertEqual(SessionLoad.of(r, hr: nil, maxHR: 185, wallBallReps: 77).wallBallReps, 77)

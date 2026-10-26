@@ -12,6 +12,19 @@ public enum LoadBasis: String, Equatable {
   case assumed
 }
 
+extension CoachResult {
+  /// Splits as the watch writes them: epoch ms, the first starting within 5 s of the session start and every one inside the session.
+  /// No splits at all is valid (nothing to read). Anything else is corrupt data, not a different clock.
+  public var splitsLookValid: Bool {
+    let slack: Int64 = 5_000
+    guard let first = splits.map(\.startMs).min() else { return true }
+    guard abs(first - startedAtEpochMs) <= slack else { return false }
+    return splits.allSatisfy { sp in
+      sp.startMs >= startedAtEpochMs - slack && (sp.endMs ?? sp.startMs) <= endedAtEpochMs + slack && (sp.endMs ?? sp.startMs) >= sp.startMs
+    }
+  }
+}
+
 /// One session's load and the volume it carried.
 public struct SessionLoad: Equatable {
   /// Work minutes x weight (zone 1...5 where heart rate covers, the step's assumed weight where it does not).
@@ -54,6 +67,8 @@ public struct SessionLoad: Equatable {
     }
   }
   public static let afterLastSplitWeight = 2.0
+  /// Whole-session weight when the splits cannot be trusted.
+  public static let genericWeight = 3.5
   public static let transitionWeight = 3.0
 
   /// Fixed metres a completed station covers.
@@ -75,8 +90,8 @@ public struct SessionLoad: Equatable {
   static func segments(_ r: CoachResult) -> [Segment] {
     let s = r.startedAtEpochMs
     let e = max(r.endedAtEpochMs, s)
-    // Splits are epoch ms on the watch; fixtures count from the session start.
-    let offset: Int64 = (r.splits.first?.startMs ?? s) < s - 86_400_000 ? s : 0
+    // Splits are epoch ms, as the watch writes them. Corrupt ones are not re-based: the whole session takes a generic weight.
+    guard r.splitsLookValid else { return e > s ? [Segment(start: s, end: e, weight: genericWeight)] : [] }
     var out: [Segment] = []
     var cursor = s
     func add(_ a: Int64, _ b: Int64, _ w: Double) {
@@ -88,8 +103,8 @@ public struct SessionLoad: Equatable {
     }
     for sp in r.splits.sorted(by: { $0.startMs < $1.startMs }) {
       guard let step = r.plan.steps.first(where: { $0.index == sp.stepIndex }) else { continue }
-      let a = sp.startMs + offset
-      let b = sp.endMs.map { $0 + offset } ?? e
+      let a = sp.startMs
+      let b = sp.endMs ?? e
       if step.isRun, (step.runNumber ?? 1) > 1 {
         let t = a + Int64(r.plan.transitionSeconds) * 1000
         add(a, min(t, b), transitionWeight)
@@ -127,7 +142,7 @@ public struct SessionLoad: Equatable {
     }
     var km = 0
     var metres = 0
-    for sp in result.splits where sp.endMs != nil {
+    for sp in result.splits where sp.endMs != nil && result.splitsLookValid {
       guard let step = result.plan.steps.first(where: { $0.index == sp.stepIndex }) else { continue }
       if step.isRun { km += 1 } else { metres += Self.metres(step.activity) }
     }
@@ -207,17 +222,22 @@ public struct LoadInput {
 public struct TrainingLoadSummary: Equatable {
   public let sessions: [LoadSession]
   public let maxHR: MaxHeartRate
+  /// Ids of sessions left out because their splits looked corrupt.
+  public let skippedSessionIds: [String]
 }
 
 public enum TrainingLoad {
   /// Max HR from all the sessions first, then each session's load against it.
   public static func summarise(_ inputs: [LoadInput], now: Date, wallBallReps: (SessionRecord) -> Int? = { _ in nil }) -> TrainingLoadSummary {
     let max = MaxHeartRate.estimate(inputs.map { HeartRateSession(date: $0.record.date, series: $0.hr) }, now: now)
-    let sessions = inputs.map { i in
+    let valid = inputs.filter { $0.record.result.splitsLookValid }
+    let skipped = inputs.filter { !$0.record.result.splitsLookValid }.map(\.record.id)
+    for id in skipped { NSLog("TrainingLoad: skipped session %@, its splits look corrupt", id) }
+    let sessions = valid.map { i in
       LoadSession(id: i.record.id, date: i.record.date, type: i.record.type,
                   load: SessionLoad.of(i.record.result, hr: i.hr, maxHR: max.bpm, wallBallReps: wallBallReps(i.record)))
     }
-    return TrainingLoadSummary(sessions: sessions, maxHR: max)
+    return TrainingLoadSummary(sessions: sessions, maxHR: max, skippedSessionIds: skipped)
   }
 }
 

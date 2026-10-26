@@ -7,7 +7,8 @@ final class CoachHistoryTests: XCTestCase {
   /// Full-sim style plan where every run 2..8 takes `extra` more than its target and the rest are on target.
   private func record(_ id: String, _ type: SessionType = .fullSim, day: Int64 = 0, fade: Int?, total: Int = 0, until: Int? = nil, wallBallsExtra: Int = 0) -> SessionRecord {
     let plan = PlanBuilder.build(division: .openMen, target: 5400, type: type)
-    var t: Int64 = 0
+    let start = (1_792_836_000 + day * 86_400) * 1000
+    var t = start
     var splits: [StepSplit] = []
     for step in plan.steps {
       if let until, step.index >= until { break }
@@ -18,9 +19,8 @@ final class CoachHistoryTests: XCTestCase {
       splits.append(StepSplit(stepIndex: step.index, startMs: t, endMs: t + d))
       t += d
     }
-    let start = (1_792_836_000 + day * 86_400) * 1000
     return SessionRecord(id: id, result: CoachResult(plan: plan, splits: splits, early: until != nil, repTimesMs: [], repCorrection: 0,
-                                                      startedAtEpochMs: start, endedAtEpochMs: start + t))
+                                                      startedAtEpochMs: start, endedAtEpochMs: t))
   }
 
   func testFadeIsMeanOfRunSlowdowns() {
