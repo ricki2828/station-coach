@@ -4,6 +4,7 @@ import XCTest
 final class CoachResultTests: XCTestCase {
   private let plan = PlanBuilder.build(division: .openMen, target: 4800, type: .fullSim)
 
+  /// `repTimes` are relative to the wall-ball step's start.
   /// A result where each step took its target plus `extra[stepIndex]` seconds; nil `until` = all steps done.
   private func result(extra: [Int: Int] = [:], until: Int? = nil, repTimes: [Int64] = []) -> CoachResult {
     var t: Int64 = 0
@@ -14,7 +15,8 @@ final class CoachResultTests: XCTestCase {
       splits.append(StepSplit(stepIndex: step.index, startMs: t, endMs: t + d))
       t += d
     }
-    return CoachResult(plan: plan, splits: splits, early: until != nil, repTimesMs: repTimes, repCorrection: 0, startedAtEpochMs: 0, endedAtEpochMs: t)
+    let wbStart = splits.first { plan.steps[$0.stepIndex].activity == .wallBalls }?.startMs ?? 0
+    return CoachResult(plan: plan, splits: splits, early: until != nil, repTimesMs: repTimes.map { $0 + wbStart }, repCorrection: 0, startedAtEpochMs: 0, endedAtEpochMs: t)
   }
 
   /// 100 reps 2 s apart in the plan's sets, with `rest` seconds between sets.
@@ -87,6 +89,12 @@ final class CoachResultTests: XCTestCase {
   func testUncountedRepsLeaveAShortLastSet() {
     let sets = WallBallAnalysis.sets(repTimesMs: Array(reps(rest: 20).prefix(40)), structure: [15, 15, 15, 15])
     XCTAssertEqual(sets.map(\.reps), [15, 15, 10])
+  }
+
+  func testRepsOutsideTheWallBallWindowAreIgnored() {
+    var r = result(repTimes: reps(rest: 20))
+    r.repTimesMs.insert(5, at: 0) // a stray rep during the first run
+    XCTAssertEqual(r.wallBallSets().map(\.reps), [15, 15, 15, 15, 15, 15, 10])
   }
 
   func testRoundTripsThroughJSON() throws {

@@ -32,6 +32,25 @@ struct HeartChip: View {
   }
 }
 
+/// Plain arc spinner: `ProgressView` is a UIKit view that ImageRenderer cannot draw.
+struct Spinner: View {
+  var color: Color
+  @State private var turning = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    Circle().trim(from: 0, to: 0.7)
+      .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+      .frame(width: 28, height: 28)
+      .rotationEffect(.degrees(turning ? 360 : 0))
+      .onAppear {
+        guard !reduceMotion else { return }
+        withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { turning = true }
+      }
+      .accessibilityLabel("Loading")
+  }
+}
+
 struct Toast: View {
   let text: String
 
@@ -124,8 +143,11 @@ public struct CoachStepScreen: View {
   var onNext: () -> Void = {}
   var onPlus: () -> Void = {}
   var onMinus: () -> Void = {}
+  /// M1's "didn't hear" control, pinned beside NEXT on every coach screen. Nil hides it.
+  var onMissed: (() -> Void)?
 
-  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}) {
+  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil) {
+    self.onMissed = onMissed
     self.model = model
     self.onNext = onNext
     self.onPlus = onPlus
@@ -144,6 +166,11 @@ public struct CoachStepScreen: View {
         }
         HStack(spacing: 4) {
           Text(model.title.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
+          if model.kind == .reps {
+            Text("LEFT").font(.system(size: 12, weight: .heavy))
+              .padding(.horizontal, 5).padding(.vertical, 1)
+              .background(fg.opacity(0.18), in: Capsule())
+          }
           if let badge = model.badge {
             Text(badge.uppercased()).font(.system(size: 12, weight: .heavy))
               .padding(.horizontal, 5).padding(.vertical, 1)
@@ -161,13 +188,25 @@ public struct CoachStepScreen: View {
         if model.kind != .reps {
           Text(model.next).font(.system(size: Theme.Size.small, weight: .semibold)).foregroundStyle(fg.opacity(0.85)).lineLimit(1)
         }
-        NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
+        HStack(spacing: 6) {
+          NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
+          if let onMissed {
+            Button(action: onMissed) {
+              Text("NOT\nHEARD").font(.system(size: 12, weight: .heavy)).multilineTextAlignment(.center)
+                .foregroundStyle(Theme.ink)
+                .frame(width: 56, height: 56)
+                .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Didn't hear the last cue")
+          }
+        }
       }
       .padding(.horizontal, Theme.Space.watchEdge)
       .padding(.top, 2)
       .padding(.bottom, 2)
       if let toast = model.toast {
-        Toast(text: toast).padding(.horizontal, 12).frame(maxHeight: .infinity, alignment: .center)
+        Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66).frame(maxHeight: .infinity, alignment: .bottom)
       }
       if let alarm = model.alarm {
         AlarmBanner(text: alarm, action: "Keep and send").padding(.horizontal, 6).frame(maxHeight: .infinity, alignment: .top)
@@ -212,7 +251,7 @@ public struct CoachReadyScreen: View {
         switch model {
         case .loading:
           Spacer()
-          ProgressView()
+          Spinner(color: Theme.bone)
           Text("Waiting for the plan from your iPhone").font(.system(size: 17, weight: .semibold)).multilineTextAlignment(.center)
           Spacer()
         case .noPlan:
@@ -227,15 +266,17 @@ public struct CoachReadyScreen: View {
             Spacer()
           }
           Text(info.sessionName.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
-          Text(info.targetText).font(Theme.number(Theme.Size.dominant)).condensed().lineLimit(1).minimumScaleFactor(0.5)
+          Text(info.targetText).font(Theme.number(info.chips.isEmpty && info.batteryLine == nil ? Theme.Size.dominant : 44)).condensed().lineLimit(1).minimumScaleFactor(0.5)
             .accessibilityLabel("Target \(info.targetText)")
           ForEach(info.chips, id: \.self) { chip in
-            Text(chip).font(.system(size: 15, weight: .semibold)).multilineTextAlignment(.center)
+            Text(chip).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
               .padding(.horizontal, 8).padding(.vertical, 2)
-              .background(Theme.bone.opacity(0.16), in: Capsule())
+              .background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
           }
           if let b = info.batteryLine {
-            Text(b).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.amber).multilineTextAlignment(.center)
+            Text(b).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.amber).multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
           }
           Spacer(minLength: 0)
           Button(action: onStart) {
@@ -277,7 +318,7 @@ public struct CoachFinishScreen: View {
         switch model.mode {
         case .saving:
           Spacer()
-          ProgressView().tint(Theme.ink)
+          Spinner(color: Theme.ink)
           Text("Saving\u{2026}").font(Theme.label(Theme.Size.label))
           Spacer()
         case .saved, .saveFailed:

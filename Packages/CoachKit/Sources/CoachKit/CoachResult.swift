@@ -74,8 +74,12 @@ public struct CoachResult: Codable, Equatable {
   public var deltaSeconds: Int { rows.compactMap(\.deltaSeconds).reduce(0, +) }
 
   public func wallBallSets() -> [WallBallSet] {
-    guard let step = plan.steps.first(where: { $0.activity == .wallBalls }) else { return [] }
-    return WallBallAnalysis.sets(repTimesMs: repTimesMs, structure: step.sets)
+    // First wall-ball step that was started; only reps inside its window count (a focus session has three).
+    guard let step = plan.steps.first(where: { s in s.activity == .wallBalls && splits.contains { $0.stepIndex == s.index } }),
+          let split = splits.first(where: { $0.stepIndex == step.index }) else { return [] }
+    let end = split.endMs ?? endedAtEpochMs
+    let reps = repTimesMs.filter { $0 >= split.startMs && $0 <= end }
+    return WallBallAnalysis.sets(repTimesMs: reps, structure: step.sets)
   }
 
   /// Best and worst completed station against plan, as (name, delta).

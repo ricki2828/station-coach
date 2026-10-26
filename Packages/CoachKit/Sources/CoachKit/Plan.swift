@@ -147,6 +147,12 @@ public enum PlanBuilder {
         add { PlanStep(activity: .wallBalls, index: $0, runNumber: nil, targetSeconds: stationTarget(.wallBalls, scale: 0.5), reps: 50, sets: Stations.wallBallSets(reps: 50)) }
       }
     }
+    // Rounding leaves a few seconds; the last step of a full sim absorbs them so the plan adds up to the target.
+    if type == .fullSim, let last = steps.last {
+      let diff = clamped(target) - steps.reduce(0) { $0 + $1.targetSeconds }
+      steps[steps.count - 1] = PlanStep(activity: last.activity, index: last.index, runNumber: last.runNumber,
+                                        targetSeconds: last.targetSeconds + diff, reps: last.reps, sets: last.sets)
+    }
     return SessionPlan(division: division, type: type, raceTargetSeconds: clamped(target), steps: steps,
                        transitionSeconds: Int((t * transitionShare / changeovers).rounded()))
   }

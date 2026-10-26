@@ -41,6 +41,27 @@ struct Card<Content: View>: View {
   }
 }
 
+/// Bars whose widths follow their weights. Explicit widths: layout priorities do not do this.
+struct ProportionalStrip: View {
+  let items: [(Color, Double)]
+  let height: CGFloat
+  var gap: CGFloat = 3
+
+  var body: some View {
+    GeometryReader { geo in
+      let total = max(items.reduce(0) { $0 + $1.1 }, 1)
+      let room = geo.size.width - gap * CGFloat(max(items.count - 1, 0))
+      HStack(spacing: gap) {
+        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+          RoundedRectangle(cornerRadius: 4).fill(item.0).frame(width: max(2, room * CGFloat(item.1 / total)), height: height)
+        }
+      }
+    }
+    .frame(height: height)
+    .accessibilityHidden(true)
+  }
+}
+
 struct Choice: View {
   let title: String
   let selected: Bool
@@ -140,12 +161,7 @@ public struct SetupScreen: View {
             .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
         }
         Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) each").font(.system(size: 17, weight: .semibold))
-        HStack(spacing: 3) {
-          ForEach(plan.steps.filter { !$0.isRun }, id: \.index) { s in
-            RoundedRectangle(cornerRadius: 4).fill(Theme.background(s.activity)).frame(height: 14)
-              .frame(maxWidth: .infinity).layoutPriority(Double(s.targetSeconds))
-          }
-        }
+        ProportionalStrip(items: plan.steps.filter { !$0.isRun }.map { (Theme.background($0.activity), Double($0.targetSeconds)) }, height: 14)
         Text("Total \(Fmt.clock(plan.plannedSeconds)). Default split: runs about half, stations by typical shares.")
           .font(.system(size: 13)).foregroundStyle(Theme.bone.opacity(0.7))
       }
@@ -156,7 +172,7 @@ public struct SetupScreen: View {
     VStack(alignment: .leading, spacing: 8) {
       Button(action: onSend) {
         HStack(spacing: 8) {
-          if case .sending = model.send { ProgressView().tint(Theme.ink) }
+          if case .sending = model.send { Spinner(color: Theme.ink) }
           Text(sendTitle).font(.system(size: 20, weight: .heavy))
         }
         .foregroundStyle(Theme.ink)
@@ -259,7 +275,7 @@ public struct SummaryScreen: View {
         Text("Your first session lands here after you finish on the watch").font(.system(size: 20, weight: .semibold))
       case .syncing(let p):
         Text("Syncing from watch\u{2026} keep your phone near it").font(.system(size: 20, weight: .semibold))
-        ProgressView(value: Double(p) / 100).tint(Theme.finishFlood)
+        ProportionalStrip(items: [(Theme.finishFlood, Double(max(p, 1))), (Theme.bone.opacity(0.15), Double(max(100 - p, 1)))], height: 10)
         Text("\(p)%").font(Theme.number(36)).condensed()
       case .failed:
         Text("Not received yet. On your watch: Home \u{2192} Send unsent").font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.amber)
@@ -377,14 +393,8 @@ public struct ShareCardView: View {
   }
 
   private var stationStrip: some View {
-    HStack(spacing: 4) {
-      ForEach(result.rows.filter { !$0.step.isRun }, id: \.step.index) { row in
-        RoundedRectangle(cornerRadius: 5)
-          .fill(row.actualSeconds == nil ? Theme.bone.opacity(0.15) : Theme.background(row.step.activity))
-          .frame(height: 34)
-          .frame(maxWidth: .infinity)
-          .layoutPriority(Double(row.actualSeconds ?? row.step.targetSeconds))
-      }
-    }
+    ProportionalStrip(items: result.rows.filter { !$0.step.isRun }.map { row in
+      (row.actualSeconds == nil ? Theme.bone.opacity(0.15) : Theme.background(row.step.activity), Double(row.actualSeconds ?? row.step.targetSeconds))
+    }, height: 34)
   }
 }

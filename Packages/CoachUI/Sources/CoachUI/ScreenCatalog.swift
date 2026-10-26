@@ -17,7 +17,7 @@ public enum SampleData {
     }
     var reps: [Int64] = []
     if until == nil {
-      var r: Int64 = 1_000
+      var r: Int64 = (splits.first { plan.steps[$0.stepIndex].activity == .wallBalls }?.startMs ?? 0) + 1_000
       for size in Stations.wallBallSets(reps: 100) {
         for _ in 0..<size { reps.append(r); r += 2_000 }
         r += Int64(rest - 2) * 1000
@@ -77,15 +77,15 @@ public enum ScreenCatalog {
         sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L",
         chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
         batteryLine: "Battery 54%. A full sim needs about 60%.")))),
-      watch("run", CoachStepScreen(model: run)),
-      watch("run-over", CoachStepScreen(model: over)),
-      watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }())),
-      watch("station-time", CoachStepScreen(model: station)),
-      watch("station-time-sled", CoachStepScreen(model: sled)),
-      watch("station-reps", CoachStepScreen(model: walls)),
-      watch("station-reps-low-confidence", CoachStepScreen(model: lowConf)),
-      watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }())),
-      watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }())),
+      watch("run", CoachStepScreen(model: run, onMissed: {})),
+      watch("run-over", CoachStepScreen(model: over, onMissed: {})),
+      watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
+      watch("station-time", CoachStepScreen(model: station, onMissed: {})),
+      watch("station-time-sled", CoachStepScreen(model: sled, onMissed: {})),
+      watch("station-reps", CoachStepScreen(model: walls, onMissed: {})),
+      watch("station-reps-low-confidence", CoachStepScreen(model: lowConf, onMissed: {})),
+      watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
+      watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
       watch("menu", CoachMenuScreen()),
       watch("finish-saving", CoachFinishScreen(model: FinishScreenModel(mode: .saving, totalText: "", line: "", early: false))),
       watch("finish-under", CoachFinishScreen(model: FinishScreenModel(

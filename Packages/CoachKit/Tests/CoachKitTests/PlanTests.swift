@@ -14,7 +14,8 @@ final class PlanTests: XCTestCase {
 
   func testTargetsSumToTheRaceTarget() {
     let p = PlanBuilder.build(division: .openMen, target: 4800, type: .fullSim)
-    XCTAssertEqual(Double(p.plannedSeconds), 4800, accuracy: 8)
+    XCTAssertEqual(p.plannedSeconds, 4800)
+    XCTAssertEqual(PlanBuilder.build(division: .openMen, target: 5400, type: .fullSim).plannedSeconds, 5400)
     XCTAssertEqual(p.steps[0].targetSeconds, 324) // 288 run + 36 transition allowance
     XCTAssertEqual(p.transitionSeconds, 18)
     let wb = p.steps.last!
