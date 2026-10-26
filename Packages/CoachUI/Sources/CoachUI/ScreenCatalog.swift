@@ -61,7 +61,6 @@ public enum ScreenCatalog {
     let walls = step(.reps, .wallBalls, "Wall balls", dominant: "45", dominantLabel: "Reps left, 45", secondary: "Set 4 \u{00B7} 15",
                      secondaryLabel: "Set 4 of 7, 15 reps", next: "", isLast: true, delta: 32)
     var lowConf = walls
-    lowConf.dominant = "~45"
     lowConf.approximate = true
     var over = run
     over.deltaSeconds = 32

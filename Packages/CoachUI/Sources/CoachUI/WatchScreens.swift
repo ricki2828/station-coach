@@ -189,6 +189,13 @@ public struct CoachStepScreen: View {
           Text("LEFT").font(.system(size: 12, weight: .heavy))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(fg.opacity(0.18), in: Capsule())
+          // A low-confidence count is flagged here, not inside the number: the digits keep their room.
+          if model.approximate {
+            Text("~").font(.system(size: 14, weight: .heavy))
+              .padding(.horizontal, 6).padding(.vertical, 0)
+              .background(fg.opacity(0.18), in: Capsule())
+              .accessibilityLabel("Estimated count")
+          }
         }
         if let badge = model.badge {
           Text(badge.uppercased()).font(.system(size: 12, weight: .heavy))

@@ -35,9 +35,11 @@ final class LayoutTests: XCTestCase {
     return CGSize(width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxY - minY + 1) / scale)
   }
 
-  private func model(_ kind: StepScreenModel.Kind, _ a: Activity, dominant: String, badge: String? = nil, hr: Int? = 142) -> StepScreenModel {
-    StepScreenModel(kind: kind, activity: a, title: "Run 4", badge: badge, dominant: dominant, dominantLabel: "", secondary: "/ 5:24",
-                    secondaryLabel: "", next: "Next: Sled push", deltaSeconds: -20, hrBpm: hr)
+  private func model(_ kind: StepScreenModel.Kind, _ a: Activity, dominant: String, badge: String? = nil, hr: Int? = 142,
+                     approximate: Bool = false) -> StepScreenModel {
+    StepScreenModel(kind: kind, activity: a, title: kind == .reps ? "Wall balls" : "Run 4", badge: badge, dominant: dominant,
+                    dominantLabel: "", secondary: "/ 5:24", secondaryLabel: "", next: "Next: Sled push", deltaSeconds: -20,
+                    hrBpm: hr, approximate: approximate)
   }
 
   func testDominantDigitsAreDrawnAtFullSize() {
@@ -47,7 +49,7 @@ final class LayoutTests: XCTestCase {
       ("transition", model(.run, .run, dominant: "0:12", badge: "Transition")),
       ("station", model(.time, .skierg, dominant: "2:10")),
       ("reps", model(.reps, .wallBalls, dominant: "100")),
-      ("reps, approximate", model(.reps, .wallBalls, dominant: "~97")),
+      ("reps, approximate", model(.reps, .wallBalls, dominant: "97", approximate: true)),
     ]
     for (name, m) in cases {
       let box = probeBox(m)
@@ -61,6 +63,15 @@ final class LayoutTests: XCTestCase {
     let box = probeBox(model(.reps, .wallBalls, dominant: "100"))
     XCTAssertGreaterThan(box.width, 0)
     XCTAssertLessThanOrEqual(box.width, Theme.watch46.width - 2 * Theme.Space.watchEdge - 88)
+  }
+
+  func testApproximateRepsKeepTheirRoomBesideTheButtons() {
+    // The "~" is a badge in the title row now, so the widest count still fits with both buttons.
+    for text in ["100", "97", "45"] {
+      let box = probeBox(model(.reps, .wallBalls, dominant: text, approximate: true))
+      XCTAssertGreaterThanOrEqual(box.height, 40, text)
+      XCTAssertLessThanOrEqual(box.width, Theme.watch46.width - 2 * Theme.Space.watchEdge - 88 - 8, "\(text): \(box)")
+    }
   }
 
   func testDominantIsTheTallestInkOnTheScreen() {

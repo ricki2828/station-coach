@@ -284,7 +284,7 @@ final class CoachController: ObservableObject {
       }
       let approx = snap.count >= 3 && snap.confidence == .low
       screen = StepScreenModel(
-        kind: .reps, activity: .wallBalls, title: step.name, dominant: (approx ? "~" : "") + "\(left)",
+        kind: .reps, activity: .wallBalls, title: step.name, dominant: "\(left)",
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
         next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, toast: common.toast,
