@@ -11,7 +11,7 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 
 ### Desk test additions
 - Mode B with the AirPods **not** connected: starting a session may show the system audio route picker and wait. Note what happens if you dismiss it (the log should say "NOT activated") and whether cues then speak at all.
-- Mode B, then switch the AirPods off mid-session and on again: `events.csv` should show a route change and "reactivating", and cues should resume (the picker may appear).
+- Mode B, then switch the AirPods off mid-session and on again: `events.csv` should show "headphones lost; will re-activate when a headphone output reappears", then a route change and "reactivating: headphones back" once they return, and cues should resume. While they are off, cues are still attempted (on the speaker or not at all) and the recorder does not pop the route picker.
 - Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start").
 - Compare `headphones` in `cues.csv` with what you heard, cue by cue, in each mode. If the report's "finished and not flagged, any route" line is well above the main figure, the route read is unreliable.
 
