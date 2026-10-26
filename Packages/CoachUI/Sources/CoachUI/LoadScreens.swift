@@ -114,7 +114,7 @@ public struct LoadBars: View {
   @ViewBuilder private func column(_ bar: LoadBar) -> some View {
     VStack(spacing: 4) {
       if showValues {
-        Text(bar.future ? " " : LoadWords.number(Int(bar.total.rounded())))
+        Text(bar.future || bar.total <= 0 ? " " : LoadWords.number(Int(bar.total.rounded())))
           .font(.system(size: 13, weight: .bold)).foregroundStyle(PhoneTheme.inkText)
           .lineLimit(1).minimumScaleFactor(0.6)
           .frame(height: 18)
@@ -238,7 +238,7 @@ struct LoadStat: View {
   let value: String
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(kicker).scaledKicker().lineLimit(1).minimumScaleFactor(0.7)
+      Text(kicker).phoneKicker().lineLimit(1).minimumScaleFactor(0.7)
       Text(value).scaledStat().foregroundStyle(PhoneTheme.inkText).lineLimit(1).minimumScaleFactor(0.6)
     }
     .padding(12)
