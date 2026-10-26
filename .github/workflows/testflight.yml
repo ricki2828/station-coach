@@ -111,6 +111,7 @@ jobs:
             <key>signingStyle</key><string>automatic</string>
             <key>destination</key><string>upload</string>
             <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/StationCoach.xcarchive" \
