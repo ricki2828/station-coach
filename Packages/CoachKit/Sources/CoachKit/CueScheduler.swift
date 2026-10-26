@@ -55,7 +55,7 @@ public struct CueScheduler {
     guard let best = pending.max(by: { a, b in a.kind == b.kind ? a.createdAt > b.createdAt : a.kind < b.kind }) else { return nil }
     if let last = lastSpokenAt, t - last < Self.minGap, best.kind != .finish, best.kind != .noRep { return nil }
     pending.removeAll { $0 == best }
-    lastSpokenAt = t
+    if best.kind != .noRep { lastSpokenAt = t } // a quick "No rep noted" must not push the next "Set done" back
     return best
   }
 }

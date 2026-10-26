@@ -7,8 +7,28 @@ final class NoRepRestTests: XCTestCase {
   func testSetEndShowsAfterTheCountSettlesNotBefore() {
     var r = NoRepRest(count: 0, nowMs: 0)
     XCTAssertFalse(r.update(nowMs: 10_000, count: 15, done: 15, sets: sets)) // rep 15 just counted
-    XCTAssertFalse(r.update(nowMs: 11_000, count: 15, done: 15, sets: sets))
-    XCTAssertTrue(r.update(nowMs: 11_500, count: 15, done: 15, sets: sets))
+    XCTAssertFalse(r.update(nowMs: 12_900, count: 15, done: 15, sets: sets))
+    XCTAssertTrue(r.update(nowMs: 13_000, count: 15, done: 15, sets: sets))
+  }
+
+  func testSlowThrowerGoingStraightThroughASetBoundaryNeverSeesTheButton() {
+    var r = NoRepRest(count: 0, nowMs: 0)
+    var t: Int64 = 0
+    for count in 1...20 { // a rep every 3 s: 15 is a set end, 16 follows 3 s later
+      t += 3_000
+      r.update(nowMs: t, count: count, done: count, sets: sets)
+      for dt in stride(from: Int64(100), to: 3_000, by: 100) {
+        XCTAssertFalse(r.update(nowMs: t + dt, count: count, done: count, sets: sets), "shown \(dt) ms after rep \(count)")
+      }
+    }
+  }
+
+  func testSetEndWaitsForTheAthletesOwnRhythmWhenSlowerThanThreeSeconds() {
+    var r = NoRepRest(count: 0, nowMs: 0)
+    var t: Int64 = 0
+    for count in 1...15 { t += 3_400; r.update(nowMs: t, count: count, done: count, sets: sets) }
+    XCTAssertEqual(r.settleMs, 4_080) // 1.2 x 3.4 s
+    XCTAssertTrue(r.update(nowMs: t + 4_000, count: 15, done: 15, sets: sets)) // 4 s pause rule still applies
   }
 
   func testSlowRepMidSetNeverShowsBeforeFourSeconds() {
@@ -75,6 +95,17 @@ final class NoRepRestTests: XCTestCase {
     XCTAssertEqual(s.next(at: 2, speaking: false)?.kind, .noRep) // 2 s after another cue
     s.offer(CoachCue(kind: .noRep, text: "No rep noted.", createdAt: 10))
     XCTAssertNil(s.next(at: 16, speaking: false)) // could not start within 5 s: dropped
+  }
+
+  func testNoRepCueDoesNotDelayTheNextSetDoneCue() {
+    var s = CueScheduler()
+    s.offer(CoachCue(kind: .wallBallSet, text: "set", createdAt: 0))
+    XCTAssertNotNil(s.next(at: 0, speaking: false))
+    s.offer(CoachCue(kind: .noRep, text: "No rep noted.", createdAt: 10))
+    XCTAssertNotNil(s.next(at: 10, speaking: false))
+    s.offer(CoachCue(kind: .wallBallSet, text: "set", createdAt: 11))
+    XCTAssertNil(s.next(at: 15, speaking: false)) // gap still counts from the set cue at 0
+    XCTAssertNotNil(s.next(at: 20, speaking: false)) // 20 s after it, not 20 s after the no-rep cue
   }
 
   func testNoRepCueWaitsForSpeechToEnd() {
