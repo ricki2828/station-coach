@@ -45,7 +45,7 @@ final class NoRepScreenshotTests: XCTestCase {
 
   /// The natural height of the screen must fit under the clock inset at 41 mm, or the bottom row clips.
   private func naturalHeight(_ model: StepScreenModel, compact: Bool) -> CGFloat {
-    let host = UIHostingController(rootView: CoachStepScreen(model: model, onMissed: {}).environment(\.watchCompact, compact))
+    let host = UIHostingController(rootView: CoachStepScreen(model: model, onMissed: {}).environment(\.watchCompact, compact).fixedSize(horizontal: false, vertical: true))
     return host.sizeThatFits(in: CGSize(width: NoRepScreens.watch41.width, height: 10_000)).height
   }
 
