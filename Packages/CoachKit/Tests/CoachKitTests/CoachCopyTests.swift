@@ -17,6 +17,33 @@ final class CoachCopyTests: XCTestCase {
     XCTAssertEqual(CoachCopy.stationIntro(wb), "Wall balls. 100 reps. Sets of 15, five breaths between.")
   }
 
+  func testJogInOpensTheIntroAfterARunOnly() {
+    let run = plan.steps[0], ski = plan.steps[1], sledPush = plan.steps[3]
+    XCTAssertEqual(CoachCopy.stationIntro(ski, after: run), "Jog in. SkiErg. 1,000 metres. Hinge from the hips.")
+    XCTAssertEqual(CoachCopy.stationIntro(ski), "SkiErg. 1,000 metres. Hinge from the hips.") // no previous step: unchanged
+    XCTAssertEqual(CoachCopy.stationIntro(sledPush, after: ski), CoachCopy.stationIntro(sledPush)) // not after a run
+    for station in plan.steps where !station.isRun {
+      let said = CoachCopy.stationIntro(station, after: plan.steps[station.index - 1])
+      XCTAssertEqual(said.components(separatedBy: "Jog in").count - 1, 1, "once: \(said)")
+    }
+  }
+
+  func testNoJogInWithoutAStationTarget() {
+    let ski = plan.steps[1]
+    let none = PlanStep(activity: ski.activity, index: ski.index, runNumber: nil, targetSeconds: 0, reps: nil, sets: [])
+    XCTAssertEqual(CoachCopy.stationIntro(none, after: plan.steps[0]), CoachCopy.stationIntro(none))
+  }
+
+  func testJogInIsPartOfTheOneIntroCueSoTheGapRulesHold() {
+    var s = CueScheduler()
+    s.offer(CoachCue(kind: .planAndRun, text: "run", createdAt: 0))
+    XCTAssertEqual(s.next(at: 0, speaking: false)?.text, "run")
+    s.offer(CoachCue(kind: .stationIntro, text: CoachCopy.stationIntro(plan.steps[1], after: plan.steps[0]), createdAt: 5))
+    XCTAssertNil(s.next(at: 10, speaking: false)) // inside the 20 s gap: waits
+    XCTAssertTrue(s.next(at: 20, speaking: false)?.text.hasPrefix("Jog in. SkiErg") ?? false)
+    XCTAssertNil(s.next(at: 40, speaking: false)) // said once
+  }
+
   func testEveryStationHasAnIntroWithTheName() {
     for s in plan.steps where !s.isRun {
       XCTAssertTrue(CoachCopy.stationIntro(s).hasPrefix(Stations.name(s.activity)), s.name)

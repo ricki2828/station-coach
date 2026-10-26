@@ -212,7 +212,8 @@ final class CoachController: ObservableObject {
       let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
       offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds))
     } else {
-      offer(.stationIntro, CoachCopy.stationIntro(step))
+      let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
+      offer(.stationIntro, CoachCopy.stationIntro(step, after: before))
     }
   }
 
