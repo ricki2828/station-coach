@@ -161,18 +161,30 @@ public struct SessionDetailScreen: View {
   private func stationRow(_ row: CoachResult.Row) -> some View {
     HStack(spacing: 10) {
       Circle().fill(PhoneTheme.stationColor(row.step.activity)).frame(width: 12, height: 12)
-      Text(row.step.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText).lineLimit(1).minimumScaleFactor(0.8)
-      Spacer(minLength: 8)
-      if let actual = row.actualSeconds, let d = row.deltaSeconds {
-        let w = DeltaWords.text(d)
-        Text(w.text).font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(w.over == nil ? PhoneTheme.muted : w.over! ? PhoneTheme.amberText : PhoneTheme.inkText)
-        Text(Fmt.clock(actual)).font(.system(size: 20, weight: .semibold)).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
-          .frame(minWidth: 64, alignment: .trailing)
-      } else {
-        Text("not done").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      // Same type size on every row: when the full name does not fit, burpee broad jumps become "BBJ".
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) { nameText(row.step.name); trailing(row) }
+        HStack(spacing: 8) { nameText(row.step.activity == .burpeeBroadJump ? "BBJ" : row.step.name); trailing(row) }
       }
     }
     .accessibilityElement(children: .combine)
+    .accessibilityLabel(row.step.name)
+  }
+
+  private func nameText(_ s: String) -> some View {
+    Text(s).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+  }
+
+  @ViewBuilder private func trailing(_ row: CoachResult.Row) -> some View {
+    Spacer(minLength: 8)
+    if let actual = row.actualSeconds, let d = row.deltaSeconds {
+      let w = DeltaWords.text(d)
+      Text(w.text).font(.system(size: 15, weight: .semibold)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(w.over == nil ? PhoneTheme.muted : w.over! ? PhoneTheme.amberText : PhoneTheme.inkText)
+      Text(Fmt.clock(actual)).font(.system(size: 20, weight: .semibold)).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
+        .frame(minWidth: 64, alignment: .trailing)
+    } else {
+      Text("not done").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+    }
   }
 }
