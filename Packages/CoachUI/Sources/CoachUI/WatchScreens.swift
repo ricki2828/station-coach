@@ -12,7 +12,7 @@ struct DeltaBand: View {
       .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
       .lineLimit(1)
       .frame(maxWidth: .infinity)
-      .frame(height: 28)
+      .frame(height: 26)
       .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
       .accessibilityLabel(seconds == 0 ? "On plan" : "\(Fmt.gap(seconds)) \(seconds > 0 ? "behind" : "ahead of") plan")
   }
@@ -199,18 +199,14 @@ public struct CoachStepScreen: View {
         if let bpm = model.hrBpm { HeartChip(bpm: bpm) }
       }
       .foregroundStyle(fg)
-      .frame(height: 24)
+      .frame(height: 22)
       dominantRow(fg)
       Text(model.secondary)
         .font(Theme.number(Theme.Size.secondary)).condensed()
         .foregroundStyle(fg.opacity(0.78))
         .lineLimit(1).minimumScaleFactor(0.6)
-        .frame(height: 40)
+        .frame(height: 36)
         .accessibilityLabel(model.secondaryLabel)
-      // The next station is only worth a line while the athlete is changing over.
-      if model.badge != nil {
-        Text(model.next).font(.system(size: Theme.Size.small, weight: .semibold)).foregroundStyle(fg).lineLimit(1)
-      }
       Spacer(minLength: 0)
       HStack(spacing: 6) {
         NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
@@ -228,7 +224,7 @@ public struct CoachStepScreen: View {
     }
     .padding(.horizontal, Theme.Space.watchEdge)
     .padding(.top, 2)
-    .padding(.bottom, 8)
+    .padding(.bottom, 10)
     .background(Theme.background(model.activity).ignoresSafeArea())
     .overlay(alignment: .bottom) {
       if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
@@ -246,7 +242,7 @@ public struct CoachStepScreen: View {
       .font(Theme.number(Theme.Size.dominant)).condensed()
       .foregroundStyle(probe ?? fg)
       .lineLimit(1)
-      .frame(height: 68)
+      .frame(height: 60)
       .accessibilityLabel(model.dominantLabel)
     if model.kind == .reps {
       HStack(spacing: 0) {
@@ -274,7 +270,7 @@ public struct CoachReadyScreen: View {
   public var body: some View {
     ZStack {
       Theme.ink.ignoresSafeArea()
-      VStack(spacing: 6) {
+      VStack(spacing: 4) {
         switch model {
         case .loading:
           Spacer()
@@ -309,7 +305,7 @@ public struct CoachReadyScreen: View {
           Spacer(minLength: 0)
           Button(action: onStart) {
             Text("START").font(.system(size: 22, weight: .heavy)).foregroundStyle(Theme.ink)
-              .frame(maxWidth: .infinity, minHeight: tight ? 44 : 56)
+              .frame(maxWidth: .infinity, minHeight: tight ? 40 : 56)
               .background(Theme.finishFlood, in: RoundedRectangle(cornerRadius: 14))
           }.buttonStyle(.plain)
         }

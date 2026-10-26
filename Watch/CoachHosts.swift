@@ -16,7 +16,7 @@ struct IdleHost: View {
           // Re-read the route and battery now and then so the chips stay true.
           TimelineView(.periodic(from: .now, by: 5)) { _ in
             CoachReadyScreen(model: coach.readyModel, onStart: { Task { await coach.start() } }, onRecorderOnly: { showRecorder = true })
-              .frame(height: 232)
+              .frame(minHeight: 232)
               .clipShape(RoundedRectangle(cornerRadius: 12))
           }
           if !recorder.unfinished.isEmpty {

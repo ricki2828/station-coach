@@ -5,7 +5,7 @@ import SwiftUI
 /// The numbers are estimates for a 46 mm watch, not measurements.
 public struct WatchChrome<Content: View>: View {
   public static var cornerRadius: CGFloat { 44 }
-  public static var topInset: CGFloat { 20 }
+  public static var topInset: CGFloat { 24 }
 
   let content: Content
 
