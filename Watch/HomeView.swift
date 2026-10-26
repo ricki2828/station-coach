@@ -21,7 +21,7 @@ struct HomeView: View {
           Text("Left").tag("left")
           Text("Right").tag("right")
         }
-        Button("Start session") { Task { await recorder.start() } }
+        Button("Start \(recorder.athlete) \(recorder.wrist)") { Task { await recorder.start() } }
           .tint(.green)
         Stepper("Cue every \(recorder.cueInterval)s", value: $recorder.cueInterval, in: 10...300, step: 5)
         Picker("Store motion", selection: $recorder.storeHz) {
