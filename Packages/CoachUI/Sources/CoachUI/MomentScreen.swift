@@ -18,7 +18,8 @@ public struct MomentDisplay: Equatable {
   /// - totalSeconds: the new session's total.
   /// - fadeSeconds: its run fade (nil with fewer than 2 runs).
   /// - previousDate: "24 Oct", for the new-best line.
-  public static func make(_ moment: Moment, totalSeconds: Int, fadeSeconds: Int?, previousDate: String? = nil) -> MomentDisplay {
+  /// - sessionType: colours a least-fade moment (violet when unknown).
+  public static func make(_ moment: Moment, totalSeconds: Int, fadeSeconds: Int?, previousDate: String? = nil, sessionType: SessionType? = nil) -> MomentDisplay {
     switch moment {
     case .first(let t):
       let line = fadeSeconds.map { "Your fade baseline is \($0)\u{00A0}s." } ?? "That sets your baseline."
@@ -31,9 +32,10 @@ public struct MomentDisplay: Equatable {
                            flood: PhoneTheme.best, text: PhoneTheme.bestText, heroSeconds: totalSeconds, heroIsClock: true)
     case .leastFade(let previous):
       let fade = fadeSeconds ?? 0
+      let t = sessionType ?? .fullSim
       return MomentDisplay(kicker: "Least fade yet", hero: "\(fade)\u{00A0}s",
-                           line: "\(max(0, previous - fade))\u{00A0}s less than your best before. The runs are holding.",
-                           flood: PhoneTheme.sessionColor(.fullSim), text: PhoneTheme.sessionText(.fullSim), heroSeconds: fade, heroIsClock: false)
+                           line: "Your lowest fade yet. \(max(0, previous - fade))\u{00A0}s better than your previous best.",
+                           flood: PhoneTheme.sessionColor(t), text: PhoneTheme.sessionText(t), heroSeconds: fade, heroIsClock: false)
     }
   }
 }
@@ -56,6 +58,7 @@ private struct CountingText: View, Animatable {
 /// Full-flood moment: kicker, giant number, one line, Nice / Share. Rare by design.
 public struct MomentScreen: View {
   let display: MomentDisplay
+  let result: CoachResult?
   let animate: Bool
   var onNice: () -> Void
   var onShare: () -> Void
@@ -64,8 +67,9 @@ public struct MomentScreen: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// `animate: false` renders the settled end state (screenshots).
-  public init(display: MomentDisplay, animate: Bool = true, onNice: @escaping () -> Void = {}, onShare: @escaping () -> Void = {}) {
+  public init(display: MomentDisplay, result: CoachResult? = nil, animate: Bool = true, onNice: @escaping () -> Void = {}, onShare: @escaping () -> Void = {}) {
     self.display = display
+    self.result = result
     self.animate = animate
     self.onNice = onNice
     self.onShare = onShare
@@ -73,9 +77,8 @@ public struct MomentScreen: View {
 
   private var settled: Bool { !animate || shown }
 
-  public var body: some View {
+  private var content: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Spacer(minLength: 0)
       Text(display.kicker).font(.system(size: 15, weight: .heavy)).textCase(.uppercase).tracking(1)
       CountingText(value: Double(settled ? (display.heroSeconds ?? 0) : 0), clock: display.heroIsClock)
         .phoneHero(size: 96).lineLimit(1).minimumScaleFactor(0.5)
@@ -83,7 +86,21 @@ public struct MomentScreen: View {
         .accessibilityLabel(display.hero)
         .animation(animate && !reduceMotion ? .easeOut(duration: 1.1) : nil, value: shown)
       Text(display.line).font(.system(size: 17, weight: .semibold)).fixedSize(horizontal: false, vertical: true).padding(.top, 12)
-      Spacer(minLength: 0)
+      if let result {
+        StationStrip(result: result, labelled: true, height: 14)
+          .padding(12)
+          .background(PhoneTheme.paper.opacity(0.92), in: RoundedRectangle(cornerRadius: 14))
+          .padding(.top, 24)
+      }
+    }
+  }
+
+  public var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      // Content is pinned at a fixed height (about 30% down) so every moment lines up whatever its line length.
+      GeometryReader { geo in
+        content.frame(maxWidth: .infinity, alignment: .leading).offset(y: geo.size.height * 0.26)
+      }
       HStack(spacing: 12) {
         Button(action: onNice) {
           Text("Nice").font(.system(size: 17, weight: .heavy)).foregroundStyle(display.text)

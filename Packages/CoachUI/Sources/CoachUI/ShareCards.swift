@@ -55,7 +55,7 @@ public struct ShareCardV2: View {
         }
       }
       .padding(.top, 16)
-      StationStrip(result: result, labelled: true, height: 14).padding(.top, 20)
+      ShareStrip(result: result).padding(.top, 20)
       Text(InsightPicker.pick(result).headline).font(.system(size: 18, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
         .fixedSize(horizontal: false, vertical: true).padding(.top, 18)
       Spacer(minLength: 8)
@@ -69,5 +69,87 @@ public struct ShareCardV2: View {
     .padding(20)
     .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
     .background(PhoneTheme.paper)
+  }
+}
+
+/// The card's labelled strip. Same geometry as `StationStrip`, but labels that would touch their neighbour drop to a second row.
+struct ShareStrip: View {
+  let result: CoachResult
+  static let barHeight: CGFloat = 14
+  static let minLabelGap: CGFloat = 5
+
+  private var rows: [CoachResult.Row] { result.rows }
+
+  private func shortName(_ a: Activity) -> String {
+    switch a {
+    case .skierg: return "Ski"
+    case .sledPush: return "Push"
+    case .sledPull: return "Pull"
+    case .burpeeBroadJump: return "BBJ"
+    case .row: return "Row"
+    case .farmersCarry: return "Carry"
+    case .sandbagLunges: return "Lunge"
+    case .wallBalls: return "WB"
+    default: return "Run"
+    }
+  }
+
+  /// Conservative width of a 10 pt heavy caps label with +0.5 tracking.
+  private func labelWidth(_ s: String) -> CGFloat { CGFloat(s.count) * 7.4 }
+
+  var body: some View {
+    let weights = rows.map { Double(max(1, $0.actualSeconds ?? $0.step.targetSeconds)) }
+    let total = weights.reduce(0, +)
+    VStack(spacing: 5) {
+      GeometryReader { geo in
+        let avail = geo.size.width - CGFloat(max(0, rows.count - 1)) * 2
+        HStack(spacing: 2) {
+          ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+            let w = max(2, avail * weights[i] / total)
+            if r.actualSeconds != nil {
+              RoundedRectangle(cornerRadius: 2).fill(PhoneTheme.stationColor(r.step.activity)).frame(width: w)
+            } else {
+              RoundedRectangle(cornerRadius: 2).stroke(PhoneTheme.hairline, lineWidth: 1).frame(width: w)
+            }
+          }
+        }
+      }
+      .frame(height: Self.barHeight)
+      GeometryReader { geo in
+        let avail = geo.size.width - CGFloat(max(0, rows.count - 1)) * 2
+        let placed = labels(avail: avail, total: total, weights: weights, width: geo.size.width)
+        ForEach(placed, id: \.index) { p in
+          Text(p.name)
+            .font(.system(size: 10, weight: .heavy)).textCase(.uppercase).tracking(0.5)
+            .foregroundStyle(rows[p.index].actualSeconds != nil ? PhoneTheme.inkText : PhoneTheme.muted)
+            .fixedSize()
+            .position(x: p.x, y: p.row == 0 ? 7 : 21)
+        }
+      }
+      .frame(height: 28)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Station strip, \(result.completedStationCount) of \(result.plan.stationCount) stations done")
+  }
+
+  private struct Placed { let index: Int; let name: String; let x: CGFloat; let row: Int }
+
+  private func labels(avail: CGFloat, total: Double, weights: [Double], width: CGFloat) -> [Placed] {
+    var out: [Placed] = []
+    var right: [CGFloat] = [-.infinity, -.infinity]  // right edge of the last label on each row
+    var start: CGFloat = 0
+    for (i, r) in rows.enumerated() {
+      let w = avail * weights[i] / total
+      defer { start += w + 2 }
+      guard !r.step.isRun else { continue }
+      let name = shortName(r.step.activity)
+      let lw = labelWidth(name)
+      let x = min(max(start + w / 2, lw / 2), width - lw / 2)
+      let left = x - lw / 2
+      let row = left - right[0] >= Self.minLabelGap ? 0 : (left - right[1] >= Self.minLabelGap ? 1 : 1)
+      right[row] = x + lw / 2
+      out.append(Placed(index: i, name: name, x: x, row: row))
+    }
+    return out
   }
 }
