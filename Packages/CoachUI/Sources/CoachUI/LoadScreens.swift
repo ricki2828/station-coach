@@ -102,7 +102,7 @@ public struct LoadBars: View {
       }
       .frame(height: barMax + (showValues ? 22 : 0) + labelsBelow, alignment: .bottom)
       if let caption {
-        Text(caption).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+        Text(caption).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
       }
     }
     .accessibilityElement(children: .ignore)
@@ -110,7 +110,7 @@ public struct LoadBars: View {
   }
 
   private var accessibility: String {
-    let parts = bars.filter { !$0.future }.map { "\($0.label) \(LoadWords.number(Int($0.total.rounded())))" }
+    let parts = bars.filter { !$0.future }.map { "\($0.label)\($0.soFar ? " so far" : "") \(LoadWords.number(Int($0.total.rounded())))" }
     return "Load by period. " + parts.joined(separator: ", ") + (usual.map { ". Usual \(LoadWords.number($0))" } ?? "")
   }
 
@@ -128,7 +128,7 @@ public struct LoadBars: View {
           Text(bar.label)
             .font(.system(size: compactLabels ? 11 : 13, weight: bar.isCurrent ? .heavy : .semibold))
             .foregroundStyle(bar.isCurrent ? PhoneTheme.inkText : PhoneTheme.muted)
-            .lineLimit(1).minimumScaleFactor(0.6)
+            .lineLimit(1)
             .frame(height: 18)
           Text(bar.soFar ? "SO FAR" : " ").font(.system(size: 10, weight: .heavy)).tracking(0.5)
             .foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize()
@@ -173,7 +173,7 @@ public struct LoadBars: View {
   private func usualKey(_ usual: Int) -> some View {
     HStack(spacing: 8) {
       DashedRule().stroke(PhoneTheme.muted, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])).frame(width: 28, height: 1)
-      Text("Usual \(LoadWords.number(usual))").font(.system(size: 13, weight: .bold)).foregroundStyle(PhoneTheme.muted)
+      Text("Usual \(LoadWords.number(usual))").scaledFont(13, .bold).foregroundStyle(PhoneTheme.muted)
     }
   }
 }
@@ -228,7 +228,7 @@ public struct WeekCard: View {
               .font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
           }
           LoadBars(bars: bars, usual: nil, caption: nil, barMax: 48, showValues: false, showLabels: false)
-          Text(LoadWords.scopeLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+          Text(LoadWords.scopeLabel).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
         }
       }
     }
@@ -315,7 +315,7 @@ public struct WeeklySummaryScreen: View {
         Text(LoadWords.scopeLabel)
         if let f = LoadWords.footnote(current) { Text(f) }
       }
-      .font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      .scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
       .fixedSize(horizontal: false, vertical: true)
       TextLinkButton("Why this number?", action: onWhy)
     }
@@ -338,7 +338,7 @@ public struct WeeklySummaryScreen: View {
       ForEach(SessionType.allCases) { t in
         HStack(spacing: 5) {
           RoundedRectangle(cornerRadius: 3).fill(PhoneTheme.sessionColor(t)).frame(width: 12, height: 12)
-          Text(t.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
+          Text(t.title).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
         }
       }
     }
@@ -470,11 +470,11 @@ public struct TrainingTotalsCard: View {
       if sessions.count <= 1 {
         Text("Your load builds week by week.").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
       }
-      LoadBars(bars: LoadBar.bars(weeks, calendar: calendar), usual: last.usualRounded, compactLabels: true)
+      LoadBars(bars: LoadBar.bars(weeks, calendar: calendar, format: "d/M"), usual: last.usualRounded, compactLabels: true)
       if let b = LoadWords.bandWords(last) {
         Text("Last week: \(b.prefix(1).lowercased() + b.dropFirst()).").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
-      Text(LoadWords.scopeLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      Text(LoadWords.scopeLabel).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
     }
   }
 
@@ -505,7 +505,7 @@ public struct TrainingTotalsCard: View {
       if let line = Self.monthLine(last, calendar: calendar) {
         Text(line).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
-      Text(LoadWords.scopeLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      Text(LoadWords.scopeLabel).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
     }
   }
 
@@ -531,7 +531,7 @@ public struct TrainingTotalsCard: View {
       if let vs = LoadWords.yearVsLast(thisYear: ytd.thisYear, lastYear: ytd.lastYear) {
         Text(vs + ".").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
       }
-      Text(LoadWords.scopeLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      Text(LoadWords.scopeLabel).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
     }
   }
 }

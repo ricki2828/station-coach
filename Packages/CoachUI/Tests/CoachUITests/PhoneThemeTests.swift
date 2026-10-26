@@ -21,6 +21,14 @@ final class PhoneThemeTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(Palette.contrast(PhoneTheme.mutedHex, PhoneTheme.cardHex), 4.5)
   }
 
+  func testWhySheetZoneChipsPassContrast() {
+    for (i, hex) in Palette.zoneHex.enumerated() {
+      XCTAssertGreaterThanOrEqual(Palette.contrast(hex, Palette.ink), 4.5, "zone \(i + 1)")
+    }
+    // Chip on the violet hero: amber text on the paper-coloured pill.
+    XCTAssertGreaterThanOrEqual(Palette.contrast(PhoneTheme.amberTextHex, PhoneTheme.paperHex), 4.5)
+  }
+
   func testSessionColoursAreDistinct() {
     XCTAssertEqual(Set(SessionType.allCases.map { PhoneTheme.sessionHex($0) }).count, SessionType.allCases.count)
   }
