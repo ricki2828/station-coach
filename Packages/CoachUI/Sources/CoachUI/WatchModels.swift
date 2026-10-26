@@ -71,7 +71,7 @@ public struct ReadyInfo: Equatable {
 }
 
 public struct FinishScreenModel: Equatable {
-  public enum Mode: Equatable { case saving, saved, saveFailed(missing: Int) }
+  public enum Mode: Equatable { case saved, saveFailed(missing: Int) }
   public var mode: Mode
   public var totalText: String
   /// "2:14 under target" / "Ended at Row. 5 of 8 stations."
@@ -79,13 +79,20 @@ public struct FinishScreenModel: Equatable {
   public var early: Bool
   public var best: String?
   public var worst: String?
+  /// The files are still being closed behind the finish moment.
+  public var saving: Bool
+  /// While set, UNDO reopens the last step (an accidental FINISH); the recorder is still running.
+  public var undoSecondsLeft: Int?
 
-  public init(mode: Mode, totalText: String, line: String, early: Bool, best: String? = nil, worst: String? = nil) {
+  public init(mode: Mode, totalText: String, line: String, early: Bool, best: String? = nil, worst: String? = nil,
+              saving: Bool = false, undoSecondsLeft: Int? = nil) {
     self.mode = mode
     self.totalText = totalText
     self.line = line
     self.early = early
     self.best = best
     self.worst = worst
+    self.saving = saving
+    self.undoSecondsLeft = undoSecondsLeft
   }
 }

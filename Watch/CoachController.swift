@@ -50,6 +50,8 @@ final class CoachController: ObservableObject {
   private var totalCorrection = 0
   private var repsByStep: [Int: [Int64]] = [:]
   private var lastLabel: Activity?
+  private var finishTask: Task<Void, Never>?
+  private var finishCueText = ""
 
   init(recorder: RecorderController) { self.recorder = recorder }
 
@@ -152,6 +154,8 @@ final class CoachController: ObservableObject {
   }
 
   func dismissFinish() {
+    // Only once the files are closed; before that the finish screen has no DONE.
+    guard finish?.saving != true, finish?.undoSecondsLeft == nil else { return }
     finish = nil
     ticker?.invalidate()
     ticker = nil
@@ -280,21 +284,16 @@ final class CoachController: ObservableObject {
 
   // MARK: Finish
 
+  /// Seconds after a normal finish during which UNDO reopens the last step. The recorder keeps running.
+  static let undoWindowSeconds = 10
+
   private func finishSession(early: Bool) {
     guard let m = machine, let started = m.startMs else { return }
-    let stopped = nowMs
-    let ended = m.endMs ?? stopped
+    let ended = m.endMs ?? nowMs
     let allReps = repsByStep.values.flatMap { $0 }.sorted()
     let result = CoachResult(plan: m.plan, splits: m.splits, early: early, repTimesMs: allReps, repCorrection: totalCorrection,
                              startedAtEpochMs: started, endedAtEpochMs: ended)
-    var saved = true
-    if let folder = recorder.sessionFolder {
-      do {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(result).write(to: folder.appendingPathComponent(CoachResult.fileName), options: .atomic)
-      } catch { saved = false }
-    } else { saved = false }
+    let saved = writeResult(result)
 
     let best = result.bestWorstStations
     let total = result.totalSeconds
@@ -305,20 +304,59 @@ final class CoachController: ObservableObject {
       ? "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
       : (d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target")
     let missing = m.plan.stationCount - result.completedStationCount
-    let model = FinishScreenModel(
-      mode: .saving, totalText: Fmt.clock(total), line: line, early: early,
-      best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" })
-    finish = model
+    finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early)
+    finish = FinishScreenModel(
+      mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
+      best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },
+      saving: false, undoSecondsLeft: early ? nil : Self.undoWindowSeconds)
     active = false
     screen = nil
     WKInterfaceDevice.current().play(.success)
-    offer(.finish, CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early))
-    Task { @MainActor in
-      recorder.onMotionMagnitude = nil
-      await recorder.stop()
-      var done = model
-      done.mode = saved ? .saved : .saveFailed(missing: max(missing, 1))
-      finish = done
+    finishTask?.cancel()
+    finishTask = Task { @MainActor in
+      if !early {
+        for left in stride(from: Self.undoWindowSeconds, to: 0, by: -1) {
+          finish?.undoSecondsLeft = left
+          try? await Task.sleep(nanoseconds: 1_000_000_000)
+          if Task.isCancelled { return }
+        }
+      }
+      await completeFinish()
     }
+  }
+
+  private func writeResult(_ result: CoachResult) -> Bool {
+    guard let folder = recorder.sessionFolder else { return false }
+    do {
+      let enc = JSONEncoder()
+      enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+      try enc.encode(result).write(to: folder.appendingPathComponent(CoachResult.fileName), options: .atomic)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /// The undo window has closed: close the workout and the files.
+  private func completeFinish() async {
+    finish?.undoSecondsLeft = nil
+    finish?.saving = true
+    recorder.onMotionMagnitude = nil
+    await recorder.stop()
+    finish?.saving = false
+  }
+
+  /// Reopens the last step after an accidental FINISH, while the undo window is open.
+  func undoFinish() {
+    guard finish?.undoSecondsLeft != nil, var m = machine, m.undo(at: nowMs) else { return }
+    finishTask?.cancel()
+    finishTask = nil
+    machine = m
+    if let folder = recorder.sessionFolder { try? FileManager.default.removeItem(at: folder.appendingPathComponent(CoachResult.fileName)) }
+    finish = nil
+    active = true
+    WKInterfaceDevice.current().play(.retry)
+    beginStep(announce: false)
+    refresh()
   }
 }

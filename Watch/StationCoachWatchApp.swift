@@ -28,7 +28,7 @@ struct RootView: View {
 
   var body: some View {
     if let finish = coach.finish {
-      CoachFinishScreen(model: finish, onDone: { coach.dismissFinish() })
+      CoachFinishScreen(model: finish, onDone: { coach.dismissFinish() }, onUndo: { coach.undoFinish() })
     } else {
       switch recorder.phase {
       case .idle: IdleHost()

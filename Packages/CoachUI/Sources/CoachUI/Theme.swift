@@ -11,8 +11,11 @@ public enum Theme {
   public static let bone = color(Palette.bone)
   /// "Behind plan". Never red.
   public static let amber = color(0xF2A516)
+  /// Buttons (START, share). Lime is also the burpee colour, so it is not used for the finish moment.
   public static let finishFlood = color(0xA6E22E)
-  public static let earlyFlood = color(0xA9DDF2)
+  /// The finish moment: bone, which no station uses.
+  public static let finishMoment = color(Palette.bone)
+  public static let finishMomentEarly = color(0xCFC9B8)
 
   public static func background(_ a: Activity) -> Color { color(Palette.swatch(for: a).hex) }
   public static func text(_ a: Activity) -> Color { color(Palette.swatch(for: a).text) }

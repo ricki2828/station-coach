@@ -96,30 +96,41 @@ public struct AlarmBanner: View {
   }
 }
 
+/// NEXT is an ink button with the station colour as its label. On the last step it becomes a hold-to-finish
+/// button and carries no hand-gesture shortcut: an accidental finish cannot be taken back once the workout ends.
 struct NextButton: View {
   let activity: Activity
   let isLast: Bool
   let action: () -> Void
+  @State private var pressing = false
 
   var body: some View {
-    let button = Button(action: action) {
-      Text(isLast ? "FINISH" : "NEXT")
-        .font(.system(size: 22, weight: .heavy))
-        .foregroundStyle(Theme.background(activity))
-        .frame(maxWidth: .infinity, minHeight: 56)
-        .background(Theme.text(activity), in: RoundedRectangle(cornerRadius: 14))
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(isLast ? "Finish session" : "Next")
-    #if os(watchOS)
-    if #available(watchOS 11.0, *) {
-      button.handGestureShortcut(.primaryAction)
+    let label = Text(isLast ? "HOLD TO FINISH" : "NEXT")
+      .font(.system(size: isLast ? 17 : 22, weight: .heavy))
+      .foregroundStyle(Theme.background(activity))
+      .frame(maxWidth: .infinity, minHeight: 56)
+      .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
+    if isLast {
+      label
+        .opacity(pressing ? 0.55 : 1)
+        .onLongPressGesture(minimumDuration: 1.0, maximumDistance: 40, perform: action, onPressingChanged: { pressing = $0 })
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Finish session")
+        .accessibilityAction { action() }
     } else {
+      let button = Button(action: action) { label }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Next")
+      #if os(watchOS)
+      if #available(watchOS 11.0, *) {
+        button.handGestureShortcut(.primaryAction)
+      } else {
+        button
+      }
+      #else
       button
+      #endif
     }
-    #else
-    button
-    #endif
   }
 }
 
@@ -311,52 +322,59 @@ public struct CoachReadyScreen: View {
   }
 }
 
-/// The finish moment: a flood of colour, the total, one line. Reduce Motion fades instead of animating.
+/// The finish moment: a flood of colour, the total, one line, shown at once while the files close behind it.
+/// For a few seconds after a normal finish, UNDO reopens the last step. Reduce Motion: nothing here animates.
 public struct CoachFinishScreen: View {
   let model: FinishScreenModel
   var onDone: () -> Void = {}
+  var onUndo: () -> Void = {}
 
-  public init(model: FinishScreenModel, onDone: @escaping () -> Void = {}) {
+  public init(model: FinishScreenModel, onDone: @escaping () -> Void = {}, onUndo: @escaping () -> Void = {}) {
     self.model = model
     self.onDone = onDone
+    self.onUndo = onUndo
   }
 
   public var body: some View {
     ZStack {
-      (model.early ? Theme.earlyFlood : Theme.finishFlood).ignoresSafeArea()
+      (model.early ? Theme.finishMomentEarly : Theme.finishMoment).ignoresSafeArea()
       VStack(spacing: 4) {
-        switch model.mode {
-        case .saving:
-          Spacer()
-          Spinner(color: Theme.ink)
-          Text("Saving\u{2026}").font(Theme.label(Theme.Size.label))
-          Spacer()
-        case .saved, .saveFailed:
-          Spacer(minLength: 0)
-          Text(model.totalText)
-            .font(Theme.number(Theme.Size.dominant)).condensed()
-            .lineLimit(1).minimumScaleFactor(0.55)
-            .accessibilityLabel("Total time \(model.totalText)")
-          Text(model.line)
-            .font(.system(size: 20, weight: .heavy)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
-          if case .saveFailed(let missing) = model.mode {
-            Text("Saved what we could. \(missing) station\(missing == 1 ? "" : "s") missing.")
-              .font(.system(size: 15, weight: .semibold)).multilineTextAlignment(.center)
-          } else if let best = model.best, let worst = model.worst {
-            Text("Best \(best)").font(.system(size: 15, weight: .semibold))
-            Text("Worst \(worst)").font(.system(size: 15, weight: .semibold))
-          }
-          Spacer(minLength: 0)
+        Spacer(minLength: 0)
+        Text(model.totalText)
+          .font(Theme.number(Theme.Size.dominant)).condensed()
+          .lineLimit(1).minimumScaleFactor(0.55)
+          .accessibilityLabel("Total time \(model.totalText)")
+        Text(model.line)
+          .font(.system(size: 20, weight: .heavy)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
+        if case .saveFailed(let missing) = model.mode {
+          Text("Saved what we could. \(missing) station\(missing == 1 ? "" : "s") missing.")
+            .font(.system(size: 15, weight: .semibold)).multilineTextAlignment(.center)
+        } else if model.undoSecondsLeft == nil, let best = model.best, let worst = model.worst {
+          Text("Best \(best)").font(.system(size: 15, weight: .semibold))
+          Text("Worst \(worst)").font(.system(size: 15, weight: .semibold))
+        }
+        Spacer(minLength: 0)
+        if let left = model.undoSecondsLeft {
+          Button(action: onUndo) {
+            Text("UNDO \(left)").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.ink)
+              .frame(maxWidth: .infinity, minHeight: 40)
+              .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.ink, lineWidth: 3))
+          }.buttonStyle(.plain)
+        } else if model.saving {
+          Text("Saving\u{2026}").font(.system(size: 15, weight: .semibold))
+        }
+        if model.undoSecondsLeft == nil, !model.saving {
           Button(action: onDone) {
             Text("DONE").font(.system(size: 20, weight: .heavy)).foregroundStyle(Theme.bone)
-              .frame(maxWidth: .infinity, minHeight: 48)
+              .frame(maxWidth: .infinity, minHeight: 44)
               .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
           }.buttonStyle(.plain)
         }
       }
       .foregroundStyle(Theme.ink)
       .padding(.horizontal, Theme.Space.watchEdge)
-      .padding(.vertical, 4)
+      .padding(.top, 4)
+      .padding(.bottom, 8)
     }
   }
 }

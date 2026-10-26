@@ -87,7 +87,10 @@ public enum ScreenCatalog {
       watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
       watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
       watch("menu", CoachMenuScreen()),
-      watch("finish-saving", CoachFinishScreen(model: FinishScreenModel(mode: .saving, totalText: "", line: "", early: false))),
+      watch("finish-undo-window", CoachFinishScreen(model: FinishScreenModel(
+        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41", undoSecondsLeft: 8))),
+      watch("finish-saving", CoachFinishScreen(model: FinishScreenModel(
+        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41", saving: true))),
       watch("finish-under", CoachFinishScreen(model: FinishScreenModel(
         mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41"))),
       watch("finish-over", CoachFinishScreen(model: FinishScreenModel(
