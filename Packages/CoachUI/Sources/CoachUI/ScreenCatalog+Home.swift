@@ -100,8 +100,9 @@ extension ScreenCatalog {
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),
       phoneW("detail-full", SessionDetailScreen(record: detailFull)),
       phoneW("detail-partial", SessionDetailScreen(record: detailPartial)),
-      phoneW("detail-no-reps", SessionDetailScreen(record: detailNoReps, onSaveCount: { _ in })),
+      phoneW("detail-no-reps", SessionDetailScreen(record: detailNoReps, onSaveCount: { _ in true })),
       phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps))),
+      phoneW("detail-edit-count-error", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps), errorText: "Couldn't save. Try again.")),
     ]
   }
 }

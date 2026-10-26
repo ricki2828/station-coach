@@ -93,11 +93,12 @@ public struct SessionDetailScreen: View {
   let record: SessionRecord
   let onShare: () -> Void
   let onExport: () -> Void
-  let onSaveCount: ((WallBallEdit) -> Void)?
+  let onSaveCount: ((WallBallEdit) -> Bool)?
   @State private var editing = false
+  @State private var saveFailed = false
 
   /// `onSaveCount` non-nil shows the "Edit count" link; the no-rep count comes from `record.result`.
-  public init(record: SessionRecord, onSaveCount: ((WallBallEdit) -> Void)? = nil,
+  public init(record: SessionRecord, onSaveCount: ((WallBallEdit) -> Bool)? = nil,
               onShare: @escaping () -> Void = {}, onExport: @escaping () -> Void = {}) {
     self.record = record
     self.onSaveCount = onSaveCount
@@ -177,7 +178,11 @@ public struct SessionDetailScreen: View {
     .background(PhoneTheme.paper)
     .sheet(isPresented: $editing) {
       WallBallEditSheet(initial: WallBallCountAdapter.initial(for: record),
-                        onSave: { onSaveCount?($0); editing = false }, onCancel: { editing = false })
+                        errorText: saveFailed ? "Couldn't save. Try again." : nil,
+                        onSave: { edit in
+                          if onSaveCount?(edit) ?? true { saveFailed = false; editing = false } else { saveFailed = true }
+                        },
+                        onCancel: { saveFailed = false; editing = false })
         .presentationDetents([.medium])
     }
   }

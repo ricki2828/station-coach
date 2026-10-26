@@ -14,11 +14,13 @@ public struct WallBallEdit: Equatable {
 /// Small sheet: valid reps and no-reps, each with big minus / plus buttons.
 public struct WallBallEditSheet: View {
   @State private var edit: WallBallEdit
+  let errorText: String?
   let onSave: (WallBallEdit) -> Void
   let onCancel: () -> Void
 
-  public init(initial: WallBallEdit, onSave: @escaping (WallBallEdit) -> Void = { _ in }, onCancel: @escaping () -> Void = {}) {
+  public init(initial: WallBallEdit, errorText: String? = nil, onSave: @escaping (WallBallEdit) -> Void = { _ in }, onCancel: @escaping () -> Void = {}) {
     _edit = State(initialValue: initial)
+    self.errorText = errorText
     self.onSave = onSave
     self.onCancel = onCancel
   }
@@ -34,6 +36,9 @@ public struct WallBallEditSheet: View {
           Divider().overlay(PhoneTheme.hairline)
           counter("No-reps", value: $edit.noReps)
         }
+      }
+      if let errorText {
+        Text(errorText).scaledFont(15, .bold).foregroundStyle(PhoneTheme.amberText).accessibilityAddTraits(.isStaticText)
       }
       VStack(spacing: 4) {
         PrimaryButton("Save") { onSave(edit) }
