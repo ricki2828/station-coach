@@ -28,6 +28,32 @@ public enum WallBallAnalysis {
   public static func totalRestSeconds(_ sets: [WallBallSet]) -> Int { sets.reduce(0) { $0 + $1.restBeforeSeconds } }
 }
 
+/// One NO REP tap during a wall-ball rest: the athlete's throw did not count and was added back to reps left.
+public struct NoRepEvent: Codable, Equatable {
+  public let tMs: Int64
+  /// 0-based wall-ball set the rep belonged to.
+  public let setIndex: Int
+
+  public init(tMs: Int64, setIndex: Int) {
+    self.tMs = tMs
+    self.setIndex = setIndex
+  }
+}
+
+/// Where a running rep count sits in the plan's sets.
+public enum WallBallProgress {
+  /// The 0-based set that rep number `repsDone` (the last valid one) belongs to; 0 before any rep, the last set past the end.
+  public static func setIndex(repsDone: Int, sets: [Int]) -> Int {
+    guard !sets.isEmpty else { return 0 }
+    var cumulative = 0
+    for (k, size) in sets.enumerated() {
+      cumulative += size
+      if repsDone <= cumulative { return k }
+    }
+    return sets.count - 1
+  }
+}
+
 /// Everything the phone needs to summarise a coached session; written by the watch as `coach.json`.
 public struct CoachResult: Codable, Equatable {
   public var plan: SessionPlan
@@ -39,8 +65,15 @@ public struct CoachResult: Codable, Equatable {
   public var repCorrection: Int
   public var startedAtEpochMs: Int64
   public var endedAtEpochMs: Int64
+  /// Every NO REP tap, in order. Absent in files written before the feature.
+  public var noReps: [NoRepEvent]
+  /// Total throws as corrected afterwards (on the phone); nil = the watch's count stands.
+  public var wallBallCorrection: Int?
 
-  public init(plan: SessionPlan, splits: [StepSplit], early: Bool, repTimesMs: [Int64], repCorrection: Int, startedAtEpochMs: Int64, endedAtEpochMs: Int64) {
+  public init(plan: SessionPlan, splits: [StepSplit], early: Bool, repTimesMs: [Int64], repCorrection: Int, startedAtEpochMs: Int64, endedAtEpochMs: Int64,
+              noReps: [NoRepEvent] = [], wallBallCorrection: Int? = nil) {
+    self.noReps = noReps
+    self.wallBallCorrection = wallBallCorrection
     self.plan = plan
     self.splits = splits
     self.early = early
@@ -50,7 +83,45 @@ public struct CoachResult: Codable, Equatable {
     self.endedAtEpochMs = endedAtEpochMs
   }
 
+  private enum CodingKeys: String, CodingKey {
+    case plan, splits, early, repTimesMs, repCorrection, startedAtEpochMs, endedAtEpochMs, noReps, wallBallCorrection
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    plan = try c.decode(SessionPlan.self, forKey: .plan)
+    splits = try c.decode([StepSplit].self, forKey: .splits)
+    early = try c.decode(Bool.self, forKey: .early)
+    repTimesMs = try c.decode([Int64].self, forKey: .repTimesMs)
+    repCorrection = try c.decode(Int.self, forKey: .repCorrection)
+    startedAtEpochMs = try c.decode(Int64.self, forKey: .startedAtEpochMs)
+    endedAtEpochMs = try c.decode(Int64.self, forKey: .endedAtEpochMs)
+    noReps = try c.decodeIfPresent([NoRepEvent].self, forKey: .noReps) ?? []
+    wallBallCorrection = try c.decodeIfPresent(Int.self, forKey: .wallBallCorrection)
+  }
+
   public static let fileName = "coach.json"
+
+  /// Sizes of the wall-ball sets in the plan (empty without a wall-ball step).
+  public var plannedWallBallSets: [Int] { plan.steps.first { $0.activity == .wallBalls }?.sets ?? [] }
+
+  /// Throws the athlete made: the phone's corrected total when set, else the watch's count plus manual +/-.
+  /// Includes the no-reps.
+  public var totalThrows: Int {
+    max(0, wallBallCorrection ?? (repTimesMs.count + repCorrection))
+  }
+
+  public var totalNoReps: Int { noReps.count }
+
+  /// Throws that counted.
+  public var validReps: Int { max(0, totalThrows - totalNoReps) }
+
+  /// No-reps per planned set (index = set), sized to the plan's sets.
+  public var noRepsBySet: [Int] {
+    var out = [Int](repeating: 0, count: max(plannedWallBallSets.count, (noReps.map(\.setIndex).max() ?? -1) + 1))
+    for e in noReps where e.setIndex >= 0 { out[e.setIndex] += 1 }
+    return out
+  }
 
   public struct Row: Equatable {
     public let step: PlanStep
@@ -102,12 +173,14 @@ public struct Insight: Equatable {
 /// 1. the biggest run slowdown against run 1 (changeover time taken out of runs 2 and later);
 /// 2. the station furthest over plan;
 /// 3. wall-ball rest as a share of the station;
+/// 4. no-reps that came late in the wall balls;
 /// else a plain total against target.
 public enum InsightPicker {
   public static let runSlowdownMin = 20
   public static let stationOverMin = 15
   public static let restShareMin = 0.25
   public static let restSecondsMin = 30
+  public static let lateNoRepsMin = 3
 
   public static func pick(_ result: CoachResult) -> Insight {
     let rows = result.rows
@@ -133,6 +206,15 @@ public enum InsightPicker {
       let share = Double(rest) / Double(dur)
       if rest >= restSecondsMin, share >= restShareMin {
         return Insight(rule: 3, headline: "You rested \(Fmt.gap(rest)) in wall balls, \(Int((share * 100).rounded()))% of the station")
+      }
+    }
+    // 4. No-reps that clustered in the last third of the sets.
+    let setCount = result.plannedWallBallSets.count
+    if setCount >= 3, result.totalNoReps >= lateNoRepsMin {
+      let firstLate = (setCount * 2 + 2) / 3 // ceil(2n/3): the first set of the last third
+      let late = result.noReps.filter { $0.setIndex >= firstLate }
+      if late.count >= lateNoRepsMin, late.count * 3 >= result.totalNoReps * 2 {
+        return Insight(rule: 4, headline: "Your no-reps came late: \(late.count) after set \(firstLate). Depth fades when you tire.")
       }
     }
     let planned = result.plan.plannedSeconds

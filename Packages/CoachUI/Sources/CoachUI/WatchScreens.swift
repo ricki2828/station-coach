@@ -173,17 +173,38 @@ struct StepperButton: View {
   }
 }
 
+/// Wall-ball rest control: a rep that did not count goes back onto reps left. At least 44 pt tall.
+struct NoRepButton: View {
+  static let height: CGFloat = 44
+  let count: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Text(count > 0 ? "NO REP \u{00B7} \(count)" : "NO REP")
+        .font(.system(size: 22, weight: .heavy)).foregroundStyle(Theme.ink)
+        .lineLimit(1).minimumScaleFactor(0.8)
+        .frame(maxWidth: .infinity, minHeight: Self.height, maxHeight: Self.height)
+        .background(Theme.amber, in: RoundedRectangle(cornerRadius: 12))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(count > 0 ? "No rep. \(count) noted. Tap to add another" : "No rep. Adds one rep back")
+  }
+}
+
 /// Run, time-based station and rep station: one dominant number each. Max three items besides the delta.
 public struct CoachStepScreen: View {
   let model: StepScreenModel
   var onNext: () -> Void = {}
   var onPlus: () -> Void = {}
   var onMinus: () -> Void = {}
+  var onNoRep: () -> Void = {}
   /// M1's "didn't hear" control, pinned beside NEXT on every coach screen. Nil hides it.
   var onMissed: (() -> Void)?
   var onAlarm: () -> Void = {}
 
-  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil, onAlarm: @escaping () -> Void = {}) {
+  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onNoRep: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil, onAlarm: @escaping () -> Void = {}) {
+    self.onNoRep = onNoRep
     self.onMissed = onMissed
     self.onAlarm = onAlarm
     self.model = model
@@ -220,12 +241,16 @@ public struct CoachStepScreen: View {
       .foregroundStyle(fg)
       .frame(height: 22)
       dominantRow(fg)
-      Text(model.secondary)
-        .font(Theme.number(Theme.Size.secondary)).condensed()
-        .foregroundStyle(fg.opacity(0.78))
-        .lineLimit(1).minimumScaleFactor(0.6)
-        .frame(height: 36)
-        .accessibilityLabel(model.secondaryLabel)
+      if model.noRepVisible {
+        NoRepButton(count: model.noRepCount, action: onNoRep)
+      } else {
+        Text(model.secondary)
+          .font(Theme.number(Theme.Size.secondary)).condensed()
+          .foregroundStyle(fg.opacity(0.78))
+          .lineLimit(1).minimumScaleFactor(0.6)
+          .frame(height: 36)
+          .accessibilityLabel(model.secondaryLabel)
+      }
       Spacer(minLength: 0)
       HStack(spacing: 6) {
         NextButton(activity: model.activity, isLast: model.isLast, action: onNext)

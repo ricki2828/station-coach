@@ -92,4 +92,8 @@ final class CoachCopyTests: XCTestCase {
       XCTAssertFalse(line.lowercased().contains("keep going"))
     }
   }
+
+  func testNoRepNotedIsShortAndPlain() {
+    XCTAssertEqual(CoachCopy.noRepNoted, "No rep noted.")
+  }
 }

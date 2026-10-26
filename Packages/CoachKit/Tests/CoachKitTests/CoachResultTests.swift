@@ -125,4 +125,81 @@ final class CoachResultTests: XCTestCase {
     let back = try JSONDecoder().decode(CoachResult.self, from: JSONEncoder().encode(r))
     XCTAssertEqual(back, r)
   }
+
+  // MARK: No-reps
+
+  private func withNoReps(_ sets: [Int], correction: Int? = nil, repTimes: [Int64]? = nil) -> CoachResult {
+    var r = result(repTimes: repTimes ?? reps(rest: 2))
+    r.noReps = sets.enumerated().map { NoRepEvent(tMs: Int64($0.offset) * 1000, setIndex: $0.element) }
+    r.wallBallCorrection = correction
+    return r
+  }
+
+  func testOldFilesDecodeWithoutNoReps() throws {
+    let json = try JSONEncoder().encode(result())
+    var obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+    obj.removeValue(forKey: "noReps")
+    obj.removeValue(forKey: "wallBallCorrection")
+    let old = try JSONSerialization.data(withJSONObject: obj)
+    let back = try JSONDecoder().decode(CoachResult.self, from: old)
+    XCTAssertEqual(back.noReps, [])
+    XCTAssertNil(back.wallBallCorrection)
+  }
+
+  func testNoRepsRoundTrip() throws {
+    let r = withNoReps([1, 5, 5], correction: 104)
+    let back = try JSONDecoder().decode(CoachResult.self, from: JSONEncoder().encode(r))
+    XCTAssertEqual(back, r)
+    XCTAssertEqual(back.wallBallCorrection, 104)
+  }
+
+  func testDerivedStats() {
+    let r = withNoReps([1, 5, 5])
+    XCTAssertEqual(r.totalThrows, 100)
+    XCTAssertEqual(r.totalNoReps, 3)
+    XCTAssertEqual(r.validReps, 97)
+    XCTAssertEqual(r.noRepsBySet, [0, 1, 0, 0, 0, 2, 0])
+  }
+
+  func testCorrectedTotalReplacesTheWatchCount() {
+    var r = withNoReps([2], correction: 103)
+    XCTAssertEqual(r.totalThrows, 103)
+    XCTAssertEqual(r.validReps, 102)
+    r.wallBallCorrection = nil
+    r.repCorrection = -2
+    XCTAssertEqual(r.totalThrows, 98)
+  }
+
+  func testSetIndexForRepsDone() {
+    let sets = [15, 15, 15]
+    XCTAssertEqual(WallBallProgress.setIndex(repsDone: 0, sets: sets), 0)
+    XCTAssertEqual(WallBallProgress.setIndex(repsDone: 15, sets: sets), 0)
+    XCTAssertEqual(WallBallProgress.setIndex(repsDone: 16, sets: sets), 1)
+    XCTAssertEqual(WallBallProgress.setIndex(repsDone: 99, sets: sets), 2)
+    XCTAssertEqual(WallBallProgress.setIndex(repsDone: 5, sets: []), 0)
+  }
+
+  func testRule4LateNoRepsNamesTheSetBeforeTheCluster() {
+    // 7 sets: the last third is sets 6 and 7 (indices 5, 6)
+    let i = InsightPicker.pick(withNoReps([5, 6, 6]))
+    XCTAssertEqual(i.rule, 4)
+    XCTAssertEqual(i.headline, "Your no-reps came late: 3 after set 5. Depth fades when you tire.")
+  }
+
+  func testRule4NeedsTwoThirdsLate() {
+    XCTAssertEqual(InsightPicker.pick(withNoReps([0, 1, 5, 6])).rule, 0) // 2 of 4 late
+    XCTAssertEqual(InsightPicker.pick(withNoReps([5, 6])).rule, 0) // under 3
+    XCTAssertEqual(InsightPicker.pick(withNoReps([1, 5, 6, 6])).rule, 4) // 3 of 4 late
+  }
+
+  func testRule4YieldsToWallBallRest() {
+    XCTAssertEqual(InsightPicker.pick(withNoReps([5, 6, 6], repTimes: reps(rest: 20))).rule, 3)
+  }
+
+  func testRule4YieldsToHigherRules() {
+    var r = withNoReps([5, 6, 6])
+    r = CoachResult(plan: r.plan, splits: result(extra: [4: 45]).splits, early: false, repTimesMs: r.repTimesMs, repCorrection: 0,
+                    startedAtEpochMs: 0, endedAtEpochMs: r.endedAtEpochMs, noReps: r.noReps)
+    XCTAssertEqual(InsightPicker.pick(r).rule, 1)
+  }
 }
