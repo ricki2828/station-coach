@@ -59,12 +59,13 @@ public enum ReadyScreenModel: Equatable {
 public struct ReadyInfo: Equatable {
   public var sessionName: String
   public var targetText: String
-  public var athleteChip: String
+  /// Not shown on the coached Ready screen (nil); the recorder-only flow keeps its own athlete settings.
+  public var athleteChip: String?
   /// Warnings that do not block START: "No headphones: cues by vibration", "Heart rate off. The coach still works."
   public var chips: [String]
   public var batteryLine: String?
 
-  public init(sessionName: String, targetText: String, athleteChip: String, chips: [String] = [], batteryLine: String? = nil) {
+  public init(sessionName: String, targetText: String, athleteChip: String? = nil, chips: [String] = [], batteryLine: String? = nil) {
     self.sessionName = sessionName
     self.targetText = targetText
     self.athleteChip = athleteChip

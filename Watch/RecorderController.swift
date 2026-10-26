@@ -101,8 +101,9 @@ final class RecorderController: ObservableObject {
         storeHz: motion.storeHz,
         cueIntervalSec: coach ? 0 : cueInterval,
         audioMode: audioMode.rawValue,
-        athlete: athlete,
-        wrist: wrist,
+        // The coached flow has no athlete picker: the defaults apply. Recorder-only keeps its settings.
+        athlete: coach ? Self.athleteCodes[0] : athlete,
+        wrist: coach ? "left" : wrist,
         labelSource: coach ? "coach" : "athlete_taps",
         transitionLabelSeconds: coach ? transitionSeconds : nil)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)

@@ -90,7 +90,6 @@ final class CoachController: ObservableObject {
     }
     return .ready(ReadyInfo(
       sessionName: plan.title, targetText: Fmt.clock(plan.plannedSeconds),
-      athleteChip: "\(recorder.athlete) \u{00B7} \(recorder.wrist.prefix(1).uppercased())",
       chips: chips, batteryLine: battery))
   }
 

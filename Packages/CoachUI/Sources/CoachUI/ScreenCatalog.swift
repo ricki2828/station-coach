@@ -55,7 +55,7 @@ public enum ScreenCatalog {
   public static var watchScreens: [CatalogEntry] {
     let allStations = FinishScreenModel.stations(from: SampleData.result(extra: [1: -25, 5: 41]))
     let earlyStations = FinishScreenModel.stations(from: SampleData.result(until: 10))
-    let ready = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L")
+    let ready = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")
     let run = step(.run, .run, "Run 4", dominant: "3:12", dominantLabel: "Run time 3 minutes 12", secondary: "/ 5:24",
                    secondaryLabel: "Target 5 minutes 24", next: "Next: Burpee broad jumps", delta: -20)
     let station = step(.time, .skierg, "SkiErg", dominant: "2:10", dominantLabel: "Station time 2 minutes 10", secondary: "/ 4:25",
@@ -75,7 +75,7 @@ public enum ScreenCatalog {
       watch("ready-no-plan", CoachReadyScreen(model: .noPlan)),
       watch("ready", CoachReadyScreen(model: .ready(ready))),
       watch("ready-warnings", CoachReadyScreen(model: .ready(ReadyInfo(
-        sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L",
+        sessionName: "Full sim", targetText: "1:20:00",
         chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
         batteryLine: "Battery 54%. A full sim needs about 60%.")))),
       watch("run", CoachStepScreen(model: run, onMissed: {})),

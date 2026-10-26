@@ -304,8 +304,10 @@ public struct CoachReadyScreen: View {
         case .ready(let info):
           let tight = !info.chips.isEmpty || info.batteryLine != nil
           HStack(spacing: 6) {
-            Text(info.athleteChip).font(.system(size: 15, weight: .heavy)).foregroundStyle(Theme.ink)
-              .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.bone, in: Capsule())
+            if let chip = info.athleteChip {
+              Text(chip).font(.system(size: 15, weight: .heavy)).foregroundStyle(Theme.ink)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.bone, in: Capsule())
+            }
             Text(info.sessionName.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
             Spacer(minLength: 0)
           }
