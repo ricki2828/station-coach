@@ -30,6 +30,8 @@ public enum Theme {
     public static let floor: CGFloat = 36
     public static let label: CGFloat = 17
     public static let small: CGFloat = 15
+    /// The session-delta band: deliberately well under the step's own number.
+    public static let band: CGFloat = 24
   }
 
   /// Series 12 / 46 mm points.

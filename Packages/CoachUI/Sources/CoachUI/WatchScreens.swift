@@ -1,21 +1,27 @@
 import CoachKit
 import SwiftUI
 
-/// Pill that holds the session delta: bone when level or ahead, amber when behind. Never red.
+/// Slim band across the top for the session delta: bone when level or ahead, amber when behind. Never red.
+/// Deliberately small (24 pt numbers in a 28 pt band) so the step's own number stays the loudest thing.
 struct DeltaBand: View {
   let seconds: Int
 
   var body: some View {
     Text(Fmt.delta(seconds))
-      .font(Theme.number(Theme.Size.floor))
-      .condensed()
+      .font(Theme.number(Theme.Size.band)).condensed()
       .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
       .lineLimit(1)
-      .minimumScaleFactor(0.8)
-      .padding(.horizontal, 8)
-      .background(Theme.ink.opacity(0.88), in: Capsule())
+      .frame(maxWidth: .infinity)
+      .frame(height: 28)
+      .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
       .accessibilityLabel(seconds == 0 ? "On plan" : "\(Fmt.gap(seconds)) \(seconds > 0 ? "behind" : "ahead of") plan")
   }
+}
+
+/// Reports the dominant number's laid-out size, so a test can check what was rendered, not what was asked for.
+struct DominantSizeKey: PreferenceKey {
+  static var defaultValue: CGSize = .zero
+  static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
 struct HeartChip: View {
@@ -158,61 +164,60 @@ public struct CoachStepScreen: View {
 
   public var body: some View {
     let fg = Theme.text(model.activity)
-    ZStack {
-      Theme.background(model.activity)
-      VStack(spacing: 2) {
-        HStack(spacing: 4) {
-          DeltaBand(seconds: model.deltaSeconds)
-          Spacer(minLength: 0)
-          if let bpm = model.hrBpm { HeartChip(bpm: bpm) }
+    VStack(spacing: 3) {
+      DeltaBand(seconds: model.deltaSeconds)
+      HStack(spacing: 4) {
+        Text(model.title.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
+        if model.kind == .reps {
+          Text("LEFT").font(.system(size: 12, weight: .heavy))
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(fg.opacity(0.18), in: Capsule())
         }
-        HStack(spacing: 4) {
-          Text(model.title.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
-          if model.kind == .reps {
-            Text("LEFT").font(.system(size: 12, weight: .heavy))
-              .padding(.horizontal, 5).padding(.vertical, 1)
-              .background(fg.opacity(0.18), in: Capsule())
-          }
-          if let badge = model.badge {
-            Text(badge.uppercased()).font(.system(size: 12, weight: .heavy))
-              .padding(.horizontal, 5).padding(.vertical, 1)
-              .background(fg.opacity(0.18), in: Capsule())
-          }
+        if let badge = model.badge {
+          Text(badge.uppercased()).font(.system(size: 12, weight: .heavy))
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(fg.opacity(0.18), in: Capsule())
         }
-        .foregroundStyle(fg)
-        dominantRow(fg)
-        Text(model.secondary)
-          .font(Theme.number(Theme.Size.secondary)).condensed()
-          .foregroundStyle(fg.opacity(0.78))
-          .lineLimit(1).minimumScaleFactor(0.6)
-          .accessibilityLabel(model.secondaryLabel)
         Spacer(minLength: 0)
-        if model.kind != .reps {
-          Text(model.next).font(.system(size: Theme.Size.small, weight: .semibold)).foregroundStyle(fg.opacity(0.85)).lineLimit(1)
-        }
-        HStack(spacing: 6) {
-          NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
-          if let onMissed {
-            Button(action: onMissed) {
-              Text("NOT\nHEARD").font(.system(size: 12, weight: .heavy)).multilineTextAlignment(.center)
-                .foregroundStyle(Theme.ink)
-                .frame(width: 56, height: 56)
-                .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Didn't hear the last cue")
+        if let bpm = model.hrBpm { HeartChip(bpm: bpm) }
+      }
+      .foregroundStyle(fg)
+      .frame(height: 24)
+      dominantRow(fg)
+      Text(model.secondary)
+        .font(Theme.number(Theme.Size.secondary)).condensed()
+        .foregroundStyle(fg.opacity(0.78))
+        .lineLimit(1).minimumScaleFactor(0.6)
+        .frame(height: 40)
+        .accessibilityLabel(model.secondaryLabel)
+      // The next station is only worth a line while the athlete is changing over.
+      if model.badge != nil {
+        Text(model.next).font(.system(size: Theme.Size.small, weight: .semibold)).foregroundStyle(fg).lineLimit(1)
+      }
+      Spacer(minLength: 0)
+      HStack(spacing: 6) {
+        NextButton(activity: model.activity, isLast: model.isLast, action: onNext)
+        if let onMissed {
+          Button(action: onMissed) {
+            Text("NOT\nHEARD").font(.system(size: 12, weight: .heavy)).multilineTextAlignment(.center)
+              .foregroundStyle(Theme.ink)
+              .frame(width: 56, height: 56)
+              .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14))
           }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Didn't hear the last cue")
         }
       }
-      .padding(.horizontal, Theme.Space.watchEdge)
-      .padding(.top, 2)
-      .padding(.bottom, 2)
-      if let toast = model.toast {
-        Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66).frame(maxHeight: .infinity, alignment: .bottom)
-      }
-      if let alarm = model.alarm {
-        AlarmBanner(text: alarm, action: "Keep and send", onAction: onAlarm).padding(.horizontal, 6).frame(maxHeight: .infinity, alignment: .top)
-      }
+    }
+    .padding(.horizontal, Theme.Space.watchEdge)
+    .padding(.top, 2)
+    .padding(.bottom, 6)
+    .background(Theme.background(model.activity).ignoresSafeArea())
+    .overlay(alignment: .bottom) {
+      if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
+    }
+    .overlay(alignment: .top) {
+      if let alarm = model.alarm { AlarmBanner(text: alarm, action: "OK", onAction: onAlarm).padding(.horizontal, 6) }
     }
   }
 
@@ -221,7 +226,9 @@ public struct CoachStepScreen: View {
     let number = Text(model.dominant)
       .font(Theme.number(Theme.Size.dominant)).condensed()
       .foregroundStyle(fg)
-      .lineLimit(1).minimumScaleFactor(0.5)
+      .lineLimit(1)
+      .background(GeometryReader { Color.clear.preference(key: DominantSizeKey.self, value: $0.size) })
+      .frame(height: 68)
       .accessibilityLabel(model.dominantLabel)
     if model.kind == .reps {
       HStack(spacing: 0) {
