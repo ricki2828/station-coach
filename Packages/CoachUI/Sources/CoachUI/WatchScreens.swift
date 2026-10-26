@@ -312,7 +312,8 @@ public struct CoachReadyScreen: View {
       }
       .foregroundStyle(Theme.bone)
       .padding(.horizontal, Theme.Space.watchEdge)
-      .padding(.vertical, 4)
+      .padding(.top, 4)
+      .padding(.bottom, 10)
     }
   }
 
