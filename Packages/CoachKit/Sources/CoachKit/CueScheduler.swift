@@ -29,6 +29,8 @@ public struct CueScheduler {
 
   public init() {}
 
+  public var hasPending: Bool { !pending.isEmpty }
+
   public mutating func offer(_ cue: CoachCue) { pending.append(cue) }
 
   /// The cue to say now, or nil. Call on a short timer and after each `offer`.

@@ -239,7 +239,7 @@ final class CoachController: ObservableObject {
   }
 
   private func pump() {
-    guard let cue = scheduler.next(at: clock, speaking: recorder.cues.isSpeaking) else { return }
+    guard recorder.phase == .running, let cue = scheduler.next(at: clock, speaking: recorder.cues.isSpeaking) else { return }
     recorder.cues.speak(cue.text)
   }
 
@@ -341,6 +341,17 @@ final class CoachController: ObservableObject {
   private func completeFinish() async {
     finish?.undoSecondsLeft = nil
     finish?.saving = true
+    // The finish line is a cue like any other: let it be spoken, and its `finished` event logged, before the
+    // writer closes. Anything else still waiting is dropped. Capped at the cue timeout.
+    scheduler = CueScheduler()
+    offer(.finish, finishCueText)
+    var waited = 0.0
+    while (scheduler.hasPending || recorder.cues.isSpeaking) && waited < CueRunner.finishTimeout {
+      pump()
+      try? await Task.sleep(nanoseconds: 250_000_000)
+      waited += 0.25
+    }
+    try? await Task.sleep(nanoseconds: 300_000_000) // the delegate's finished event arrives on the main queue
     recorder.onMotionMagnitude = nil
     await recorder.stop()
     finish?.saving = false
