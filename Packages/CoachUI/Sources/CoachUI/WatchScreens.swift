@@ -18,10 +18,16 @@ struct DeltaBand: View {
   }
 }
 
-/// Reports the dominant number's laid-out size, so a test can check what was rendered, not what was asked for.
-struct DominantSizeKey: PreferenceKey {
-  static var defaultValue: CGSize = .zero
-  static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+/// Test hook: when set, the dominant number is drawn in this colour, so a test can find its ink in a render.
+struct DominantProbeKey: EnvironmentKey {
+  static let defaultValue: Color? = nil
+}
+
+extension EnvironmentValues {
+  var dominantProbe: Color? {
+    get { self[DominantProbeKey.self] }
+    set { self[DominantProbeKey.self] = newValue }
+  }
 }
 
 struct HeartChip: View {
@@ -232,13 +238,14 @@ public struct CoachStepScreen: View {
     }
   }
 
+  @Environment(\.dominantProbe) private var probe
+
   @ViewBuilder
   private func dominantRow(_ fg: Color) -> some View {
     let number = Text(model.dominant)
       .font(Theme.number(Theme.Size.dominant)).condensed()
-      .foregroundStyle(fg)
+      .foregroundStyle(probe ?? fg)
       .lineLimit(1)
-      .background(GeometryReader { Color.clear.preference(key: DominantSizeKey.self, value: $0.size) })
       .frame(height: 68)
       .accessibilityLabel(model.dominantLabel)
     if model.kind == .reps {
