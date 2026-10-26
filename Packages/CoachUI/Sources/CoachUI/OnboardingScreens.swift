@@ -91,7 +91,7 @@ private struct RaceChoice: View {
   }
 }
 
-private struct StepperButton: View {
+private struct RaceStepButton: View {
   let symbol: String
   let label: String
   let action: () -> Void
@@ -139,11 +139,11 @@ public struct OnboardingRaceScreen: View {
         VStack(alignment: .leading, spacing: 8) {
           Text("Target finish").phoneKicker()
           HStack(spacing: 10) {
-            StepperButton(symbol: "\u{2212}", label: "Five minutes less") { onTargetStep(-300) }
+            RaceStepButton(symbol: "\u{2212}", label: "Five minutes less") { onTargetStep(-300) }
             Text(Fmt.clock(model.targetSeconds)).phoneHero(size: 56).foregroundStyle(PhoneTheme.inkText)
               .frame(maxWidth: .infinity).lineLimit(1).minimumScaleFactor(0.7)
               .accessibilityLabel("Target finish \(Fmt.clock(model.targetSeconds))")
-            StepperButton(symbol: "+", label: "Five minutes more") { onTargetStep(300) }
+            RaceStepButton(symbol: "+", label: "Five minutes more") { onTargetStep(300) }
           }
         }
         Text("The target is a guess for now. The plan splits it across all 16 parts.")
