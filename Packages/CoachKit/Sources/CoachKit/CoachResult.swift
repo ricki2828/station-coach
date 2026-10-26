@@ -10,17 +10,17 @@ public struct WallBallSet: Equatable {
 }
 
 public enum WallBallAnalysis {
-  /// Assigns counted reps to the planned set structure in order. A short final set is kept as it is.
-  public static func sets(repTimesMs: [Int64], structure: [Int]) -> [WallBallSet] {
+  /// A set ends where the gap to the next rep is longer than `restGapSeconds`: sets are what the athlete did,
+  /// not the plan's sizes, so a set of 12 stays 12 and its rest is measured.
+  public static func sets(repTimesMs: [Int64], restGapSeconds: Int = 8) -> [WallBallSet] {
     var out: [WallBallSet] = []
-    var cursor = 0
-    for size in structure {
-      guard cursor < repTimesMs.count else { break }
-      let end = min(cursor + size, repTimesMs.count)
-      let slice = repTimesMs[cursor..<end]
+    var start = 0
+    for i in 1...max(repTimesMs.count, 1) where !repTimesMs.isEmpty {
+      guard i == repTimesMs.count || repTimesMs[i] - repTimesMs[i - 1] > Int64(restGapSeconds) * 1000 else { continue }
+      let slice = repTimesMs[start..<i]
       let rest = out.last.map { Int((slice.first! - $0.endMs) / 1000) } ?? 0
       out.append(WallBallSet(reps: slice.count, startMs: slice.first!, endMs: slice.last!, restBeforeSeconds: max(0, rest)))
-      cursor = end
+      start = i
     }
     return out
   }
@@ -79,7 +79,7 @@ public struct CoachResult: Codable, Equatable {
           let split = splits.first(where: { $0.stepIndex == step.index }) else { return [] }
     let end = split.endMs ?? endedAtEpochMs
     let reps = repTimesMs.filter { $0 >= split.startMs && $0 <= end }
-    return WallBallAnalysis.sets(repTimesMs: reps, structure: step.sets)
+    return WallBallAnalysis.sets(repTimesMs: reps)
   }
 
   /// Best and worst completed station against plan, as (name, delta).

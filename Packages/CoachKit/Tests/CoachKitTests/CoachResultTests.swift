@@ -86,14 +86,31 @@ final class CoachResultTests: XCTestCase {
   }
 
   func testWallBallSetsAndRest() {
-    let sets = WallBallAnalysis.sets(repTimesMs: reps(rest: 20), structure: Stations.wallBallSets(reps: 100))
+    let sets = WallBallAnalysis.sets(repTimesMs: reps(rest: 20))
     XCTAssertEqual(sets.map(\.reps), [15, 15, 15, 15, 15, 15, 10])
     XCTAssertEqual(sets.map(\.restBeforeSeconds), [0, 20, 20, 20, 20, 20, 20])
     XCTAssertEqual(WallBallAnalysis.totalRestSeconds(sets), 120)
   }
 
+  func testSetsFollowTheAthleteNotThePlan() {
+    // 12 reps, rest, 12 reps, rest, 9 reps: not the planned 15s
+    var t: Int64 = 0
+    var times: [Int64] = []
+    for size in [12, 12, 9] {
+      for _ in 0..<size { times.append(t); t += 3_000 }
+      t += 17_000
+    }
+    let sets = WallBallAnalysis.sets(repTimesMs: times)
+    XCTAssertEqual(sets.map(\.reps), [12, 12, 9])
+    XCTAssertEqual(sets.map(\.restBeforeSeconds), [0, 20, 20])
+  }
+
+  func testNoRepsNoSets() {
+    XCTAssertEqual(WallBallAnalysis.sets(repTimesMs: []), [])
+  }
+
   func testUncountedRepsLeaveAShortLastSet() {
-    let sets = WallBallAnalysis.sets(repTimesMs: Array(reps(rest: 20).prefix(40)), structure: [15, 15, 15, 15])
+    let sets = WallBallAnalysis.sets(repTimesMs: Array(reps(rest: 20).prefix(40)))
     XCTAssertEqual(sets.map(\.reps), [15, 15, 10])
   }
 
