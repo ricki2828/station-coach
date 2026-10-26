@@ -6,7 +6,7 @@
 Pass marks (docs/FORMAT.md describes the files):
   1. speech cues heard on headphones for >= 95% of cues
   2. >= 30% battery left at 90 minutes
-  3. motion recorded at >= 50 Hz
+  3. motion recorded at >= 50 Hz for >= 95% of session seconds (gaps count as missing)
   4. labelled minutes per activity (all 10 activities present)
 
 Needs only the stdlib and numpy.
@@ -26,6 +26,8 @@ CUE_MARK = 95.0
 BATTERY_MARK = 30.0
 HZ_MARK = 50.0
 BATTERY_MINUTES = 90
+COVERAGE_MARK = 0.95  # share of session seconds that must reach HZ_MARK
+CUE_ISSUED_MARK = 0.90  # issued cues as a share of interval x duration
 
 
 def read_rows(path):
@@ -128,6 +130,34 @@ def achieved_hz(path):
     return {"samples": int(ts.size), "mean_hz": float((ts.size - 1) / span), "median_hz": median}
 
 
+def motion_coverage(path, start_ms, end_ms, mark=HZ_MARK):
+    """Share of the manifest's whole seconds (start to end) holding >= `mark` samples, and the longest
+    run of seconds below it. A stream that stops early, or never starts, counts as missing."""
+    p = Path(path)
+    total = max(1, int((end_ms - start_ms) // 1000))
+    counts = np.zeros(total, dtype=np.int64)
+    if p.exists():
+        try:
+            ts = np.loadtxt(p, delimiter=",", skiprows=1, usecols=(0,), ndmin=1)
+        except ValueError:
+            ts = np.array([])
+        if ts.size:
+            secs = np.floor(ts / 1e6 - start_ms / 1000.0).astype(np.int64)
+            secs = secs[(secs >= 0) & (secs < total)]
+            counts = np.bincount(secs, minlength=total)
+    good = counts >= mark
+    longest = run = 0
+    for g in good:
+        run = 0 if g else run + 1
+        longest = max(longest, run)
+    return {"coverage": float(good.mean()), "longest_gap_s": int(longest), "seconds": total}
+
+
+def expected_cues(manifest, start_ms, end_ms):
+    interval = manifest.get("cueIntervalSec") or 0
+    return int(((end_ms - start_ms) / 1000) // interval) if interval > 0 else 0
+
+
 def label_minutes(rows, start_ms, end_ms):
     """Replay set/undo events (set pushes, undo pops) into minutes per activity."""
     stack = []
@@ -163,10 +193,15 @@ def report(folder):
                  f"motion api {manifest.get('motionApi', '?')}  length {(end - start) / 60_000:.1f} min")
 
     cues = cue_delivery(read_rows(folder / "cues.csv"))
+    expected = expected_cues(manifest, start, end)
+    issued_share = cues["issued"] / expected if expected else 1.0
+    cues_ok = cues["issued"] > 0 and cues["percent"] >= CUE_MARK and issued_share >= CUE_ISSUED_MARK
     lines.append(f"1. Cue delivery: {cues['delivered']}/{cues['issued']} = {cues['percent']:.1f}% "
                  f"(route showed headphones {cues['route_headphones']}, haptic-only {cues['haptic_only']}, "
                  f"flagged missed {cues['missed']}, audio mode {'/'.join(cues['audio_modes']) or '?'})  "
-                 f"{flag(cues['issued'] > 0 and cues['percent'] >= CUE_MARK)} (mark {CUE_MARK:.0f}%)")
+                 f"{flag(cues_ok)} (mark {CUE_MARK:.0f}%)")
+    lines.append(f"   cues issued {cues['issued']} of ~{expected} expected "
+                 f"({100 * issued_share:.0f}%, need {100 * CUE_ISSUED_MARK:.0f}%)")
 
     bat = battery_at(read_rows(folder / "battery.csv"), start, end)
     if not bat["known"]:
@@ -187,8 +222,10 @@ def report(folder):
             hz_parts.append(f"{stream} none")
             hz_ok = False
         else:
-            hz_parts.append(f"{stream} {r['median_hz']:.0f} Hz median ({r['mean_hz']:.1f} mean, {r['samples']} samples)")
-            hz_ok = hz_ok and r["median_hz"] >= HZ_MARK
+            cov = motion_coverage(folder / f"{stream}.csv", start, end)
+            hz_parts.append(f"{stream} {r['median_hz']:.0f} Hz median ({r['mean_hz']:.1f} mean, {r['samples']} samples), "
+                            f"{100 * cov['coverage']:.1f}% of session seconds >= {HZ_MARK:.0f} Hz, longest gap {cov['longest_gap_s']} s")
+            hz_ok = hz_ok and r["median_hz"] >= HZ_MARK and cov["coverage"] >= COVERAGE_MARK
     raw = [r for r in read_rows(folder / "rates.csv") if r.get("raw_hz")]
     if raw:
         best = max(float(r["raw_hz"]) for r in raw)

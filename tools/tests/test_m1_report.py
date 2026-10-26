@@ -1,6 +1,8 @@
 import io
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -15,18 +17,29 @@ T0 = 1_790_000_000_000
 MIN = 60_000
 
 
+def run_cli(folder):
+    return subprocess.run([sys.executable, str(TOOLS / "m1_report.py"), str(folder)],
+                          capture_output=True, text=True, check=True).stdout
+
+
 class ReportTests(unittest.TestCase):
     def test_cue_delivery(self):
         r = m1_report.cue_delivery(m1_report.read_rows(FIXTURE / "cues.csv"))
-        self.assertEqual((r["issued"], r["delivered"], r["haptic_only"], r["missed"]), (20, 18, 1, 1))
-        self.assertAlmostEqual(r["percent"], 90.0)
+        self.assertEqual((r["issued"], r["delivered"], r["haptic_only"], r["missed"]), (12, 10, 1, 1))
+        self.assertEqual(r["route_headphones"], 11)
+        self.assertEqual(r["audio_modes"], ["A"])
+        self.assertAlmostEqual(r["percent"], 100 * 10 / 12)
 
     def test_cue_delivery_empty(self):
         self.assertEqual(m1_report.cue_delivery([])["percent"], 0.0)
 
-    def test_battery_at_90(self):
+    def test_expected_cues(self):
         start, end = m1_report.session_bounds(m1_report.load_manifest(FIXTURE), FIXTURE)
-        b = m1_report.battery_at(m1_report.read_rows(FIXTURE / "battery.csv"), start, end)
+        self.assertEqual(m1_report.expected_cues(m1_report.load_manifest(FIXTURE), start, end), 12)
+
+    def test_battery_at_90(self):
+        rows = [{"epoch_ms": str(T0 + m * MIN), "level": f"{1 - 0.005 * m:.2f}", "state": "unplugged"} for m in range(101)]
+        b = m1_report.battery_at(rows, T0, T0 + 100 * MIN)
         self.assertTrue(b["reached"])
         self.assertAlmostEqual(b["percent"], 55.0, places=3)
 
@@ -44,39 +57,84 @@ class ReportTests(unittest.TestCase):
     def test_achieved_hz(self):
         for name in ("accel", "motion"):
             r = m1_report.achieved_hz(FIXTURE / f"{name}.csv")
-            self.assertEqual(r["samples"], 2000)
+            self.assertEqual(r["samples"], 12000)
             self.assertAlmostEqual(r["median_hz"], 100.0)
             self.assertAlmostEqual(r["mean_hz"], 100.0, delta=0.1)
 
     def test_achieved_hz_missing_file(self):
         self.assertIsNone(m1_report.achieved_hz(FIXTURE / "nope.csv"))
 
+    def test_full_coverage(self):
+        start, end = m1_report.session_bounds(m1_report.load_manifest(FIXTURE), FIXTURE)
+        c = m1_report.motion_coverage(FIXTURE / "accel.csv", start, end)
+        self.assertEqual((c["coverage"], c["longest_gap_s"], c["seconds"]), (1.0, 0, 120))
+
+    def test_missing_stream_is_zero_coverage(self):
+        start, end = m1_report.session_bounds(m1_report.load_manifest(FIXTURE), FIXTURE)
+        c = m1_report.motion_coverage(FIXTURE / "nope.csv", start, end)
+        self.assertEqual((c["coverage"], c["longest_gap_s"]), (0.0, 120))
+
     def test_label_minutes_with_undo(self):
         start, end = m1_report.session_bounds(m1_report.load_manifest(FIXTURE), FIXTURE)
         m = m1_report.label_minutes(m1_report.read_rows(FIXTURE / "labels.csv"), start, end)
-        expected = {
-            "run": 56, "transition": 2, "skierg": 5, "sled_push": 3, "sled_pull": 3,
-            "burpee_broad_jump": 5, "row": 6, "farmers_carry": 4, "sandbag_lunges": 6, "wall_balls": 10,
+        expected_s = {
+            "run": 20, "transition": 10, "skierg": 10, "sled_push": 10, "sled_pull": 10,
+            "burpee_broad_jump": 10, "row": 10, "farmers_carry": 10, "sandbag_lunges": 10, "wall_balls": 20,
         }
-        for act, mins in expected.items():
-            self.assertAlmostEqual(m[act], mins, places=6, msg=act)
+        for act, secs in expected_s.items():
+            self.assertAlmostEqual(m[act] * 60, secs, places=6, msg=act)
         self.assertNotIn("rest", m)
         self.assertAlmostEqual(m["_unlabelled"], 0.0, places=6)
 
     def test_report_text_and_cli(self):
-        out = subprocess.run([sys.executable, str(TOOLS / "m1_report.py"), str(FIXTURE)],
-                             capture_output=True, text=True, check=True).stdout
-        self.assertIn("1. Cue delivery: 18/20 = 90.0%", out)
+        out = run_cli(FIXTURE)
+        self.assertIn("1. Cue delivery: 10/12 = 83.3%", out)
         self.assertIn("FAIL (mark 95%)", out)
-        self.assertIn("2. Battery at 90 min: 55%", out)
-        self.assertIn("PASS (mark 30%)", out)
+        self.assertIn("cues issued 12 of ~12 expected", out)
         self.assertIn("accel 100 Hz median", out)
+        self.assertIn("100.0% of session seconds", out)
         self.assertIn("PASS all 10 activities", out)
 
     def test_main_without_args(self):
         buf = io.StringIO()
         with redirect_stdout(buf):
             self.assertEqual(m1_report.main(["m1_report.py"]), 2)
+
+
+class DegradedSessionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.folder = self.tmp / "s"
+        shutil.copytree(FIXTURE, self.folder)
+
+    @staticmethod
+    def keep_lines(path, n):
+        lines = path.read_text().splitlines(keepends=True)
+        path.write_text("".join(lines[:n]))
+
+    def test_motion_dies_halfway_fails_hz_mark(self):
+        for name in ("accel", "motion"):
+            self.keep_lines(self.folder / f"{name}.csv", 1 + 60 * 100)  # header + first 60 s
+        start, end = m1_report.session_bounds(m1_report.load_manifest(self.folder), self.folder)
+        c = m1_report.motion_coverage(self.folder / "accel.csv", start, end)
+        self.assertAlmostEqual(c["coverage"], 0.5)
+        self.assertEqual(c["longest_gap_s"], 60)
+        out = run_cli(self.folder)
+        line = next(l for l in out.splitlines() if l.startswith("3."))
+        self.assertIn("50.0% of session seconds", line)
+        self.assertIn("longest gap 60 s", line)
+        self.assertIn("FAIL (mark 50 Hz)", line)
+
+    def test_cues_stop_early_fails_even_if_delivered(self):
+        rows = (self.folder / "cues.csv").read_text().splitlines(keepends=True)
+        kept = [rows[0]] + [r for r in rows[1:] if int(r.split(",")[1]) in (1, 2, 3, 4)]
+        (self.folder / "cues.csv").write_text("".join(kept))
+        out = run_cli(self.folder)
+        self.assertIn("1. Cue delivery: 4/4 = 100.0%", out)
+        self.assertIn("cues issued 4 of ~12 expected (33%", out)
+        line = next(l for l in out.splitlines() if l.startswith("1."))
+        self.assertIn("FAIL", line)
 
 
 if __name__ == "__main__":

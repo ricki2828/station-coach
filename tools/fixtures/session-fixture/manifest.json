@@ -1,8 +1,10 @@
 {
   "appVersion": "0.1.0",
-  "cueIntervalSec": 45,
+  "athlete": "A1",
+  "audioMode": "A",
+  "cueIntervalSec": 10,
   "device": "Synthetic",
-  "endedAtEpochMs": 1790006000000,
+  "endedAtEpochMs": 1790000120000,
   "formatVersion": 1,
   "motionApi": "CMBatchedSensorManager",
   "osVersion": "watchOS 10",
@@ -10,5 +12,6 @@
   "sessionId": "fixture",
   "startedAtEpochMs": 1790000000000,
   "storeHz": 100,
-  "workoutActivityType": "crossTraining"
+  "workoutActivityType": "crossTraining",
+  "wrist": "left"
 }
