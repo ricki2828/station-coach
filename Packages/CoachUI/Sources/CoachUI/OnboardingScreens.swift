@@ -207,15 +207,28 @@ public struct OnboardingWatchScreen: View {
   }
 }
 
-/// The whole flow. Pages advance in place; `onFinish` fires from "Build my first session" and from Skip.
+/// How onboarding ended. A skip never counts as the watch-install check being done.
+public enum OnboardingOutcome: Equatable {
+  /// "Build my first session" on the last page: the watch page was seen.
+  case built
+  /// Skip tapped; `atPage` is 0-based (1 = race page, 2 = watch page).
+  case skipped(atPage: Int)
+}
+
+/// The whole flow. Pages advance in place. Skip on the race page goes on to the watch page; Skip on the watch page finishes.
 public struct OnboardingFlow: View {
   @State private var page = 0
   @Binding var model: OnboardingModel
-  let onFinish: () -> Void
+  let onOutcome: (OnboardingOutcome) -> Void
 
-  public init(model: Binding<OnboardingModel>, onFinish: @escaping () -> Void) {
+  public init(model: Binding<OnboardingModel>, onOutcome: @escaping (OnboardingOutcome) -> Void) {
     self._model = model
-    self.onFinish = onFinish
+    self.onOutcome = onOutcome
+  }
+
+  /// Original initialiser: any ending, built or skipped, calls `onFinish`.
+  public init(model: Binding<OnboardingModel>, onFinish: @escaping () -> Void) {
+    self.init(model: model, onOutcome: { _ in onFinish() })
   }
 
   public var body: some View {
@@ -226,7 +239,7 @@ public struct OnboardingFlow: View {
         OnboardingRaceScreen(model: model, onDivision: { model.division = $0 },
                              onTargetStep: { model.targetSeconds = PlanBuilder.clamped(model.targetSeconds + $0) },
                              onContinue: { page = 2 }, onSkip: { page = 2 })
-      default: OnboardingWatchScreen(model: model, onBuild: onFinish, onSkip: onFinish)
+      default: OnboardingWatchScreen(model: model, onBuild: { onOutcome(.built) }, onSkip: { onOutcome(.skipped(atPage: 2)) })
       }
     }
     .animation(.easeInOut(duration: 0.2), value: page)
