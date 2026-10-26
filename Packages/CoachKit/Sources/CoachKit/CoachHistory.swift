@@ -175,7 +175,8 @@ public struct HomeModel: Equatable {
     biggestAfter = withFade.first.flatMap { RunFade.slowdowns($0.0.result).max { $0.seconds < $1.seconds }?.after }
     if let latest = latestFade {
       if let prev = previousFade {
-        let d = latest - prev
+        // Clamped like the hero: two runs faster than run 1 both read "0 s", so they are holding, not "more".
+        let d = max(0, latest) - max(0, prev)
         state = .trend(d < -RunFade.steadySeconds ? .down : d > RunFade.steadySeconds ? .up : .steady)
       } else {
         state = .baseline
@@ -229,7 +230,7 @@ public struct HomeModel: Equatable {
     case .baseline: return "1 \((heroType ?? .fullSim).title.uppercased())"
     case .trend(let t):
       let since = previousDate.map { HistoryFormat.dayMonth($0) } ?? ""
-      let diff = abs((latestFade ?? 0) - (previousFade ?? 0))
+      let diff = abs(max(0, latestFade ?? 0) - max(0, previousFade ?? 0))
       switch t {
       case .down: return "\(diff) s less fade since \(since)"
       case .steady: return "Holding since \(since)"

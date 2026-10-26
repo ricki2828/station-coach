@@ -135,7 +135,7 @@ public struct SessionDetailScreen: View {
         PhoneCard {
           VStack(alignment: .leading, spacing: 8) {
             Text("Runs after each station").phoneKicker()
-            RecentBars(values: slows.map(\.seconds), colors: slows.map { PhoneTheme.stationColor($0.afterActivity) }, caption: "Taller = slower. Run 1 is the baseline.")
+            RecentBars(values: slows.map { max(0, $0.seconds) }, colors: slows.map { PhoneTheme.stationColor($0.afterActivity) }, caption: "Taller = slower. Run 1 is the baseline.")
             HStack(spacing: 8) {
               ForEach(Array(slows.enumerated()), id: \.offset) { _, s in
                 Text(StationStrip.shortName(s.afterActivity)).font(.system(size: 11, weight: .bold)).foregroundStyle(PhoneTheme.muted)

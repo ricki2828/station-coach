@@ -75,6 +75,13 @@ final class CoachHistoryTests: XCTestCase {
     XCTAssertEqual(HomeModel(records: [record("a", fade: 5)], now: now).line, "slower per run than run 1")
   }
 
+  func testTrendUsesClampedFades() {
+    let m = HomeModel(records: [record("a", day: 0, fade: -10), record("b", day: 1, fade: -2)], now: now)
+    XCTAssertEqual(m.hero, "0 s")
+    XCTAssertEqual(m.state, .trend(.steady))
+    XCTAssertEqual(m.chip, "Holding since 24 Oct")
+  }
+
   func testLegendOnlyWithMoreThanOneType() {
     let one = HomeModel(records: [record("a", day: 0, fade: 5), record("b", day: 1, fade: 6)], now: now)
     XCTAssertEqual(one.legendTypes, [.fullSim])
