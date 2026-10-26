@@ -327,7 +327,7 @@ public struct CoachStepScreen: View {
           }
           NoRepButton(count: model.noRepCount, action: onNoRep)
         }
-        .padding(.bottom, c ? 2 : 7) // 10 pt in all above NOT HEARD and NEXT (6 pt on 41 mm)
+        .padding(.bottom, c ? 1 : 7) // 10 pt in all above NOT HEARD and NEXT (6 pt on 41 mm)
       } else if model.noRepUndo {
         // Throwing has resumed but the chip keeps its 4 s: a mis-tap can still be taken back.
         NoRepUndoChip(count: model.noRepCount, height: c ? 30 : 36, action: onNoRepUndo)
@@ -357,7 +357,7 @@ public struct CoachStepScreen: View {
     }
     .padding(.horizontal, Theme.Space.watchEdge)
     .padding(.top, 2)
-    .padding(.bottom, c ? 6 : 10)
+    .padding(.bottom, c ? 4 : 10)
     .background(Theme.background(model.activity).ignoresSafeArea())
     .overlay(alignment: .bottom) {
       if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
