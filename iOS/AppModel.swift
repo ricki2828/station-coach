@@ -94,8 +94,7 @@ final class AppModel: ObservableObject {
     guard let o = result.outcome else { return }
     let display = MomentDisplay.make(
       o.moment, totalSeconds: o.record.result.totalSeconds, fadeSeconds: o.record.fade,
-      previousDate: o.previousBestDate.map { HistoryFormat.dayMonth($0) }, sessionType: o.record.type,
-      partial: o.record.isComplete ? nil : (o.record.result.completedStationCount, o.record.result.plan.stationCount))
+      previousDate: o.previousBestDate.map { HistoryFormat.dayMonth($0) }, sessionType: o.record.type)
     pendingMoment = PendingMoment(id: o.record.id, record: o.record, display: display)
   }
 }
