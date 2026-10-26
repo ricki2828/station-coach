@@ -214,16 +214,9 @@ public enum InsightPicker {
   public static func pick(_ result: CoachResult) -> Insight {
     let rows = result.rows
     // 1. Run slowdown vs run 1, named by the station before it.
-    if let first = rows.first(where: { $0.step.isRun })?.actualSeconds {
-      var worst: (Int, String)?
-      for (i, r) in rows.enumerated() where r.step.isRun && (r.step.runNumber ?? 0) > 1 {
-        guard let a = r.actualSeconds, i > 0 else { continue }
-        // Runs 2-8 start with a changeover that run 1 does not have: that is not fade.
-        let slow = (a - result.plan.transitionSeconds) - first
-        if slow >= runSlowdownMin, slow > (worst?.0 ?? 0) { worst = (slow, rows[i - 1].step.name.lowercased()) }
-      }
-      if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.1) was \(worst.0)\u{00A0}s slower than run 1") }
-    }
+    var worst: RunFade.Slowdown?
+    for s in RunFade.slowdowns(result) where s.seconds >= runSlowdownMin && s.seconds > (worst?.seconds ?? 0) { worst = s }
+    if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.after.lowercased()) was \(worst.seconds)\u{00A0}s slower than run 1") }
     // 2. Station furthest over plan.
     let over = rows.filter { !$0.step.isRun }.compactMap { r in r.deltaSeconds.map { (r.step.name, $0) } }.max { $0.1 < $1.1 }
     if let over, over.1 >= stationOverMin {
