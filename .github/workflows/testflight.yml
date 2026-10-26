@@ -52,14 +52,18 @@ jobs:
       - name: Apply team and bundle prefix to the generated project (nothing is committed)
         run: |
           [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo "APPLE_TEAM_ID must be 10 letters or digits"; exit 1; }
-          sed -i '' "s|^    SWIFT_VERSION: \"5.0\"|&\\
-    DEVELOPMENT_TEAM: $APPLE_TEAM_ID\\
-    CODE_SIGN_STYLE: Automatic|" project.yml
-          if [ -n "$BUNDLE_PREFIX" ]; then
-            [[ "$BUNDLE_PREFIX" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "BUNDLE_PREFIX has characters a bundle id cannot hold"; exit 1; }
-            # The phone id, the watch id (phone id + .watchkitapp) and the watch's companion id all derive from it.
-            sed -i '' "s|app\\.stationcoach|$BUNDLE_PREFIX|g" project.yml
-          fi
+          python3 - <<'PY'
+          import os, re
+          team, prefix = os.environ["APPLE_TEAM_ID"], os.environ.get("BUNDLE_PREFIX", "")
+          s = open("project.yml").read()
+          s = s.replace('    SWIFT_VERSION: "5.0"\n', '    SWIFT_VERSION: "5.0"\n    DEVELOPMENT_TEAM: ' + team + '\n    CODE_SIGN_STYLE: Automatic\n', 1)
+          if prefix:
+              if not re.fullmatch(r"[A-Za-z0-9.-]+", prefix):
+                  raise SystemExit("BUNDLE_PREFIX has characters a bundle id cannot hold")
+              # The phone id, the watch id (phone id + .watchkitapp) and the watch's companion id all derive from it.
+              s = s.replace("app.stationcoach", prefix)
+          open("project.yml", "w").write(s)
+          PY
           grep -n "DEVELOPMENT_TEAM\|CODE_SIGN_STYLE\|bundleIdPrefix\|PRODUCT_BUNDLE_IDENTIFIER\|WKCompanion" project.yml | sed "s/$APPLE_TEAM_ID/<team>/"
 
       - run: brew install xcodegen
