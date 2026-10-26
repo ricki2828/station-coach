@@ -69,13 +69,13 @@ final class TrainingLoadTests: XCTestCase {
   }
 
   func testZoneWeightsFollowMaxHR() {
-    // 185 max: 170 bpm is zone 5 (0.92), so one minute is 5 load; against a 220 max it is zone 4.
+    // 185 max: 170 bpm is zone 5 (0.92), so one minute is 5 load; against a 220 max it is zone 3.
     let plan = PlanBuilder.build(division: .openMen, target: 3600, type: .fullSim)
     let r = CoachResult(plan: plan, splits: [StepSplit(stepIndex: 0, startMs: base, endMs: base + 60_000)], early: true,
                         repTimesMs: [], repCorrection: 0, startedAtEpochMs: base, endedAtEpochMs: base + 60_000)
     let series = HeartRateSeries(samples: (0..<60).map { HeartRateSample(epochMs: base + Int64($0) * 1000, bpm: 170) })
     XCTAssertEqual(SessionLoad.of(r, hr: series, maxHR: 185).load, 5, accuracy: 0.001)
-    XCTAssertEqual(SessionLoad.of(r, hr: series, maxHR: 220).load, 4, accuracy: 0.001)
+    XCTAssertEqual(SessionLoad.of(r, hr: series, maxHR: 220).load, 3, accuracy: 0.001)
     XCTAssertEqual(SessionLoad.of(r, hr: series, maxHR: 185).basis, .heartRate)
   }
 
@@ -215,7 +215,7 @@ final class TrainingLoadTests: XCTestCase {
     func at(_ weeks: Int, _ day: Int = 1) -> Date { cal.date(byAdding: .day, value: weeks * 7 + day, to: mon)! }
     let oneWeek = [load(300, at: at(-1)), load(300, at: at(-1, 3)), load(300, at: at(-1, 5)), load(300, at: at(0))]
     XCTAssertEqual(LoadCompare.compare(oneWeek, periodStart: mon, calendar: cal).state, .firstWeeks)
-    let twoWeeks = [load(300, at: at(-2)), load(300, at: at(-1)), load(300, at: at(-1, 3)), load(300, at: at(0))]
+    let twoWeeks = [load(300, at: at(-2)), load(300, at: at(-1)), load(300, at: at(-1, 3)), load(450, at: at(0))]
     XCTAssertEqual(LoadCompare.compare(twoWeeks, periodStart: mon, calendar: cal).state, .compared(.usual))
   }
 
@@ -263,7 +263,7 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.stepUp).compare), "600 load, 25% more than your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.bigJump).compare), "960 load, about double your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.lighter).compare), "240 load, 50% less than your usual week (480).")
-    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.firstWeeks).compare), "340 load. Your usual week takes shape after 3 sessions.")
+    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.firstWeeks).compare), "360 load. Your usual week takes shape after 3 sessions.")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.returning).compare), "240 load, your first week back. We compare from next week.")
   }
 

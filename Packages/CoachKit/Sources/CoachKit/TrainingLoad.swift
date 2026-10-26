@@ -283,10 +283,9 @@ public enum LoadHistory {
   public static func start(of unit: LoadUnit, containing date: Date, calendar: Calendar) -> Date {
     switch unit {
     case .week:
-      let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-      return calendar.date(from: comps) ?? calendar.startOfDay(for: date)
+      return calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? calendar.startOfDay(for: date)
     case .month:
-      return calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? calendar.startOfDay(for: date)
+      return calendar.dateInterval(of: .month, for: date)?.start ?? calendar.startOfDay(for: date)
     }
   }
 
