@@ -1,6 +1,7 @@
 import CoachKit
 import CoachUI
 import SwiftUI
+import UIKit
 
 /// A moment waiting to be shown over the app.
 struct PendingMoment: Identifiable {
@@ -13,14 +14,14 @@ struct PendingMoment: Identifiable {
 @MainActor
 final class AppModel: ObservableObject {
   enum Tab { case home, plan, history }
-  /// The Monday notification: asked once, after the first weekly summary worth a notice has been seen, and never again.
-  enum NotifyChoice: String { case undecided, yes, no }
 
   @Published var tab: Tab = .home
   @Published var setup: SetupModel = AppModel.loadSetup()
   @Published private(set) var onboarded: Bool
   @Published var pendingMoment: PendingMoment?
   @Published private(set) var notifyChoice: NotifyChoice
+  /// What iOS allows, re-read on every foreground: it can change in iOS Settings.
+  @Published private(set) var notifyAuth: NotifyAuthorization = .notDetermined
   /// Bumped to open the weekly summary from a notification tap.
   @Published private(set) var summaryRequest = 0
   /// Onboarding was skipped before the watch app was confirmed, and the nudge has not been dismissed.
@@ -28,14 +29,14 @@ final class AppModel: ObservableObject {
 
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
-  private static let notifyKey = "notify.weekly"
+
 
   init(existingSessionIds: [String] = []) {
     let d = UserDefaults.standard
     // Someone who already has sessions on the phone has been through setup; remember it so deleting them all does not bring onboarding back.
     let has = !existingSessionIds.isEmpty
     onboarded = d.bool(forKey: "onboarded") || has
-    notifyChoice = NotifyChoice(rawValue: d.string(forKey: Self.notifyKey) ?? "") ?? .undecided
+    notifyChoice = WeeklyNotifier.storedChoice
     watchNudge = d.object(forKey: "onboarding.watchChecked") as? Bool == false && !d.bool(forKey: "onboarding.watchNudgeDismissed")
     if has { d.set(true, forKey: "onboarded") }
     // First run of a build with moments: the sessions already here are history, not news.
@@ -98,7 +99,7 @@ final class AppModel: ObservableObject {
 
   // MARK: Weekly summary
 
-  var notifyOptedIn: Bool { notifyChoice == .yes }
+  var notifyState: NotifySettingState { NotifySettingState(choice: notifyChoice, auth: notifyAuth) }
 
   /// A notification tap or the Home card: show the last complete week.
   func openWeekSummary() {
@@ -106,19 +107,43 @@ final class AppModel: ObservableObject {
     summaryRequest += 1
   }
 
-  /// "Yes, Mondays" asks the system once; a refusal is stored as "no" so the card never returns. "No thanks" is final too.
-  func chooseNotify(_ yes: Bool, sessions: [LoadSession]) {
-    guard notifyChoice == .undecided else { return }
-    guard yes else { setNotify(.no); return }
+  /// Foreground: iOS may have changed what it allows. Scheduling follows by itself.
+  func refreshNotifyAuth() {
     Task {
-      let granted = await WeeklyNotifier.shared.requestPermission()
-      setNotify(granted ? .yes : .no)
-      WeeklyNotifier.shared.reschedule(sessions: sessions, optedIn: granted)
+      notifyAuth = await WeeklyNotifier.shared.authorization()
+      PhoneTransfer.shared.rescheduleNotice()
     }
   }
 
-  private func setNotify(_ choice: NotifyChoice) {
-    defaults.set(choice.rawValue, forKey: Self.notifyKey)
+  /// The Plan-tab switch, and "Yes, Mondays" on the summary card. Turning it on records the wish first, then asks iOS or sends
+  /// the athlete to Settings. Declining the iOS prompt is not a permanent no: the wish stays, and granting later schedules again.
+  func setNotify(_ on: Bool) {
+    guard on else {
+      store(notifyState.turnedOff().choice)
+      PhoneTransfer.shared.rescheduleNotice()
+      return
+    }
+    let turned = notifyState.turnedOn()
+    store(turned.state.choice)
+    switch turned.action {
+    case .askSystem:
+      Task {
+        let granted = await WeeklyNotifier.shared.requestPermission()
+        notifyAuth = turned.state.afterPrompt(granted: granted).auth
+        PhoneTransfer.shared.rescheduleNotice()
+      }
+    case .openSystemSettings:
+      if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    case .nothing:
+      PhoneTransfer.shared.rescheduleNotice()
+    }
+  }
+
+  /// "No thanks" on the one-time card.
+  func declineNotifyCard() { store(notifyState.declinedCard().choice) }
+
+  private func store(_ choice: NotifyChoice) {
+    defaults.set(choice.rawValue, forKey: WeeklyNotifier.defaultsKey)
     notifyChoice = choice
   }
 

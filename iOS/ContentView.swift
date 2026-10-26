@@ -61,19 +61,12 @@ struct ContentView: View {
       app.evaluateMoments(phone.coachSessions)
       WeeklyNotifier.shared.onOpenSummary = { app.openWeekSummary() }
       if WeeklyNotifier.shared.consumePendingOpen() { app.openWeekSummary() }
-      rescheduleNotice()
+      app.refreshNotifyAuth()
     }
-    .onChange(of: phone.loadSummary) { _, _ in rescheduleNotice() }
-    .onChange(of: scenePhase) { _, phase in if phase == .active { rescheduleNotice() } }
-    .onChange(of: app.notifyChoice) { _, _ in rescheduleNotice() }
+    .onChange(of: scenePhase) { _, phase in if phase == .active { app.refreshNotifyAuth() } }
     .onChange(of: phone.coachSessions) { _, records in app.evaluateMoments(records) }
     .onChange(of: app.onboarded) { _, _ in app.evaluateMoments(phone.coachSessions) }
     .fullScreenCover(item: $app.pendingMoment) { MomentHost(pending: $0) }
-  }
-
-  /// The text is built from the sessions on the phone now, so it is rebuilt after every sync and every foreground.
-  private func rescheduleNotice() {
-    WeeklyNotifier.shared.reschedule(sessions: phone.loadSummary.sessions, optedIn: app.notifyOptedIn)
   }
 }
 
@@ -143,6 +136,7 @@ struct PlanHost: View {
     ScrollView {
       SetupScreen(
         model: { var m = app.setup; m.send = phone.sendState; return m }(),
+        notify: app.notifyState, onNotifyToggle: { app.setNotify($0) },
         onDivision: { app.setup.division = $0; changed() },
         onTargetStep: { app.setup.targetSeconds = PlanBuilder.clamped(app.setup.targetSeconds + $0); changed() },
         onType: { app.setup.type = $0; changed() },
@@ -221,8 +215,8 @@ struct WeekSummaryHost: View {
     ScrollView {
       VStack(spacing: 0) {
         WeeklySummaryScreen(compare: compare, weeks: weeks, calendar: cal, onWhy: { showWhy = true })
-        if app.notifyChoice == .undecided, WeeklyNotice.content(for: compare) != nil {
-          NotifyOptInCard(onYes: { app.chooseNotify(true, sessions: s.sessions) }, onNo: { app.chooseNotify(false, sessions: s.sessions) })
+        if app.notifyState.showsOptInCard, WeeklyNotice.content(for: compare) != nil {
+          NotifyOptInCard(onYes: { app.setNotify(true) }, onNo: { app.declineNotifyCard() })
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
       }

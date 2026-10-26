@@ -77,6 +77,9 @@ extension ScreenCatalog {
       loadW("home-week", HomeScreen(model: homeModel(trend), today: now, week: WeekCardModel.make(homeSessions, now: now, calendar: cal))),
       loadW("history-totals-week", history(.week)),
       loadW("history-totals-month", history(.month)),
+      loadW("setup-monday-off", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .undecided, auth: .notDetermined))),
+      loadW("setup-monday-on", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .yes, auth: .authorized))),
+      loadW("setup-monday-blocked", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .yes, auth: .denied))),
     ]
   }
 

@@ -469,6 +469,23 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(fire(monday19.addingTimeInterval(6 * 86_400 + 23 * 3_600)).day, 26)
   }
 
+  func testNextFireIsEightLocalAcrossClockChanges() {
+    func local(_ id: String, _ y: Int, _ m: Int, _ d: Int, _ h: Int) -> (Date, Calendar) {
+      var c = LoadHistory.calendar(timeZone: TimeZone(identifier: id)!)
+      c.locale = Locale(identifier: "en_US_POSIX")
+      return (c.date(from: DateComponents(year: y, month: m, day: d, hour: h))!, c)
+    }
+    // London: clocks go back Sun 25 Oct 2026. Friday 23 Oct to Monday 26 Oct is still 08:00 local, i.e. 08:00 UTC after the change.
+    let (london, lc) = local("Europe/London", 2026, 10, 23, 18)
+    let l = lc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: london, calendar: lc)!)
+    XCTAssertEqual(l, DateComponents(month: 10, day: 26, hour: 8, minute: 0, weekday: 2))
+    XCTAssertEqual(WeeklyNotice.nextFire(after: london, calendar: lc)!.timeIntervalSince(london), 2 * 86_400 + 14 * 3_600 + 3_600 + 0)
+    // Sydney: clocks go forward Sun 4 Oct 2026.
+    let (sydney, sc) = local("Australia/Sydney", 2026, 10, 2, 18)
+    let sy = sc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: sydney, calendar: sc)!)
+    XCTAssertEqual(sy, DateComponents(month: 10, day: 5, hour: 8, minute: 0, weekday: 2))
+  }
+
   func testPlanReportsTheWeekAsItWillStandAtFireTime() {
     let d = TrainingLoad.sample(.usual)
     let sunEvening = monday19.addingTimeInterval(6 * 86_400 + 20 * 3_600)

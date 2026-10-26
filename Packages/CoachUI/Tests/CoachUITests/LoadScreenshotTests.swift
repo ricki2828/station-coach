@@ -15,7 +15,7 @@ final class LoadScreenshotTests: XCTestCase {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     let entries = ScreenCatalog.loadScreens + ScreenCatalog.loadWiredScreens
     XCTAssertEqual(Set(entries.map(\.name)).count, entries.count)
-    XCTAssertEqual(entries.count, 20)
+    XCTAssertEqual(entries.count, 23)
     for entry in entries {
       let renderer = ImageRenderer(content: entry.view.environment(\.colorScheme, .light))
       renderer.scale = 2
