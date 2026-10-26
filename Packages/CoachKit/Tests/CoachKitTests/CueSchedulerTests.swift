@@ -21,8 +21,18 @@ final class CueSchedulerTests: XCTestCase {
     s.offer(cue(.planAndRun, "a", at: 0))
     _ = s.next(at: 0, speaking: false)
     s.offer(cue(.midStation, "b", at: 5))
-    XCTAssertNil(s.next(at: 21, speaking: false)) // 16 s old
+    XCTAssertNil(s.next(at: 31, speaking: false)) // 26 s old
     XCTAssertEqual(s.dropped, 1)
+  }
+
+  func testACueHeldByTheGapIsNotDroppedForWaiting() {
+    var s = CueScheduler()
+    s.offer(cue(.wallBallSet, "set", at: 0))
+    XCTAssertEqual(s.next(at: 0, speaking: false)?.text, "set")
+    s.offer(cue(.planAndRun, "run", at: 5)) // offered 5 s after a cue: must wait 15 s, and still be said
+    XCTAssertNil(s.next(at: 19, speaking: false))
+    XCTAssertEqual(s.next(at: 20, speaking: false)?.text, "run")
+    XCTAssertEqual(s.dropped, 0)
   }
 
   func testNeverOverlapsSpeech() {

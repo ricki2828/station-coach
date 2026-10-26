@@ -17,11 +17,12 @@ public struct CoachCue: Equatable {
   }
 }
 
-/// At most one cue per `minGap` seconds, never while one is speaking, stale cues dropped.
+/// At most one cue per `minGap` seconds, never while one is speaking, cues older than `maxAge` dropped.
 /// The finish cue ignores the gap (it still waits for speech to end) and never goes stale.
 public struct CueScheduler {
   public static let minGap: TimeInterval = 20
-  public static let maxAge: TimeInterval = 12
+  /// Longer than `minGap`, so a cue held back by the gap is not dropped for waiting out the gap.
+  public static let maxAge: TimeInterval = 25
 
   private var lastSpokenAt: TimeInterval?
   private var pending: [CoachCue] = []
