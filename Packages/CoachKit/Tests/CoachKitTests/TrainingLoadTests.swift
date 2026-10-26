@@ -554,7 +554,7 @@ final class TrainingLoadTests: XCTestCase {
     let back = [load(200, at: month(5, 3)), load(200, at: month(6, 3)), load(200, at: month(10, 4))]
     let r = LoadCompare.compare(back, periodStart: oct(), unit: .month, calendar: cal)
     XCTAssertEqual(r.state, .returning)
-    XCTAssertEqual(LoadWords.headline(r), "200 load. Back after a break. We compare once you have two months back.")
+    XCTAssertEqual(LoadWords.headline(r), "200 load. Back after a break. Your usual comes back after 3 sessions across 2 months.")
   }
 
   func testLateStartingFirstMonthDoesNotDragUsualDown() {
