@@ -465,6 +465,7 @@ public struct TrainingTotalsCard: View {
     let cur = weeks[weeks.count - 1]
     let last = LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar)
     return VStack(alignment: .leading, spacing: 12) {
+      Text("This week so far").scaledKicker(color: PhoneTheme.inkText)
       tiles(("Load", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Wall balls", LoadWords.number(cur.wallBallReps)))
       if sessions.count <= 1 {
         Text("Your load builds week by week.").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
@@ -498,6 +499,7 @@ public struct TrainingTotalsCard: View {
     let cur = months[months.count - 1]
     let last = LoadCompare.lastComplete(sessions, unit: .month, now: now, calendar: calendar)
     return VStack(alignment: .leading, spacing: 12) {
+      Text("This month so far").scaledKicker(color: PhoneTheme.inkText)
       tiles(("Load", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Best fade", bestFade.map { "\($0) s" } ?? "\u{2013}"))
       LoadBars(bars: LoadBar.bars(months, calendar: calendar, format: "MMM"), usual: last.usualRounded)
       if let line = Self.monthLine(last, calendar: calendar) {
