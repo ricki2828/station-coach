@@ -51,7 +51,14 @@ public struct HistoryScreen: View {
         PhoneCard {
           VStack(alignment: .leading, spacing: 10) {
             Text("Syncing from watch\u{2026} \(p)%").font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
-            ProgressView(value: Double(min(max(p, 0), 100)), total: 100).tint(PhoneTheme.inkText)
+            // Drawn, not ProgressView: ImageRenderer cannot render the UIKit-backed control.
+            GeometryReader { geo in
+              ZStack(alignment: .leading) {
+                Capsule().fill(PhoneTheme.hairline)
+                Capsule().fill(PhoneTheme.inkText).frame(width: geo.size.width * Double(min(max(p, 0), 100)) / 100)
+              }
+            }
+            .frame(height: 8)
           }
         }
         .accessibilityElement(children: .combine)
