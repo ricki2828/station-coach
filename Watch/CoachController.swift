@@ -220,15 +220,17 @@ final class CoachController: ObservableObject {
     return min(total, max(0, counter.snapshot().count + repCorrection))
   }
 
+  /// Said only while the count is trustworthy: a "Set done" spoken at a wrong count is worse than silence.
   private func announceSets(_ step: PlanStep) {
     let done = repsDone(step)
+    let trusted = counter.snapshot().confidence == .high
     var cumulative = 0
     for (k, size) in step.sets.enumerated() {
       cumulative += size
       if done >= cumulative, !announcedSets.contains(k) {
         announcedSets.insert(k)
         let next = k + 1 < step.sets.count ? step.sets[k + 1] : nil
-        offer(.wallBallSet, CoachCopy.wallBallSetDone(nextSet: next))
+        if trusted { offer(.wallBallSet, CoachCopy.wallBallSetDone(nextSet: next)) }
       }
     }
   }

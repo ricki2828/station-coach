@@ -5,7 +5,10 @@ import Foundation
 public struct WallBallCounter {
   public enum Confidence { case high, low }
 
-  public static let minInterval: TimeInterval = 1.2
+  /// Open athletes rarely go under about 1.8 s a rep. A catch peak 1.0-1.5 s after the throw must not count too.
+  public static let defaultMinInterval: TimeInterval = 1.7
+  /// Jogging in and picking up the ball look like reps; skip the start of the station.
+  public static let defaultIgnoreFirst: TimeInterval = 4
   public static let minThreshold = 0.6
   /// Intervals longer than this are rests between sets, not rep-to-rep rhythm.
   public static let restGap: TimeInterval = 8
@@ -20,11 +23,19 @@ public struct WallBallCounter {
   private var samples = 0
   private var lastPeakT: TimeInterval = -.infinity
 
-  public init() {}
+  private let minInterval: TimeInterval
+  private let ignoreFirst: TimeInterval
+  private var firstT: TimeInterval?
+
+  public init(minInterval: TimeInterval = WallBallCounter.defaultMinInterval, ignoreFirstSeconds: TimeInterval = WallBallCounter.defaultIgnoreFirst) {
+    self.minInterval = minInterval
+    self.ignoreFirst = ignoreFirstSeconds
+  }
 
   /// Returns true when this sample completed a rep (the peak is detected one sample late).
   @discardableResult
   public mutating func add(t: TimeInterval, magnitude: Double) -> Bool {
+    if firstT == nil { firstT = t }
     let s = smooth.map { $0 * 0.8 + magnitude * 0.2 } ?? magnitude
     smooth = s
     envelope = max(s, envelope * 0.9995)
@@ -36,7 +47,7 @@ public struct WallBallCounter {
     }
     guard samples >= 2 else { return false }
     let threshold = max(Self.minThreshold, 0.5 * envelope)
-    if prevS > prevPrevS, prevS >= s, prevS > threshold, prevT - lastPeakT >= Self.minInterval {
+    if prevS > prevPrevS, prevS >= s, prevS > threshold, prevT - lastPeakT >= minInterval, prevT - (firstT ?? t) >= ignoreFirst {
       lastPeakT = prevT
       count += 1
       repTimes.append(prevT)
