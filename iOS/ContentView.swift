@@ -103,6 +103,8 @@ struct HomeHost: View {
       .refreshable { phone.refresh() }
       .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: Route.self) { RouteView(route: $0) }
+      .onAppear { if phone.watchAppInstalled { app.watchDetected() } }
+      .onChange(of: phone.watchAppInstalled) { _, installed in if installed { app.watchDetected() } }
     }
   }
 
