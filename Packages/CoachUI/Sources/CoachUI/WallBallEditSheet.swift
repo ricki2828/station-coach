@@ -66,11 +66,9 @@ public struct WallBallEditSheet: View {
   }
 }
 
-/// The one place the sheet reads its starting counts from. Until the session result carries the correction
-/// (`validReps` / `noRepCount`), valid reps come from the detected sets, which count throws, no-reps included.
-/// TODO: switch to `record.result.validReps` and `record.result.noRepCount` once the wall-ball correction model is on main.
+/// The one place the sheet reads its starting counts from: all wall-ball steps, honouring an earlier correction.
 public enum WallBallCountAdapter {
-  public static func initial(for record: SessionRecord, noReps: Int) -> WallBallEdit {
-    WallBallEdit(validReps: record.result.wallBallSets().reduce(0) { $0 + $1.reps }, noReps: noReps)
+  public static func initial(for record: SessionRecord) -> WallBallEdit {
+    WallBallEdit(validReps: record.result.validReps, noReps: record.result.noRepCount)
   }
 }

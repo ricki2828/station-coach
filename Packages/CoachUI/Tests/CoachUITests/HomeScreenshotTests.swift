@@ -24,4 +24,12 @@ final class HomeScreenshotTests: XCTestCase {
     XCTAssertNotNil(HistorySamples.list[3].fade)
     XCTAssertFalse(HistorySamples.list[3].isComplete)
   }
+
+  func testEditCountPrefillsFromResult() {
+    let r = HistorySamples.withNoReps(HistorySamples.list[0], count: 3)
+    XCTAssertEqual(WallBallCountAdapter.initial(for: r), WallBallEdit(validReps: r.result.validReps, noReps: 3))
+    var corrected = r.result
+    corrected.wallBallCorrection = WallBallCorrection(validReps: 96, noReps: 4)
+    XCTAssertEqual(WallBallCountAdapter.initial(for: SessionRecord(id: r.id, result: corrected)), WallBallEdit(validReps: 96, noReps: 4))
+  }
 }

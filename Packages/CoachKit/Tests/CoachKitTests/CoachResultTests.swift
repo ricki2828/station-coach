@@ -246,4 +246,18 @@ final class CoachResultTests: XCTestCase {
     let r2 = CoachResult(plan: focus, splits: [], early: true, repTimesMs: [], repCorrection: 0, startedAtEpochMs: 0, endedAtEpochMs: 0, noReps: split)
     XCTAssertNotEqual(InsightPicker.pick(r2).rule, 4)
   }
+
+  func testSaveCorrectionPersistsToCoachJSON() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let r = withNoReps([1, 5, 5])
+    try JSONEncoder().encode(r).write(to: dir.appendingPathComponent(CoachResult.fileName))
+    try CoachResult.saveCorrection(WallBallCorrection(validReps: 95, noReps: 5), inSessionFolder: dir)
+    let back = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: dir.appendingPathComponent(CoachResult.fileName)))
+    XCTAssertEqual(back.validReps, 95)
+    XCTAssertEqual(back.noRepCount, 5)
+    XCTAssertEqual(back.plan, r.plan)
+    XCTAssertEqual(back.repTimesMs, r.repTimesMs)
+  }
 }

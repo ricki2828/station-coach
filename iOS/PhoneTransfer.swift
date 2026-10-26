@@ -118,6 +118,13 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     refresh()
   }
 
+  /// Saves the Edit count sheet's result into the session's `coach.json`, then refreshes every screen that reads it.
+  func saveCorrection(_ correction: WallBallCorrection, for id: String) {
+    guard let root = Self.root else { return }
+    _ = try? CoachResult.saveCorrection(correction, inSessionFolder: root.appendingPathComponent((id as NSString).lastPathComponent))
+    refresh()
+  }
+
   /// A zip of the session folder in the temp directory, for the share sheet.
   func zip(_ id: String) throws -> URL {
     guard let root = Self.root else { throw CocoaError(.fileNoSuchFile) }

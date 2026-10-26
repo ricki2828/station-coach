@@ -179,7 +179,9 @@ struct SessionDetailHost: View {
   var body: some View {
     ScrollView {
       if let record = phone.coachSessions.first(where: { $0.id == id }) {
-        SessionDetailScreen(record: record, onShare: { makeCard(record) }, onExport: { export() })
+        SessionDetailScreen(record: record,
+                            onSaveCount: { phone.saveCorrection(WallBallCorrection(validReps: $0.validReps, noReps: $0.noReps), for: id) },
+                            onShare: { makeCard(record) }, onExport: { export() })
       } else {
         Text("This session is no longer on the phone.").font(.system(size: 17, weight: .semibold))
           .foregroundStyle(PhoneTheme.muted).padding(20)

@@ -93,15 +93,13 @@ public struct SessionDetailScreen: View {
   let record: SessionRecord
   let onShare: () -> Void
   let onExport: () -> Void
-  let noReps: Int
   let onSaveCount: ((WallBallEdit) -> Void)?
   @State private var editing = false
 
-  /// `noReps` is the stored no-rep count (0 when none). `onSaveCount` non-nil shows the "Edit count" link.
-  public init(record: SessionRecord, noReps: Int = 0, onSaveCount: ((WallBallEdit) -> Void)? = nil,
+  /// `onSaveCount` non-nil shows the "Edit count" link; the no-rep count comes from `record.result`.
+  public init(record: SessionRecord, onSaveCount: ((WallBallEdit) -> Void)? = nil,
               onShare: @escaping () -> Void = {}, onExport: @escaping () -> Void = {}) {
     self.record = record
-    self.noReps = noReps
     self.onSaveCount = onSaveCount
     self.onShare = onShare
     self.onExport = onExport
@@ -153,8 +151,8 @@ public struct SessionDetailScreen: View {
               Spacer()
               if onSaveCount != nil { TextLinkButton("Edit count") { editing = true } }
             }
-            if noReps > 0 {
-              Text(noReps == 1 ? "1 no-rep" : "\(noReps) no-reps").scaledFont(17, .heavy).foregroundStyle(PhoneTheme.amberText)
+            if record.result.noRepCount > 0 {
+              Text(record.result.noRepCount == 1 ? "1 no-rep" : "\(record.result.noRepCount) no-reps").scaledFont(17, .heavy).foregroundStyle(PhoneTheme.amberText)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8, alignment: .top)], alignment: .leading, spacing: 10) {
               ForEach(Array(sets.enumerated()), id: \.offset) { _, s in
@@ -178,7 +176,7 @@ public struct SessionDetailScreen: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(PhoneTheme.paper)
     .sheet(isPresented: $editing) {
-      WallBallEditSheet(initial: WallBallCountAdapter.initial(for: record, noReps: noReps),
+      WallBallEditSheet(initial: WallBallCountAdapter.initial(for: record),
                         onSave: { onSaveCount?($0); editing = false }, onCancel: { editing = false })
         .presentationDetents([.medium])
     }

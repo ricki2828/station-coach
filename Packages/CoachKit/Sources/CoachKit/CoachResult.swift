@@ -123,6 +123,16 @@ public struct CoachResult: Codable, Equatable {
 
   public static let fileName = "coach.json"
 
+  /// Writes the phone's correction into the session folder's `coach.json`, leaving every other field as the watch wrote it.
+  @discardableResult
+  public static func saveCorrection(_ correction: WallBallCorrection, inSessionFolder folder: URL) throws -> CoachResult {
+    let url = folder.appendingPathComponent(fileName)
+    var result = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: url))
+    result.wallBallCorrection = WallBallCorrection(validReps: max(0, correction.validReps), noReps: max(0, correction.noReps))
+    try JSONEncoder().encode(result).write(to: url, options: .atomic)
+    return result
+  }
+
   /// No-reps: the phone's correction when set, else the taps logged on the watch.
   public var noRepCount: Int { max(0, wallBallCorrection?.noReps ?? noReps.count) }
 
