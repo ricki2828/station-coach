@@ -6,15 +6,16 @@ public enum CoachCopy {
   /// Stations that leave the legs heavy for the run that follows.
   public static let heavyLegs: Set<Activity> = [.sledPush, .sledPull, .burpeeBroadJump, .sandbagLunges]
 
-  /// The line said as a station begins. After a run it opens with "Jog in." (once: it is part of the one intro cue,
-  /// so the cue gap rules apply to it as they do to any cue), provided the station has a target to jog towards.
-  public static func stationIntro(_ step: PlanStep, after previous: PlanStep? = nil) -> String {
-    let line = stationLine(step)
-    guard let previous, previous.isRun, step.targetSeconds > 0 else { return line }
-    return "Jog in. \(line)"
+  public static let jogIn = "Jog in."
+
+  /// Said once during a run's last `transitionSeconds` (the walk-in allowance at its end), when a station follows
+  /// and has a target to jog towards. A cue of its own at the lowest priority, so the gap rules decide when.
+  public static func jogInDue(run: PlanStep, next: PlanStep?, elapsedSeconds: Int, transitionSeconds: Int) -> Bool {
+    guard run.isRun, let next, !next.isRun, next.targetSeconds > 0, transitionSeconds > 0 else { return false }
+    return elapsedSeconds >= max(0, run.targetSeconds - transitionSeconds)
   }
 
-  private static func stationLine(_ step: PlanStep) -> String {
+  public static func stationIntro(_ step: PlanStep) -> String {
     let name = Stations.name(step.activity)
     switch step.activity {
     case .skierg: return "\(name). 1,000 metres. Hinge from the hips."

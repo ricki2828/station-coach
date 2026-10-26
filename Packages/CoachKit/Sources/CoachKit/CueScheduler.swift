@@ -2,7 +2,7 @@ import Foundation
 
 /// Higher raw value wins when several cues wait.
 public enum CoachCueKind: Int, Codable, Comparable {
-  case wallBallSet = 1, midStation, planAndRun, stationIntro, finish
+  case jogIn = 0, wallBallSet = 1, midStation, planAndRun, stationIntro, finish
   public static func < (a: CoachCueKind, b: CoachCueKind) -> Bool { a.rawValue < b.rawValue }
 }
 

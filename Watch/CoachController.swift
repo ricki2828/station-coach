@@ -53,6 +53,7 @@ final class CoachController: ObservableObject {
   private let counter = LockedCounter()
   private var ticker: Timer?
   private var midCueDone = Set<Int>()
+  private var jogInDone = Set<Int>()
   private var announcedSets = Set<Int>()
   private var repCorrection = 0
   private var repsByStep: [Int: [Int64]] = [:]
@@ -105,6 +106,7 @@ final class CoachController: ObservableObject {
     machine = m
     scheduler = CueScheduler()
     midCueDone = []
+    jogInDone = []
     announcedSets = []
     repCorrection = 0
     repsByStep = [:]
@@ -211,8 +213,7 @@ final class CoachController: ObservableObject {
       let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
       offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds))
     } else {
-      let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
-      offer(.stationIntro, CoachCopy.stationIntro(step, after: before))
+      offer(.stationIntro, CoachCopy.stationIntro(step))
     }
   }
 
@@ -233,6 +234,11 @@ final class CoachController: ObservableObject {
          let text = CoachCopy.midStation(step) {
         midCueDone.insert(step.index)
         offer(.midStation, text)
+      }
+      if step.isRun, !jogInDone.contains(step.index),
+         CoachCopy.jogInDue(run: step, next: m.next, elapsedSeconds: elapsed, transitionSeconds: m.plan.transitionSeconds) {
+        jogInDone.insert(step.index)
+        offer(.jogIn, CoachCopy.jogIn)
       }
       if step.activity == .wallBalls { announceSets(step) }
       refresh()
