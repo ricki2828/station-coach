@@ -47,7 +47,7 @@ public struct HeartRateSeries: Equatable {
       let parts = line.split(separator: ",", omittingEmptySubsequences: false)
       guard parts.count >= 2,
             let t = Int64(parts[0].trimmingCharacters(in: .whitespaces)),
-            let b = Double(parts[1].trimmingCharacters(in: .whitespaces)) else { continue }
+            let b = Double(parts[1].trimmingCharacters(in: .whitespaces)), b.isFinite else { continue }
       out.append(HeartRateSample(epochMs: t, bpm: Int(b.rounded())))
     }
     return HeartRateSeries(samples: out)
@@ -87,23 +87,46 @@ public struct HeartRateSeries: Equatable {
     return z
   }
 
-  /// The highest rolling mean over `windowMs` (default 10 s), needing `minSamples` inside the window. nil if none.
-  public func peakAverage(windowMs: Int64 = 10_000, minSamples: Int = 3) -> Int? {
+  /// A rolling median of 3 over the bpm, which removes a lone artefact reading (a spike at a 5 s cadence is one sample).
+  public func smoothed() -> [HeartRateSample] {
+    guard samples.count >= 3 else { return samples }
+    return samples.indices.map { i in
+      let lo = max(0, i - 1), hi = min(samples.count - 1, i + 1)
+      let m = samples[lo...hi].map(\.bpm).sorted()
+      return HeartRateSample(epochMs: samples[i].epochMs, bpm: m[m.count / 2])
+    }
+  }
+
+  /// The highest mean heart rate over a time window (default 30 s), after median smoothing. The window must hold at least
+  /// `minSamples` samples spanning at least `minSpanMs`, so it works at the watch's 5 s cadence as well as 1 Hz. nil if none.
+  public func peakAverage(windowMs: Int64 = 30_000, minSpanMs: Int64 = 20_000, minSamples: Int = 3) -> Int? {
+    let s = smoothed()
     var best: Double?
     var lo = 0
     var sum = 0
-    for hi in samples.indices {
-      sum += samples[hi].bpm
-      while samples[hi].epochMs - samples[lo].epochMs >= windowMs {
-        sum -= samples[lo].bpm
+    for hi in s.indices {
+      sum += s[hi].bpm
+      while s[hi].epochMs - s[lo].epochMs >= windowMs {
+        sum -= s[lo].bpm
         lo += 1
       }
       let n = hi - lo + 1
-      if n >= minSamples {
+      if n >= minSamples, s[hi].epochMs - s[lo].epochMs >= minSpanMs {
         let mean = Double(sum) / Double(n)
         if best == nil || mean > best! { best = mean }
       }
     }
     return best.map { Int($0.rounded()) }
+  }
+
+  /// Reads a session's `hr.csv`. nil when the file is missing; an unreadable one is logged and also gives nil.
+  public static func load(url: URL) -> HeartRateSeries? {
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    do {
+      return parse(csv: try String(contentsOf: url, encoding: .utf8))
+    } catch {
+      NSLog("HeartRateSeries: cannot read %@: %@", url.path, String(describing: error))
+      return nil
+    }
   }
 }

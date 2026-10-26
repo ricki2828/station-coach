@@ -43,11 +43,44 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(s.coverage(from: base, to: base + 120_000), 20.0 / 120, accuracy: 1e-9)
   }
 
-  func testPeakAverageIsTenSecondMean() {
+  func testPeakAverageAtOneHertz() {
     var pairs: [(Int64, Int)] = (0..<60).map { (Int64($0) * 1000, 150) }
-    pairs += (60..<72).map { (Int64($0) * 1000, 190) }
+    pairs += (60..<100).map { (Int64($0) * 1000, 190) }
     XCTAssertEqual(hr(pairs).peakAverage(), 190)
     XCTAssertNil(hr([(0, 150), (1000, 150)]).peakAverage())
+  }
+
+  func testPeakAverageAtTheWatchsFiveSecondCadence() {
+    var pairs: [(Int64, Int)] = (0..<100).map { (Int64($0) * 5000, 150) }
+    pairs += (100..<110).map { (Int64($0) * 5000, 186) } // 50 s hard
+    XCTAssertEqual(hr(pairs).peakAverage(), 186)
+    XCTAssertNil(hr([(0, 150), (5000, 150)]).peakAverage())
+  }
+
+  func testPeakAverageWithIrregularGaps() {
+    var t: Int64 = 0
+    var pairs: [(Int64, Int)] = []
+    for i in 0..<120 {
+      t += Int64(1000 * (1 + (i * 7) % 8)) // 1...8 s
+      pairs.append((t, i < 80 ? 140 : 180))
+    }
+    let peak = hr(pairs).peakAverage()
+    XCTAssertNotNil(peak)
+    XCTAssertEqual(Double(peak!), 180, accuracy: 1)
+  }
+
+  func testALoneArtefactReadingDoesNotMakeAPeak() {
+    var pairs: [(Int64, Int)] = (0..<60).map { (Int64($0) * 1000, 150) }
+    pairs[30] = (30_000, 205)
+    XCTAssertEqual(hr(pairs).peakAverage(), 150)
+    var five: [(Int64, Int)] = (0..<60).map { (Int64($0) * 5000, 150) }
+    five[30] = (150_000, 205)
+    XCTAssertEqual(hr(five).peakAverage(), 150)
+  }
+
+  func testParseRejectsNonFiniteValues() {
+    let s = HeartRateSeries.parse(csv: "1000,nan\n2000,inf\n3000,-inf\n4000,120\n")
+    XCTAssertEqual(s.samples.map(\.bpm), [120])
   }
 
   // MARK: session load
@@ -143,7 +176,7 @@ final class TrainingLoadTests: XCTestCase {
 
   private func session(_ daysAgo: Double, peak: Int?, now: Date) -> HeartRateSession {
     let t = Int64(now.timeIntervalSince1970 * 1000)
-    let series = peak.map { p in HeartRateSeries(samples: (0..<12).map { HeartRateSample(epochMs: t + Int64($0) * 1000, bpm: p) }) }
+    let series = peak.map { p in HeartRateSeries(samples: (0..<40).map { HeartRateSample(epochMs: t + Int64($0) * 1000, bpm: p) }) }
     return HeartRateSession(date: now.addingTimeInterval(-daysAgo * 86_400), series: series)
   }
 
@@ -161,11 +194,30 @@ final class TrainingLoadTests: XCTestCase {
     let now = Date(timeIntervalSince1970: 1_793_000_000)
     let three = [session(1, peak: 178, now: now), session(5, peak: 190, now: now), session(9, peak: 181, now: now)]
     let m = MaxHeartRate.estimate(three, now: now)
-    XCTAssertEqual(m.bpm, 190)
+    XCTAssertEqual(m.bpm, 181) // 190 has no second session within 5 bpm, so the second-highest peak stands
     XCTAssertFalse(m.estimated)
     XCTAssertTrue(m.words.contains("from your sessions"))
     let more = MaxHeartRate.estimate([session(0, peak: 150, now: now)] + three, now: now)
-    XCTAssertEqual(more.bpm, 190)
+    XCTAssertEqual(more.bpm, 181)
+  }
+
+  func testOneArtefactSessionDoesNotSetMax() {
+    let now = Date(timeIntervalSince1970: 1_793_000_000)
+    let s = [session(1, peak: 210, now: now), session(3, peak: 188, now: now), session(5, peak: 187, now: now), session(7, peak: 189, now: now)]
+    XCTAssertEqual(MaxHeartRate.estimate(s, now: now).bpm, 189)
+    // Two sessions that agree within 5 bpm do set it.
+    let two = [session(1, peak: 192, now: now), session(3, peak: 189, now: now), session(5, peak: 180, now: now)]
+    XCTAssertEqual(MaxHeartRate.estimate(two, now: now).bpm, 192)
+  }
+
+  func testMaxHRAtFiveSecondCadence() {
+    let now = Date(timeIntervalSince1970: 1_793_000_000)
+    let t = Int64(now.timeIntervalSince1970 * 1000)
+    let five = (0..<40).map { HeartRateSample(epochMs: t + Int64($0) * 5000, bpm: 184) }
+    let sessions = (1...3).map { HeartRateSession(date: now.addingTimeInterval(-Double($0) * 86_400), series: HeartRateSeries(samples: five)) }
+    let m = MaxHeartRate.estimate(sessions, now: now)
+    XCTAssertEqual(m.bpm, 184)
+    XCTAssertFalse(m.estimated)
   }
 
   func testMaxHRIgnoresSessionsOlderThan180Days() {

@@ -164,12 +164,14 @@ public struct HeartRateSession: Equatable {
   }
 }
 
-/// Max heart rate from the athlete's own sessions: the best 10 s average in the last 180 days, once at least 3 sessions have
-/// heart rate. Until then 185, labelled assumed. A max is the best of many, so no single session can lower it.
+/// Max heart rate from the athlete's own sessions: the best 30 s average of each session in the last 180 days, once at least
+/// 3 sessions have heart rate. Until then 185, labelled assumed. One wrist artefact must not set it for 180 days, so the top
+/// peak counts only when the next session is within 5 bpm of it; otherwise the second-highest peak is used.
 public struct MaxHeartRate: Equatable {
   public static let assumedBpm = 185
   public static let minSessions = 3
   public static let windowDays = 180
+  public static let confirmBpm = 5
 
   public let bpm: Int
   public let estimated: Bool
@@ -181,10 +183,12 @@ public struct MaxHeartRate: Equatable {
       guard s.date >= cutoff, s.date <= now else { return nil }
       return s.series?.peakAverage()
     }
-    guard peaks.count >= minSessions, let best = peaks.max() else {
-      return MaxHeartRate(bpm: assumedBpm, estimated: true, sessionsWithHeartRate: peaks.count)
+    let ranked = peaks.sorted(by: >)
+    guard ranked.count >= minSessions else {
+      return MaxHeartRate(bpm: assumedBpm, estimated: true, sessionsWithHeartRate: ranked.count)
     }
-    return MaxHeartRate(bpm: best, estimated: false, sessionsWithHeartRate: peaks.count)
+    let best = ranked[0] - ranked[1] <= confirmBpm ? ranked[0] : ranked[1]
+    return MaxHeartRate(bpm: best, estimated: false, sessionsWithHeartRate: ranked.count)
   }
 
   /// For the Why sheet.
