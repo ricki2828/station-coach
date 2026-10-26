@@ -34,12 +34,18 @@ final class CoachResultTests: XCTestCase {
     // run 3 is step 4, after the sled push (step 3)
     let i = InsightPicker.pick(result(extra: [4: 45]))
     XCTAssertEqual(i.rule, 1)
-    XCTAssertEqual(i.headline, "Your run after the sled push was 45\u{00A0}s slower than run 1")
+    XCTAssertEqual(i.headline, "Your run after the sled push was 27\u{00A0}s slower than run 1")
   }
 
   func testRule1PicksTheBiggestSlowdown() {
     let i = InsightPicker.pick(result(extra: [2: 25, 8: 60]))
-    XCTAssertEqual(i.headline, "Your run after the burpee broad jumps was 60\u{00A0}s slower than run 1")
+    XCTAssertEqual(i.headline, "Your run after the burpee broad jumps was 42\u{00A0}s slower than run 1")
+  }
+
+  func testChangeoverTimeAloneIsNotASlowdown() {
+    // Run 3 takes 30 s over target: 18 s of that is the changeover, so only 12 s of fade, under the 20 s bar.
+    let i = InsightPicker.pick(result(extra: [4: 30]))
+    XCTAssertNotEqual(i.rule, 1)
   }
 
   func testRule2StationOverPlan() {

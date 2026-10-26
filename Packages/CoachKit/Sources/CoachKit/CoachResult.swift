@@ -99,7 +99,7 @@ public struct Insight: Equatable {
 }
 
 /// The summary's one headline. The first rule that fires wins:
-/// 1. the biggest run slowdown against run 1;
+/// 1. the biggest run slowdown against run 1 (changeover time taken out of runs 2 and later);
 /// 2. the station furthest over plan;
 /// 3. wall-ball rest as a share of the station;
 /// else a plain total against target.
@@ -116,7 +116,8 @@ public enum InsightPicker {
       var worst: (Int, String)?
       for (i, r) in rows.enumerated() where r.step.isRun && (r.step.runNumber ?? 0) > 1 {
         guard let a = r.actualSeconds, i > 0 else { continue }
-        let slow = a - first
+        // Runs 2-8 start with a changeover that run 1 does not have: that is not fade.
+        let slow = (a - result.plan.transitionSeconds) - first
         if slow >= runSlowdownMin, slow > (worst?.0 ?? 0) { worst = (slow, rows[i - 1].step.name.lowercased()) }
       }
       if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.1) was \(worst.0)\u{00A0}s slower than run 1") }
