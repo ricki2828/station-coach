@@ -61,6 +61,20 @@ final class LoadScreenshotTests: XCTestCase {
     XCTAssertNil(WeeklySummaryScreen.chip(.lighter))
   }
 
+  func testMonthUsualLineIsTheLastCompleteMonthsUsual() {
+    let d = TrainingLoad.sample(.usual)
+    let sessions = ScreenCatalog.demoHistory(now: d.now, calendar: d.calendar)
+    let last = LoadCompare.lastComplete(sessions, unit: .month, now: d.now, calendar: d.calendar)
+    XCTAssertNotNil(last.usualRounded)
+    XCTAssertEqual(TrainingTotalsCard.monthUsual(sessions, now: d.now, calendar: d.calendar), last.usualRounded)
+    XCTAssertTrue(TrainingTotalsCard.monthLine(last, calendar: d.calendar)?.hasPrefix("September: ") ?? false)
+    // No comparison, no line and no sentence.
+    let one = Array(sessions.prefix(1))
+    let thin = LoadCompare.lastComplete(one, unit: .month, now: d.now, calendar: d.calendar)
+    XCTAssertNil(TrainingTotalsCard.monthUsual(one, now: d.now, calendar: d.calendar))
+    XCTAssertNil(TrainingTotalsCard.monthLine(thin, calendar: d.calendar))
+  }
+
   func testScopeLabelIsOnEverySummary() {
     XCTAssertEqual(LoadWords.scopeLabel, "Station Coach sessions only")
   }

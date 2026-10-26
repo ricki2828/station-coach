@@ -477,17 +477,31 @@ public struct TrainingTotalsCard: View {
     }
   }
 
+  /// The usual line and the sentence both come from the last complete month, so they cannot disagree. Nil without a comparison.
+  static func monthUsual(_ sessions: [LoadSession], now: Date, calendar: Calendar) -> Int? {
+    LoadCompare.lastComplete(sessions, unit: .month, now: now, calendar: calendar).usualRounded
+  }
+
+  /// "September: 67% more than your usual month."
+  static func monthLine(_ last: LoadCompare, calendar: Calendar) -> String? {
+    guard let b = LoadWords.bandWords(last) else { return nil }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.calendar = calendar
+    f.timeZone = calendar.timeZone
+    f.dateFormat = "MMMM"
+    return "\(f.string(from: last.current.start)): \(b.prefix(1).lowercased() + b.dropFirst())."
+  }
+
   private var monthContent: some View {
     let months = LoadHistory.months(sessions, now: now, count: 6, calendar: calendar)
     let cur = months[months.count - 1]
     let last = LoadCompare.lastComplete(sessions, unit: .month, now: now, calendar: calendar)
-    let prior = months.dropLast().suffix(3)
-    let usual = prior.isEmpty ? nil : Int((prior.reduce(0) { $0 + $1.load } / Double(prior.count)).rounded())
     return VStack(alignment: .leading, spacing: 12) {
       tiles(("Load", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Best fade", bestFade.map { "\($0) s" } ?? "\u{2013}"))
-      LoadBars(bars: LoadBar.bars(months, calendar: calendar, format: "MMM"), usual: usual)
-      if let b = LoadWords.bandWords(last) {
-        Text("\(b).").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
+      LoadBars(bars: LoadBar.bars(months, calendar: calendar, format: "MMM"), usual: last.usualRounded)
+      if let line = Self.monthLine(last, calendar: calendar) {
+        Text(line).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
       Text(LoadWords.scopeLabel).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
     }
