@@ -33,6 +33,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   /// if that rule is ever relaxed, the key must include the file's size or modification time.
   private var hrCache: [String: HeartRateSeries] = [:]
   private var loadGeneration = 0
+  private var noticeGate = NoticeRescheduleGate()
   private var loadBuiltAt = Date.distantPast
 
   override init() {
@@ -97,6 +98,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     if sorted != coachSessions {
       coachSessions = sorted
       rebuildLoad(sorted, root: root)
+    } else if sorted.isEmpty {
+      noticeGate.loadLanded() // nothing to wait for
     }
     updateWatchInstalled()
     rescheduleNotice()
@@ -121,20 +124,24 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
         for (id, series) in added { self.hrCache[id] = series }
         self.loadBuiltAt = Date()
         self.loadSummary = summary
+        self.noticeGate.loadLanded()
         self.rescheduleNotice()
       }
     }
   }
 
-  /// Sessions the watch has announced or started sending that are not complete here. Sessions the watch has not announced
-  /// are invisible to the phone.
+  /// Sessions the watch is still sending: ones it announced, or a partial folder that started recently. An abandoned partial
+  /// folder is not "unsent". Sessions the watch has not announced are invisible to the phone.
   private var watchHasUnsent: Bool {
-    sessions.contains { !completeIds.contains($0.id) } || watchdog.pending.contains { !completeIds.contains($0) }
+    UnsentSessions.hasUnsent(partialIds: sessions.map(\.id).filter { !completeIds.contains($0) },
+                             pendingIds: watchdog.pending.filter { !completeIds.contains($0) }, now: Date())
   }
 
   /// Rebuild the Monday notification from what is on the phone now. Called after every refresh and every load rebuild, so a
   /// file that arrives in the background updates it without any view being on screen.
   func rescheduleNotice(now: Date = Date()) {
+    // Not before the first load has landed: an empty list would cancel the pending notification.
+    guard noticeGate.mayReschedule else { return }
     let sessions = loadSummary.sessions
     let unsent = watchHasUnsent
     Task { @MainActor in WeeklyNotifier.shared.reschedule(sessions: sessions, watchHasUnsent: unsent, now: now) }
