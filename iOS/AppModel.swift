@@ -58,7 +58,9 @@ final class AppModel: ObservableObject {
 
   // MARK: Onboarding
 
-  func finishOnboarding(_ model: OnboardingModel) {
+  /// `.skipped` still lands on Plan with the recommended session, but never counts as the watch-install check being done.
+  func finishOnboarding(_ model: OnboardingModel, outcome: OnboardingOutcome) {
+    defaults.set(outcome == .built, forKey: "onboarding.watchChecked")
     setup.division = model.division
     setup.targetSeconds = model.targetSeconds
     defaults.set(true, forKey: "onboarded")
@@ -78,7 +80,8 @@ final class AppModel: ObservableObject {
     guard let o = result.outcome else { return }
     let display = MomentDisplay.make(
       o.moment, totalSeconds: o.record.result.totalSeconds, fadeSeconds: o.record.fade,
-      previousDate: o.previousBestDate.map { HistoryFormat.dayMonth($0) }, sessionType: o.record.type)
+      previousDate: o.previousBestDate.map { HistoryFormat.dayMonth($0) }, sessionType: o.record.type,
+      partial: o.record.isComplete ? nil : (o.record.result.completedStationCount, o.record.result.plan.stationCount))
     pendingMoment = PendingMoment(id: o.record.id, record: o.record, display: display)
   }
 }

@@ -72,7 +72,7 @@ struct OnboardingHost: View {
   var body: some View {
     OnboardingFlow(model: Binding(
       get: { var m = model; m.watchAppInstalled = phone.watchAppInstalled; return m },
-      set: { model = $0 }), onFinish: { app.finishOnboarding(model) })
+      set: { model = $0 }), onOutcome: { app.finishOnboarding(model, outcome: $0) })
       .onAppear {
         model.division = app.setup.division
         model.targetSeconds = app.setup.targetSeconds
