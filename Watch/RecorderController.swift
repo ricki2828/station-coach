@@ -46,6 +46,10 @@ final class RecorderController: ObservableObject {
   private var labelLog = LabelLog()
   private var minuteTimer: Timer?
   private var alarmTimer: Timer?
+  private var watchdogTimer: Timer?
+  private var watchdogTotal = 0
+  private var watchdogSince = Date()
+  static let stallSeconds: TimeInterval = 30
 
   init() {
     let saved = UserDefaults.standard.integer(forKey: "cueInterval")
@@ -107,6 +111,11 @@ final class RecorderController: ObservableObject {
       minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.minuteTick() }
       }
+      watchdogTotal = 0
+      watchdogSince = Date()
+      watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        Task { @MainActor in self?.watchdogTick() }
+      }
       minuteTick()
       phase = .running
     } catch {
@@ -125,6 +134,8 @@ final class RecorderController: ObservableObject {
     dismissAlarm()
     minuteTimer?.invalidate()
     minuteTimer = nil
+    watchdogTimer?.invalidate()
+    watchdogTimer = nil
     cues.stop()
     motion?.writeRates(atMs: Clock.epochMs())
     motion?.stop()
@@ -227,6 +238,18 @@ final class RecorderController: ObservableObject {
 
   private func log(_ kind: String, _ detail: String) {
     writer?.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail))
+  }
+
+  /// Alarms when both motion streams deliver nothing for `stallSeconds`: alive but silent.
+  private func watchdogTick() {
+    guard phase == .running, let motion else { return }
+    let total = motion.totalRawSamples
+    if total != watchdogTotal {
+      watchdogTotal = total
+      watchdogSince = Date()
+    } else if Date().timeIntervalSince(watchdogSince) >= Self.stallSeconds {
+      raiseAlarm("No motion samples for \(Int(Self.stallSeconds)) s")
+    }
   }
 
   private func minuteTick() {

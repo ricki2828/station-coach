@@ -33,6 +33,7 @@ final class MotionRecorder {
   private var motionDec: Decimator
   let storeHz: Double
   private var lastRawHz: Double?
+  private var totalRaw = 0
 
   init(storeHz: Double) {
     self.storeHz = storeHz
@@ -74,6 +75,12 @@ final class MotionRecorder {
     accelRaw.reset(); accelStored.reset(); motionRaw.reset(); motionStored.reset()
     lock.unlock()
     rows.forEach { writer?.append(.rates, $0) }
+  }
+
+  /// Raw samples delivered since start, both streams; the watchdog checks it keeps growing.
+  var totalRawSamples: Int {
+    lock.lock(); defer { lock.unlock() }
+    return totalRaw
   }
 
   var latestRawHz: Double? {
@@ -147,6 +154,7 @@ final class MotionRecorder {
   private func accel(batch: [(Double, Double, Double, Double)]) {
     lock.lock(); defer { lock.unlock() }
     var lines: [String] = []
+    totalRaw += batch.count
     for (t, x, y, z) in batch {
       accelRaw.add(t)
       guard accelDec.keep(t) else { continue }
@@ -159,6 +167,7 @@ final class MotionRecorder {
   private func motion(batch: [CMDeviceMotion]) {
     lock.lock(); defer { lock.unlock() }
     var lines: [String] = []
+    totalRaw += batch.count
     for d in batch {
       motionRaw.add(d.timestamp)
       guard motionDec.keep(d.timestamp) else { continue }
