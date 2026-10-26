@@ -22,9 +22,14 @@ final class AppModel: ObservableObject {
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
 
-  init(hasSessions: Bool = false) {
-    // Someone who already has sessions on the phone has been through setup.
-    onboarded = UserDefaults.standard.bool(forKey: "onboarded") || hasSessions
+  init(existingSessionIds: [String] = []) {
+    let d = UserDefaults.standard
+    // Someone who already has sessions on the phone has been through setup; remember it so deleting them all does not bring onboarding back.
+    let has = !existingSessionIds.isEmpty
+    onboarded = d.bool(forKey: "onboarded") || has
+    if has { d.set(true, forKey: "onboarded") }
+    // First run of a build with moments: the sessions already here are history, not news.
+    if d.object(forKey: Self.seenKey) == nil, has { d.set(existingSessionIds, forKey: Self.seenKey) }
   }
 
   var raceSetup: RaceSetup { RaceSetup(division: setup.division, targetSeconds: setup.targetSeconds) }

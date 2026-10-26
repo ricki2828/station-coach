@@ -38,7 +38,7 @@ enum Route: Hashable {
 
 struct ContentView: View {
   @EnvironmentObject var phone: PhoneTransfer
-  @StateObject private var app = AppModel(hasSessions: !PhoneTransfer.shared.coachSessions.isEmpty)
+  @StateObject private var app = AppModel(existingSessionIds: PhoneTransfer.shared.coachSessions.map(\.id))
 
   var body: some View {
     Group {
