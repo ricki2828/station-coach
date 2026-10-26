@@ -40,6 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode 26
+        run: tools/ci/select-xcode.sh
+
       - name: Write the API key (owner-only file, removed at the end)
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
