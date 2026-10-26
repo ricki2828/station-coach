@@ -11,6 +11,16 @@ struct SessionView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 6) {
+        if let alarm = recorder.alarm {
+          VStack(spacing: 2) {
+            Text("RECORDING AT RISK").font(.caption2.bold())
+            Text(alarm).font(.caption2)
+            Button("OK") { recorder.dismissAlarm() }
+          }
+          .frame(maxWidth: .infinity)
+          .padding(4)
+          .background(Color.red, in: RoundedRectangle(cornerRadius: 8))
+        }
         header
         LazyVGrid(columns: columns, spacing: 6) {
           ForEach(Activity.allCases) { activity in

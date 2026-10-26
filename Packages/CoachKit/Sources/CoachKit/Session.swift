@@ -40,6 +40,8 @@ public struct SessionManifest: Codable, Equatable {
   public var audioMode: String?
   public var athlete: String?
   public var wrist: String?
+  /// Set when the folder was closed after the app stopped unexpectedly (no clean finish).
+  public var recovered: Bool?
 
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
@@ -94,6 +96,38 @@ public enum SessionFiles {
             let files = try? list(folder) else { return nil }
       return SessionSummary(id: name, bytes: files.reduce(0) { $0 + $1.bytes }, fileCount: files.count)
     }
+  }
+
+  /// Sessions whose manifest has no end time: the app or workout stopped before a clean finish.
+  public static func unfinished(in root: URL) -> [String] {
+    summaries(in: root).map(\.id).filter { id in
+      guard let m = readManifest(root.appendingPathComponent(id)) else { return false }
+      return m.endedAtEpochMs == nil
+    }
+  }
+
+  /// Keeps the data: ends the session at the newest file modification time and marks it recovered.
+  public static func closeUnfinished(in root: URL, id: String) throws {
+    let folder = root.appendingPathComponent(id)
+    guard var m = readManifest(folder) else { throw CocoaError(.fileReadCorruptFile) }
+    let fm = FileManager.default
+    var newest = Date(timeIntervalSince1970: Double(m.startedAtEpochMs) / 1000)
+    for f in try list(folder) {
+      if let d = try fm.attributesOfItem(atPath: folder.appendingPathComponent(f.name).path)[.modificationDate] as? Date, d > newest {
+        newest = d
+      }
+    }
+    m.endedAtEpochMs = Clock.epochMs(newest)
+    m.recovered = true
+    m.files = try list(folder).map(\.name)
+    let enc = JSONEncoder()
+    enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try enc.encode(m).write(to: folder.appendingPathComponent("manifest.json"), options: .atomic)
+  }
+
+  static func readManifest(_ folder: URL) -> SessionManifest? {
+    guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")) else { return nil }
+    return try? JSONDecoder().decode(SessionManifest.self, from: data)
   }
 
   /// `<Documents>/Sessions`, created if missing.

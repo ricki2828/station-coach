@@ -7,6 +7,13 @@ struct HomeView: View {
   var body: some View {
     NavigationStack {
       List {
+        if !recorder.unfinished.isEmpty {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Last session stopped unexpectedly").font(.footnote.bold()).foregroundStyle(.red)
+            Text("Data is kept. Keep it, then start a new session.").font(.caption2)
+            Button("Keep and send") { recorder.keepUnfinished() }
+          }
+        }
         Button("Start session") { Task { await recorder.start() } }
           .tint(.green)
         Stepper("Cue every \(recorder.cueInterval)s", value: $recorder.cueInterval, in: 10...300, step: 5)

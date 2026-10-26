@@ -17,6 +17,9 @@ final class RecorderController: ObservableObject {
   @Published var motionApi = "-"
   @Published var rawHz: Int?
   @Published var statusMessage: String?
+  /// Set when recording is no longer trustworthy (workout ended, motion stream died). Cleared by `dismissAlarm`.
+  @Published var alarm: String?
+  @Published var unfinished: [String] = []
   @Published var storeHz: Int {
     didSet { UserDefaults.standard.set(storeHz, forKey: "storeHz") }
   }
@@ -33,6 +36,7 @@ final class RecorderController: ObservableObject {
   private var writer: SessionWriter?
   private var labelLog = LabelLog()
   private var minuteTimer: Timer?
+  private var alarmTimer: Timer?
 
   init() {
     let saved = UserDefaults.standard.integer(forKey: "cueInterval")
@@ -40,6 +44,7 @@ final class RecorderController: ObservableObject {
     let hz = UserDefaults.standard.integer(forKey: "storeHz")
     storeHz = hz > 0 ? hz : 100
     audioMode = AudioMode(rawValue: UserDefaults.standard.string(forKey: "audioMode") ?? "") ?? .shortForm
+    refreshUnfinished()
   }
 
   func start() async {
@@ -101,6 +106,7 @@ final class RecorderController: ObservableObject {
   func stop() async {
     guard phase == .running, let writer else { return }
     phase = .finishing
+    dismissAlarm()
     minuteTimer?.invalidate()
     minuteTimer = nil
     cues.stop()
@@ -120,6 +126,7 @@ final class RecorderController: ObservableObject {
     WatchTransfer.shared.activeSessionId = nil
     WatchTransfer.shared.sendUnsent()
     statusMessage = "Saved \(id)"
+    refreshUnfinished()
     phase = .idle
   }
 
@@ -141,6 +148,34 @@ final class RecorderController: ObservableObject {
     }
   }
 
+  func refreshUnfinished() {
+    guard let root = try? SessionFiles.defaultRoot() else { return }
+    unfinished = SessionFiles.unfinished(in: root)
+  }
+
+  /// Keeps the data of sessions the app lost, closes them, and queues them for transfer.
+  func keepUnfinished() {
+    guard let root = try? SessionFiles.defaultRoot() else { return }
+    for id in unfinished { try? SessionFiles.closeUnfinished(in: root, id: id) }
+    refreshUnfinished()
+    WatchTransfer.shared.sendUnsent()
+  }
+
+  func dismissAlarm() {
+    alarm = nil
+    alarmTimer?.invalidate()
+    alarmTimer = nil
+  }
+
+  private func raiseAlarm(_ message: String) {
+    guard phase == .running else { return }
+    log("alarm", message)
+    guard alarm == nil else { return }
+    alarm = message
+    WKInterfaceDevice.current().play(.failure)
+    alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
+  }
+
   func flagMissedCue() { cues.markLastMissed() }
 
   // MARK: Wiring
@@ -150,10 +185,14 @@ final class RecorderController: ObservableObject {
       writer.append(.hr, Lines.hr(epochMs: Clock.epochMs(), bpm: bpm))
       Task { @MainActor in self?.heartRate = Int(bpm.rounded()) }
     }
+    workout.onUnexpectedEnd = { [weak self] message in Task { @MainActor in self?.raiseAlarm(message) } }
     workout.onEvent = { kind, detail in writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail)) }
     motion.onEvent = { [weak self] kind, detail in
       writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail))
-      Task { @MainActor in if let m = self?.motion { self?.motionApi = m.api } }
+      Task { @MainActor in
+        if let m = self?.motion { self?.motionApi = m.api }
+        if kind.hasSuffix("stream_error") { self?.raiseAlarm("Motion stream failed") }
+      }
     }
     cues.onCue = { [weak self] event in
       writer.append(.cues, event.csvLine)

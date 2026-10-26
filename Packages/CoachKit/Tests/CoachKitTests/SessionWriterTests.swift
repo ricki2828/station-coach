@@ -95,6 +95,21 @@ final class SessionWriterTests: XCTestCase {
     XCTAssertEqual(sums.first?.fileCount, SessionStream.allCases.count + 1)
   }
 
+  func testUnfinishedSessionIsListedAndCanBeClosed() throws {
+    let w = try SessionWriter(root: root, manifest: manifest("u1"))
+    w.append(.labels, "5,set,run")
+    w.flushAll()
+    let done = try SessionWriter(root: root, manifest: manifest("u2"))
+    try done.finish(endedAtEpochMs: 3_000)
+    XCTAssertEqual(SessionFiles.unfinished(in: root), ["u1"])
+    try SessionFiles.closeUnfinished(in: root, id: "u1")
+    XCTAssertEqual(SessionFiles.unfinished(in: root), [])
+    let m = try XCTUnwrap(SessionFiles.readManifest(root.appendingPathComponent("u1")))
+    XCTAssertEqual(m.recovered, true)
+    XCTAssertNotNil(m.endedAtEpochMs)
+    XCTAssertTrue(m.files?.contains("labels.csv") ?? false)
+  }
+
   func testSessionIdFormat() {
     let id = SessionFiles.makeSessionId(date: Date(timeIntervalSince1970: 0), suffix: "abc123")
     XCTAssertEqual(id, "19700101T000000Z-abc123")

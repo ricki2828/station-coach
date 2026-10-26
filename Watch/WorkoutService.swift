@@ -11,6 +11,9 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
 
   var onHeartRate: ((Double) -> Void)?
   var onEvent: ((String, String) -> Void)?
+  /// The session ended or failed without `stop()` being called (another workout app, an error, auth revoked).
+  var onUnexpectedEnd: ((String) -> Void)?
+  private var stopping = false
 
   func requestAuthorization() async throws {
     let share: Set<HKSampleType> = [HKObjectType.workoutType()]
@@ -29,12 +32,14 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
     builder.delegate = self
     self.session = session
     self.builder = builder
+    stopping = false
     let now = Date()
     session.startActivity(with: now)
     try await builder.beginCollection(at: now)
   }
 
   func stop() async {
+    stopping = true
     session?.end()
     do {
       try await builder?.endCollection(at: Date())
@@ -50,10 +55,12 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
 
   func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
     onEvent?("workout_state", "\(fromState.rawValue)->\(toState.rawValue)")
+    if !stopping, toState == .ended || toState == .stopped { onUnexpectedEnd?("Workout session ended") }
   }
 
   func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
     onEvent?("workout_error", "\(error)")
+    if !stopping { onUnexpectedEnd?("Workout session failed") }
   }
 
   // MARK: HKLiveWorkoutBuilderDelegate
