@@ -142,6 +142,29 @@ final class CoachHistoryTests: XCTestCase {
     XCTAssertEqual(Recommendation.pick(records: [record("a", day: 1, fade: 5, wallBallsExtra: 80)], now: now).type, .wallBallFocus)
   }
 
+  func testFullSimReturnsAfterAWallBallFocusSession() {
+    // Focus session 1 s... +5 s over plan at wall balls, full sim 12 days ago: no loop, back to the full sim.
+    let full = record("a", .fullSim, day: -12, fade: 5)
+    let focus = record("f", .wallBallFocus, day: 0, fade: 5, wallBallsExtra: 5)
+    let rec = Recommendation.pick(records: [full, focus], now: now)
+    XCTAssertEqual(rec.type, .fullSim)
+    XCTAssertEqual(rec.rule, 3)
+    // Even a big wall-ball overrun in a focus session does not recommend focus again.
+    let bigFocus = record("g", .wallBallFocus, day: 0, fade: 5, wallBallsExtra: 80)
+    XCTAssertNotEqual(Recommendation.pick(records: [full, bigFocus], now: now).type, .wallBallFocus)
+  }
+
+  func testSmallWallBallOverrunDoesNotTriggerFocus() {
+    let r = record("a", .fullSim, day: 1, fade: 5, wallBallsExtra: 5)
+    XCTAssertEqual(Recommendation.pick(records: [r], now: now).type, .halfSim)
+  }
+
+  func testAbandonedFullSimDoesNotResetTheFullSimClock() {
+    let old = record("a", .fullSim, day: -12, fade: 5)
+    let partial = record("p", .fullSim, day: 1, fade: 5, until: 11)
+    XCTAssertEqual(Recommendation.pick(records: [old, partial], now: now).rule, 3)
+  }
+
   func testMomentPriority() {
     let a = record("a", .fullSim, day: 0, fade: 30, total: 10)
     // First of its type.

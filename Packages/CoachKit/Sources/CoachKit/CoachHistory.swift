@@ -106,15 +106,20 @@ public struct Recommendation: Equatable {
     guard let last = recs.first else {
       return Recommendation(rule: 1, type: .halfSim, line: "Start with a half sim. It sets your baseline.")
     }
+    let insight = InsightPicker.pick(last.result)
     let rest = WallBallAnalysis.totalRestSeconds(last.result.wallBallSets())
-    let wbWorst = last.result.bestWorstStations.worst.map { $0.0 == "Wall balls" && $0.1 > 0 } ?? false
-    if InsightPicker.pick(last.result).rule == 3 || wbWorst {
-      let cost = InsightPicker.pick(last.result).rule == 3 || rest >= InsightPicker.restSecondsMin
+    // Worst station against plan, matched on the activity. A focus session has only wall balls, so any overrun there
+    // would always win: after one, the recommendation moves on.
+    let worst = last.result.rows.filter { !$0.step.isRun }.compactMap { r in r.deltaSeconds.map { (r.step.activity, $0) } }.max { $0.1 < $1.1 }
+    let wbWorst = worst.map { $0.0 == .wallBalls && $0.1 >= InsightPicker.stationOverMin } ?? false
+    if last.type != .wallBallFocus, insight.rule == 3 || wbWorst {
+      let cost = insight.rule == 3 || rest >= InsightPicker.restSecondsMin
         ? "Your wall balls cost \(Fmt.gap(rest)) in rest."
         : "Wall balls cost you the most against plan."
       return Recommendation(rule: 2, type: .wallBallFocus, line: "\(cost) Wall-ball focus trains sets and breaths.")
     }
-    let lastFull = recs.first { $0.type == .fullSim }
+    // An abandoned full sim does not reset the 10-day clock.
+    let lastFull = recs.first { $0.type == .fullSim && $0.isComplete }
     if lastFull == nil || now.timeIntervalSince(lastFull!.date) >= 10 * 86_400 {
       return Recommendation(rule: 3, type: .fullSim, line: "Time for a full sim. It's the real test of the fade.")
     }
