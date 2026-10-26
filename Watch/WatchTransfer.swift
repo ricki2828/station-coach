@@ -26,10 +26,12 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   /// Queues every finished, un-acked session. Safe to call repeatedly: files already queued are skipped.
   func sendUnsent() {
-    guard WCSession.isSupported(), WCSession.default.activationState == .activated,
+    // Never while recording: a large transfer competes with the AirPods link and the battery.
+    guard activeSessionId == nil, WCSession.isSupported(), WCSession.default.activationState == .activated,
           let root = try? SessionFiles.defaultRoot() else { return }
+    let unfinished = Set(SessionFiles.unfinished(in: root))
     let queued = Set(WCSession.default.outstandingFileTransfers.map { $0.file.fileURL })
-    for summary in SessionFiles.summaries(in: root) where summary.id != activeSessionId && !acked.contains(summary.id) {
+    for summary in SessionFiles.summaries(in: root) where !unfinished.contains(summary.id) && !acked.contains(summary.id) {
       let folder = root.appendingPathComponent(summary.id)
       guard let files = try? SessionFiles.list(folder) else { continue }
       for f in files {
@@ -38,6 +40,13 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.transferFile(url, metadata: ["session": summary.id, "name": f.name, "bytes": f.bytes, "total": files.count])
       }
     }
+  }
+
+  /// Called when a recording starts: drops queued transfers so nothing runs during the session.
+  /// `sendUnsent()` re-queues them afterwards.
+  func pauseForRecording() {
+    guard WCSession.isSupported() else { return }
+    WCSession.default.outstandingFileTransfers.forEach { $0.cancel() }
   }
 
   func deleteAcked() {

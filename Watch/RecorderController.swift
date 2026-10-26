@@ -93,6 +93,7 @@ final class RecorderController: ObservableObject {
       lastCue = "-"
       startedAt = started
       WatchTransfer.shared.activeSessionId = manifest.sessionId
+      WatchTransfer.shared.pauseForRecording()
 
       wire(writer: writer, motion: motion)
       log("session_start", manifest.sessionId)

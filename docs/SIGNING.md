@@ -13,4 +13,5 @@ When it exists, provide:
 - **Background modes** on the watch app (set in `project.yml` as `WKBackgroundModes`): `workout-processing` and `audio`. Confirm the audio mode is accepted for the profile.
 - **App Groups**: not used in M1 (the watch and phone exchange files over WatchConnectivity only).
 - **TestFlight**: an App Store Connect app record for the iPhone id, then archive the `StationCoach` scheme; the watch app is embedded. Add the athletes as internal or external testers.
+- A free **Personal Team** signs for 7 days only: install no more than a few days before a recording day.
 - A **device with Developer Mode** enabled on the watch (Settings, Privacy and Security) for direct installs.
