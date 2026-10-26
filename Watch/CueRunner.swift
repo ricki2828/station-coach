@@ -26,6 +26,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   private var missedWindow: TimeInterval = 45
   private var flagged = Set<Int>()
   private var lastCueAt = Date.distantPast
+  /// Written only by `prepare()` (main actor) and read by `fire()` (main-thread timer).
   private var longFormError: String?
   private var utteranceIds: [ObjectIdentifier: Int] = [:]
   private var inFlight: [Int: (phrase: String, outputs: [String], headphones: Bool)] = [:]
@@ -51,6 +52,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
 
   /// Call once at session start (before `start`). Mode B activates the long-form session here and keeps
   /// it active until `stop()`; mode A does nothing now and activates before each cue.
+  @MainActor
   func prepare() async {
     guard audioMode == .longForm else { return }
     do {
