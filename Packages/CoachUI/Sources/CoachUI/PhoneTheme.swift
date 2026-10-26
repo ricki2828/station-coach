@@ -14,8 +14,8 @@ public enum PhoneTheme {
   public static let cardHex: UInt32 = 0xFFFFFF
   public static let hairlineHex: UInt32 = 0xE4DFD3
   public static let mutedHex: UInt32 = 0x5E5B54
-  /// Amber fails on paper, so "over target" words use this darker one. Never red.
-  public static let amberTextHex: UInt32 = 0xB26B00
+  /// Amber F2A516 fails on paper (and the first pick B26B00 was 3.9:1), so "over target" words use this darker one. Never red.
+  public static let amberTextHex: UInt32 = 0x9A5B00
   public static let bestHex: UInt32 = 0x22C7E8
 
   public static let paper = Theme.color(paperHex)
