@@ -30,13 +30,10 @@ private struct OnboardingPage<Top: View, Content: View, Footer: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       top.frame(minHeight: 44, alignment: .topLeading)
-      // Scrolls at large text sizes; the footer button stays pinned so it can never be pushed off screen.
-      GeometryReader { geo in
-        ScrollView {
-          content
-            .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .leading)
-        }
-        .scrollBounceBehavior(.basedOnSize)
+      // Fits: centred as before. Does not fit (large text sizes): scrolls, with the footer button pinned below.
+      ViewThatFits(in: .vertical) {
+        content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        ScrollView { content.frame(maxWidth: .infinity, alignment: .leading) }
       }
       footer.padding(.top, 16)
     }
