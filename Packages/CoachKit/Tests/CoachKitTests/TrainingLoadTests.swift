@@ -479,7 +479,9 @@ final class TrainingLoadTests: XCTestCase {
     let (london, lc) = local("Europe/London", 2026, 10, 23, 18)
     let l = lc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: london, calendar: lc)!)
     XCTAssertEqual(l, DateComponents(month: 10, day: 26, hour: 8, minute: 0, weekday: 2))
-    XCTAssertEqual(WeeklyNotice.nextFire(after: london, calendar: lc)!.timeIntervalSince(london), 2 * 86_400 + 14 * 3_600 + 3_600 + 0)
+    // Friday 18:00 to Monday 08:00 is 62 hours on the wall clock, 63 real hours because the clocks go back.
+    let gap: TimeInterval = WeeklyNotice.nextFire(after: london, calendar: lc)!.timeIntervalSince(london)
+    XCTAssertEqual(gap, 63 * 3_600)
     // Sydney: clocks go forward Sun 4 Oct 2026.
     let (sydney, sc) = local("Australia/Sydney", 2026, 10, 2, 18)
     let sy = sc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: sydney, calendar: sc)!)
