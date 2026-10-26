@@ -13,22 +13,29 @@ struct PendingMoment: Identifiable {
 @MainActor
 final class AppModel: ObservableObject {
   enum Tab { case home, plan, history }
+  /// The Monday notification: asked once, after the first weekly summary worth a notice has been seen, and never again.
+  enum NotifyChoice: String { case undecided, yes, no }
 
   @Published var tab: Tab = .home
   @Published var setup: SetupModel = AppModel.loadSetup()
   @Published private(set) var onboarded: Bool
   @Published var pendingMoment: PendingMoment?
+  @Published private(set) var notifyChoice: NotifyChoice
+  /// Bumped to open the weekly summary from a notification tap.
+  @Published private(set) var summaryRequest = 0
   /// Onboarding was skipped before the watch app was confirmed, and the nudge has not been dismissed.
   @Published private(set) var watchNudge: Bool
 
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
+  private static let notifyKey = "notify.weekly"
 
   init(existingSessionIds: [String] = []) {
     let d = UserDefaults.standard
     // Someone who already has sessions on the phone has been through setup; remember it so deleting them all does not bring onboarding back.
     let has = !existingSessionIds.isEmpty
     onboarded = d.bool(forKey: "onboarded") || has
+    notifyChoice = NotifyChoice(rawValue: d.string(forKey: Self.notifyKey) ?? "") ?? .undecided
     watchNudge = d.object(forKey: "onboarding.watchChecked") as? Bool == false && !d.bool(forKey: "onboarding.watchNudgeDismissed")
     if has { d.set(true, forKey: "onboarded") }
     // First run of a build with moments: the sessions already here are history, not news.
@@ -87,6 +94,32 @@ final class AppModel: ObservableObject {
   func dismissWatchNudge() {
     defaults.set(true, forKey: "onboarding.watchNudgeDismissed")
     watchNudge = false
+  }
+
+  // MARK: Weekly summary
+
+  var notifyOptedIn: Bool { notifyChoice == .yes }
+
+  /// A notification tap or the Home card: show the last complete week.
+  func openWeekSummary() {
+    tab = .home
+    summaryRequest += 1
+  }
+
+  /// "Yes, Mondays" asks the system once; a refusal is stored as "no" so the card never returns. "No thanks" is final too.
+  func chooseNotify(_ yes: Bool, sessions: [LoadSession]) {
+    guard notifyChoice == .undecided else { return }
+    guard yes else { setNotify(.no); return }
+    Task {
+      let granted = await WeeklyNotifier.shared.requestPermission()
+      setNotify(granted ? .yes : .no)
+      WeeklyNotifier.shared.reschedule(sessions: sessions, optedIn: granted)
+    }
+  }
+
+  private func setNotify(_ choice: NotifyChoice) {
+    defaults.set(choice.rawValue, forKey: Self.notifyKey)
+    notifyChoice = choice
   }
 
   // MARK: Moments

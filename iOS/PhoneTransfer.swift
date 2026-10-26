@@ -13,6 +13,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var sendState: SendState = .idle
   /// Every complete session that has a `coach.json`, newest first.
   @Published private(set) var coachSessions: [SessionRecord] = []
+  /// Training load for every complete session, from `coach.json` and `hr.csv`. Rebuilt whenever the sessions change.
+  @Published private(set) var loadSummary = TrainingLoad.summarise([], now: Date())
   @Published private(set) var watchAppInstalled = false
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
@@ -26,6 +28,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   private var watchdog: SyncWatchdog
   private var openedAt = Date().timeIntervalSinceReferenceDate
   private var syncTimer: Timer?
+  /// Parsed `hr.csv` by session id (an empty series when the session has none). A finished session's file does not change.
+  private var hrCache: [String: HeartRateSeries] = [:]
 
   override init() {
     if let data = UserDefaults.standard.data(forKey: "transferTracker"),
@@ -84,8 +88,19 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       }
     }
     let sorted = SessionRecord.sorted(records)
-    if sorted != coachSessions { coachSessions = sorted }
+    if sorted != coachSessions {
+      coachSessions = sorted
+      let inputs = sorted.map { LoadInput(record: $0, hr: heartRate(for: $0.id, in: root)) }
+      loadSummary = TrainingLoad.summarise(inputs, now: Date())
+    }
     updateWatchInstalled()
+  }
+
+  private func heartRate(for id: String, in root: URL) -> HeartRateSeries? {
+    if let cached = hrCache[id] { return cached.isEmpty ? nil : cached }
+    let series = HeartRateSeries.load(url: root.appendingPathComponent(id).appendingPathComponent("hr.csv"))
+    hrCache[id] = series ?? HeartRateSeries(samples: [])
+    return series
   }
 
   /// Sends the plan to the watch as application context (the latest one wins; delivered when the watch is next awake).
