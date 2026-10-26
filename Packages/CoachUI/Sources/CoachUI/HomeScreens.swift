@@ -57,7 +57,7 @@ public struct HomeScreen: View {
               Text(model.setup.summary).font(.system(size: 17, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
             }
             Spacer()
-            Text("\u{203A}").font(.system(size: 28, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+            Text("\u{203A}").font(.system(size: 28, weight: .semibold)).foregroundStyle(PhoneTheme.muted).accessibilityHidden(true)
           }
         }
       }

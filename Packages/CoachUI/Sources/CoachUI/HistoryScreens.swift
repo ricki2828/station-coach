@@ -193,8 +193,14 @@ public struct SessionDetailScreen: View {
         HStack(spacing: 8) { nameText(row.step.activity == .burpeeBroadJump ? "BBJ" : row.step.name); trailing(row) }
       }
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(row.step.name)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Self.rowLabel(row))
+  }
+
+  /// "Sled push, 4:04, 20 s over": the full name, never the BBJ short label, with the time and the delta.
+  static func rowLabel(_ row: CoachResult.Row) -> String {
+    guard let actual = row.actualSeconds, let d = row.deltaSeconds else { return "\(row.step.name), not done" }
+    return "\(row.step.name), \(Fmt.clock(actual)), \(DeltaWords.text(d).text)"
   }
 
   private func nameText(_ s: String) -> some View {
