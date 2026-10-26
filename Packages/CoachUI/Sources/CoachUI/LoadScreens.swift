@@ -163,7 +163,7 @@ public struct LoadBars: View {
         .font(.system(size: 13, weight: .bold)).foregroundStyle(PhoneTheme.muted)
         .padding(.horizontal, 4)
         .background(PhoneTheme.card.opacity(0.9))
-        .offset(x: 0, y: -19)
+        .offset(x: 0, y: height(Double(usual)) > barMax - 24 ? 4 : -19)
     }
     .frame(height: 1, alignment: .topLeading)
     .padding(.bottom, labelsBelow + height(Double(usual)))
