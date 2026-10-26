@@ -44,6 +44,30 @@ final class PlanTests: XCTestCase {
     XCTAssertEqual(wb.targetSeconds, 199)
   }
 
+  func testWallBallFocusRepsSetting() {
+    for reps in PlanBuilder.focusRepOptions {
+      let p = PlanBuilder.build(division: .openMen, target: 4800, type: .wallBallFocus, wallBallReps: reps)
+      let walls = p.steps.filter { $0.activity == .wallBalls }
+      XCTAssertEqual(walls.count, 3)
+      for wb in walls {
+        XCTAssertEqual(wb.reps, reps)
+        XCTAssertEqual(wb.sets.reduce(0, +), reps)
+        XCTAssertTrue(wb.sets.dropLast().allSatisfy { $0 == 10 }, "sets of 10 by default")
+        XCTAssertEqual(wb.targetSeconds, Int((4800 * 0.46 * 0.18 * Double(reps) / 100).rounded()))
+      }
+    }
+    let hundred = PlanBuilder.build(division: .openMen, target: 4800, type: .wallBallFocus, wallBallReps: 100).steps[1]
+    XCTAssertEqual(hundred.sets, Array(repeating: 10, count: 10)) // focus uses tens, not the race's 15s
+    XCTAssertEqual(PlanBuilder.build(division: .openMen, target: 4800, type: .wallBallFocus, wallBallReps: 25).steps[1].sets, [10, 10, 5])
+  }
+
+  func testWallBallRepsSettingIsIgnoredOutsideTheOptionsAndOtherSessions() {
+    XCTAssertEqual(PlanBuilder.build(division: .openMen, target: 4800, type: .wallBallFocus, wallBallReps: 60).steps[1].reps, 50)
+    let full = PlanBuilder.build(division: .openMen, target: 4800, type: .fullSim, wallBallReps: 25)
+    XCTAssertEqual(full.steps.last?.reps, 100)
+    XCTAssertEqual(full, PlanBuilder.build(division: .openMen, target: 4800, type: .fullSim))
+  }
+
   func testWallBallSets() {
     XCTAssertEqual(Stations.wallBallSets(reps: 100), [15, 15, 15, 15, 15, 15, 10])
     XCTAssertEqual(Stations.wallBallSets(reps: 100).reduce(0, +), 100)

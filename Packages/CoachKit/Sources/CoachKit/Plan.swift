@@ -23,11 +23,13 @@ public enum SessionType: String, CaseIterable, Codable, Identifiable {
     case .wallBallFocus: return "Wall-ball focus"
     }
   }
-  public var detail: String {
+  public var detail: String { detail(wallBallReps: PlanBuilder.defaultFocusReps) }
+
+  public func detail(wallBallReps: Int) -> String {
     switch self {
     case .fullSim: return "8 runs, 8 stations"
     case .halfSim: return "Runs 1-4, stations 1-4"
-    case .wallBallFocus: return "1 km run, 50 wall balls, x3"
+    case .wallBallFocus: return "1 km run, \(wallBallReps) wall balls, x3"
     }
   }
 }
@@ -65,11 +67,13 @@ public enum Stations {
     }
   }
 
-  /// Wall-ball sets: 100 reps are 15 x 6 then 10; shorter rounds use sets of 10.
-  public static func wallBallSets(reps: Int) -> [Int] {
-    if reps == 100 { return [15, 15, 15, 15, 15, 15, 10] }
-    var sets = Array(repeating: 10, count: reps / 10)
-    if reps % 10 > 0 { sets.append(reps % 10) }
+  /// Wall-ball sets: a race's 100 reps are 15 x 6 then 10; shorter rounds, and the focus session at any
+  /// size, use sets of 10 (`size`).
+  public static func wallBallSets(reps: Int, size: Int? = nil) -> [Int] {
+    if reps == 100, size == nil { return [15, 15, 15, 15, 15, 15, 10] }
+    let size = size ?? 10
+    var sets = Array(repeating: size, count: reps / size)
+    if reps % size > 0 { sets.append(reps % size) }
     return sets
   }
 }
@@ -117,13 +121,18 @@ public enum PlanBuilder {
     .row: 13, .farmersCarry: 8, .sandbagLunges: 14, .wallBalls: 18,
   ]
 
+  /// Reps per round the wall-ball focus session offers; the phone's setting picks one.
+  public static let focusRepOptions = [25, 50, 75, 100]
+  public static let defaultFocusReps = 50
+
   public static let minTarget = 30 * 60
   public static let maxTarget = 3 * 3600
 
   public static func clamped(_ target: Int) -> Int { min(max(target, minTarget), maxTarget) }
 
-  public static func build(division: Division, target: Int, type: SessionType) -> SessionPlan {
+  public static func build(division: Division, target: Int, type: SessionType, wallBallReps: Int = defaultFocusReps) -> SessionPlan {
     let t = Double(clamped(target))
+    let focusReps = focusRepOptions.contains(wallBallReps) ? wallBallReps : defaultFocusReps
     let perRun = t * runShare / 8
     let perRunTransition = t * transitionShare / 8
     let runTarget = Int((perRun + perRunTransition).rounded())
@@ -139,12 +148,12 @@ public enum PlanBuilder {
         add { PlanStep(activity: .run, index: $0, runNumber: i + 1, targetSeconds: runTarget, reps: nil, sets: []) }
         let a = Stations.race[i]
         let reps: Int? = a == .wallBalls ? 100 : nil
-        add { PlanStep(activity: a, index: $0, runNumber: nil, targetSeconds: stationTarget(a), reps: reps, sets: reps.map(Stations.wallBallSets) ?? []) }
+        add { PlanStep(activity: a, index: $0, runNumber: nil, targetSeconds: stationTarget(a), reps: reps, sets: reps.map { Stations.wallBallSets(reps: $0) } ?? []) }
       }
     case .wallBallFocus:
       for i in 0..<3 {
         add { PlanStep(activity: .run, index: $0, runNumber: i + 1, targetSeconds: runTarget, reps: nil, sets: []) }
-        add { PlanStep(activity: .wallBalls, index: $0, runNumber: nil, targetSeconds: stationTarget(.wallBalls, scale: 0.5), reps: 50, sets: Stations.wallBallSets(reps: 50)) }
+        add { PlanStep(activity: .wallBalls, index: $0, runNumber: nil, targetSeconds: stationTarget(.wallBalls, scale: Double(focusReps) / 100), reps: focusReps, sets: Stations.wallBallSets(reps: focusReps, size: 10)) }
       }
     }
     // Rounding leaves a few seconds; the last step of a full sim absorbs them so the plan adds up to the target.

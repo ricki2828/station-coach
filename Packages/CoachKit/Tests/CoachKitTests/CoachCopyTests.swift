@@ -17,6 +17,39 @@ final class CoachCopyTests: XCTestCase {
     XCTAssertEqual(CoachCopy.stationIntro(wb), "Wall balls. 100 reps. Sets of 15, five breaths between.")
   }
 
+  func testJogInIsDueInTheRunsLastTransitionSeconds() {
+    let run = plan.steps[0], ski = plan.steps[1], tr = plan.transitionSeconds
+    XCTAssertFalse(CoachCopy.jogInDue(run: run, next: ski, elapsedSeconds: run.targetSeconds - tr - 1, transitionSeconds: tr))
+    XCTAssertTrue(CoachCopy.jogInDue(run: run, next: ski, elapsedSeconds: run.targetSeconds - tr, transitionSeconds: tr))
+    XCTAssertTrue(CoachCopy.jogInDue(run: run, next: ski, elapsedSeconds: run.targetSeconds + 90, transitionSeconds: tr)) // slow run: still said
+  }
+
+  func testNoJogInWithoutAStationToJogTo() {
+    let run = plan.steps[0], tr = plan.transitionSeconds
+    XCTAssertFalse(CoachCopy.jogInDue(run: run, next: nil, elapsedSeconds: 9999, transitionSeconds: tr))
+    XCTAssertFalse(CoachCopy.jogInDue(run: run, next: plan.steps[2], elapsedSeconds: 9999, transitionSeconds: tr)) // a run follows a run: never
+    let none = PlanStep(activity: .skierg, index: 1, runNumber: nil, targetSeconds: 0, reps: nil, sets: [])
+    XCTAssertFalse(CoachCopy.jogInDue(run: run, next: none, elapsedSeconds: 9999, transitionSeconds: tr))
+    XCTAssertFalse(CoachCopy.jogInDue(run: plan.steps[1], next: plan.steps[2], elapsedSeconds: 9999, transitionSeconds: tr)) // not from a station
+  }
+
+  func testStationIntroNoLongerCarriesJogIn() {
+    XCTAssertEqual(CoachCopy.stationIntro(plan.steps[1]), "SkiErg. 1,000 metres. Hinge from the hips.")
+  }
+
+  func testJogInIsItsOwnLowestPriorityCueSoTheGapRulesHold() {
+    var s = CueScheduler()
+    s.offer(CoachCue(kind: .planAndRun, text: "run", createdAt: 0))
+    XCTAssertEqual(s.next(at: 0, speaking: false)?.text, "run")
+    s.offer(CoachCue(kind: .jogIn, text: CoachCopy.jogIn, createdAt: 5))
+    XCTAssertNil(s.next(at: 10, speaking: false)) // inside the 20 s gap: waits
+    XCTAssertEqual(s.next(at: 20, speaking: false)?.text, "Jog in.")
+    XCTAssertNil(s.next(at: 40, speaking: false)) // said once
+    s.offer(CoachCue(kind: .jogIn, text: "Jog in.", createdAt: 100))
+    s.offer(CoachCue(kind: .midStation, text: "mid", createdAt: 100))
+    XCTAssertEqual(s.next(at: 100, speaking: false)?.text, "mid") // anything else outranks it
+  }
+
   func testEveryStationHasAnIntroWithTheName() {
     for s in plan.steps where !s.isRun {
       XCTAssertTrue(CoachCopy.stationIntro(s).hasPrefix(Stations.name(s.activity)), s.name)

@@ -21,6 +21,8 @@ public struct StepScreenModel: Equatable {
   /// Seconds behind plan (positive) or ahead (negative).
   public var deltaSeconds: Int
   public var hrBpm: Int?
+  /// No heart-rate samples: a "HR off" chip replaces the number.
+  public var hrOff: Bool
   public var toast: String?
   public var alarm: String?
   /// Rep count is a low-confidence estimate: show "~" and pulse the +/- buttons.
@@ -28,7 +30,7 @@ public struct StepScreenModel: Equatable {
 
   public init(kind: Kind, activity: Activity, title: String, badge: String? = nil, dominant: String, dominantLabel: String,
               secondary: String, secondaryLabel: String, next: String, isLast: Bool = false, deltaSeconds: Int,
-              hrBpm: Int? = nil, toast: String? = nil, alarm: String? = nil, approximate: Bool = false) {
+              hrBpm: Int? = nil, hrOff: Bool = false, toast: String? = nil, alarm: String? = nil, approximate: Bool = false) {
     self.kind = kind
     self.activity = activity
     self.title = title
@@ -41,6 +43,7 @@ public struct StepScreenModel: Equatable {
     self.isLast = isLast
     self.deltaSeconds = deltaSeconds
     self.hrBpm = hrBpm
+    self.hrOff = hrOff
     self.toast = toast
     self.alarm = alarm
     self.approximate = approximate
@@ -56,12 +59,13 @@ public enum ReadyScreenModel: Equatable {
 public struct ReadyInfo: Equatable {
   public var sessionName: String
   public var targetText: String
-  public var athleteChip: String
+  /// Not shown on the coached Ready screen (nil); the recorder-only flow keeps its own athlete settings.
+  public var athleteChip: String?
   /// Warnings that do not block START: "No headphones: cues by vibration", "Heart rate off. The coach still works."
   public var chips: [String]
   public var batteryLine: String?
 
-  public init(sessionName: String, targetText: String, athleteChip: String, chips: [String] = [], batteryLine: String? = nil) {
+  public init(sessionName: String, targetText: String, athleteChip: String? = nil, chips: [String] = [], batteryLine: String? = nil) {
     self.sessionName = sessionName
     self.targetText = targetText
     self.athleteChip = athleteChip

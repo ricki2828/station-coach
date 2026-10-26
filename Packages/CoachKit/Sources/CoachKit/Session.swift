@@ -40,6 +40,8 @@ public struct SessionManifest: Codable, Equatable {
   public var audioMode: String?
   public var athlete: String?
   public var wrist: String?
+  /// "left" or "right": which side the crown is on (the watch's orientation setting). Tells a flipped wearing apart in motion data.
+  public var crownOrientation: String?
   /// Set when the folder was closed after the app stopped unexpectedly (no clean finish).
   public var recovered: Bool?
   /// "athlete_taps" or "coach". With "coach" the labels follow the plan, and `transition` is a time rule, not an observation.
@@ -50,7 +52,7 @@ public struct SessionManifest: Codable, Equatable {
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
     workoutActivityType: String, motionApi: String, requestedHz: Double, storeHz: Double, cueIntervalSec: Int,
-    audioMode: String? = nil, athlete: String? = nil, wrist: String? = nil,
+    audioMode: String? = nil, athlete: String? = nil, wrist: String? = nil, crownOrientation: String? = nil,
     labelSource: String? = nil, transitionLabelSeconds: Int? = nil
   ) {
     self.formatVersion = SessionFormat.version
@@ -67,6 +69,7 @@ public struct SessionManifest: Codable, Equatable {
     self.audioMode = audioMode
     self.athlete = athlete
     self.wrist = wrist
+    self.crownOrientation = crownOrientation
     self.labelSource = labelSource
     self.transitionLabelSeconds = transitionLabelSeconds
   }

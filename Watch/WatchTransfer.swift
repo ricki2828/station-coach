@@ -16,6 +16,7 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
   var activeSessionId: String?
 
   private let ackKey = "ackedSessions"
+  private var heartbeat: Timer?
 
   override init() {
     acked = Set(UserDefaults.standard.stringArray(forKey: "ackedSessions") ?? [])
@@ -29,6 +30,18 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
+    heartbeat?.invalidate()
+    heartbeat = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sendHeartbeat() }
+  }
+
+  /// While files are outstanding, tells the phone which sessions are still sending. The phone gets no progress
+  /// events for a single large file, and would otherwise call a slow transfer failed.
+  func sendHeartbeat(finished extra: String? = nil) {
+    guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+    var ids = Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["session"] as? String })
+    if let extra { ids.insert(extra) }
+    guard !ids.isEmpty else { return }
+    try? WCSession.default.updateApplicationContext(["sending": ids.sorted(), "at": Date().timeIntervalSince1970])
   }
 
   /// Queues every finished, un-acked session. Safe to call repeatedly: files already queued are skipped.
@@ -47,6 +60,13 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.transferFile(url, metadata: ["session": summary.id, "name": f.name, "bytes": f.bytes, "total": files.count])
       }
     }
+    sendHeartbeat() // "Send unsent" restarts the phone's clock
+  }
+
+  /// Tells the phone a session is closed and on its way, so the phone can say so if the files never come.
+  func announceFinished(_ id: String) {
+    guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+    WCSession.default.transferUserInfo(["finished": id])
   }
 
   /// Called when a recording starts: drops queued transfers so nothing runs during the session.
@@ -59,6 +79,9 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func deleteAcked() {
     guard let root = try? SessionFiles.defaultRoot() else { return }
     for id in acked { try? FileManager.default.removeItem(at: root.appendingPathComponent(id)) }
+    if !acked.isEmpty, WCSession.isSupported(), WCSession.default.activationState == .activated {
+      WCSession.default.transferUserInfo(["gone": Array(acked)]) // the phone clears anything it was waiting for
+    }
     objectWillChange.send()
   }
 
@@ -72,6 +95,11 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
       apply(session.receivedApplicationContext)
     }
     DispatchQueue.main.async { self.planChecked = true }
+  }
+
+  /// The system wakes the app for each finished file, even when the 30 s timer is suspended: say so.
+  func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+    sendHeartbeat(finished: fileTransfer.file.metadata?["session"] as? String)
   }
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

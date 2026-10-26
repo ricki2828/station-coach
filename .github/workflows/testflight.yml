@@ -1,0 +1,127 @@
+name: testflight
+# Archives the iPhone app with the embedded watch app, signs it and uploads it to TestFlight.
+# Run it from the Actions tab, or push a tag named beta-*. Without the four secrets it skips and succeeds.
+# ci.yml also calls it (without secrets) so the skip path is exercised on every push.
+# Never add `secrets: inherit` to that call: every push would then upload, and the build number would become ci's run number.
+# The secrets live in the `testflight` Environment (docs/SIGNING.md). In a called workflow the `github` context is the
+# caller's (`github.workflow` is `ci`), so a call from ci.yml can never select that environment.
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    tags: ["beta-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    environment: ${{ github.workflow == 'testflight' && 'testflight' || '' }}
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: gate
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: tools/ci/testflight-gate.sh
+
+  upload:
+    needs: gate
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: macos-15
+    environment: ${{ github.workflow == 'testflight' && 'testflight' || '' }}
+    concurrency:
+      group: testflight
+      cancel-in-progress: false
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      BUNDLE_PREFIX: ${{ vars.BUNDLE_PREFIX }}
+      # This workflow's own run counter: it only ever rises, and the watch and phone get the same number.
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 26
+        run: tools/ci/select-xcode.sh
+
+      - name: Write the API key (owner-only file, removed at the end)
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          test -s "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" || { echo "ASC_KEY_P8 did not decode to a key"; exit 1; }
+
+      - name: Apply team and bundle prefix to the generated project (nothing is committed)
+        run: |
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo "APPLE_TEAM_ID must be 10 letters or digits"; exit 1; }
+          python3 - <<'PY'
+          import os, re
+          team, prefix = os.environ["APPLE_TEAM_ID"], os.environ.get("BUNDLE_PREFIX", "")
+          s = open("project.yml").read()
+          anchor = '    SWIFT_VERSION: "5.0"\n'
+          if anchor not in s:
+              raise SystemExit("project.yml no longer has the SWIFT_VERSION line this step anchors on; update the step")
+          s = s.replace(anchor, anchor + '    DEVELOPMENT_TEAM: ' + team + '\n    CODE_SIGN_STYLE: Automatic\n', 1)
+          if prefix:
+              if not re.fullmatch(r"[A-Za-z0-9.-]+", prefix):
+                  raise SystemExit("BUNDLE_PREFIX has characters a bundle id cannot hold")
+              # The phone id, the watch id (phone id + .watchkitapp) and the watch's companion id all derive from it.
+              s = s.replace("app.stationcoach", prefix)
+          open("project.yml", "w").write(s)
+          PY
+          grep -n "DEVELOPMENT_TEAM\|CODE_SIGN_STYLE\|bundleIdPrefix\|PRODUCT_BUNDLE_IDENTIFIER\|WKCompanion" project.yml | sed "s/$APPLE_TEAM_ID/<team>/"
+
+      - run: brew install xcodegen
+      - run: xcodegen generate
+
+      - name: Archive (automatic signing through the API key)
+        run: |
+          set -o pipefail
+          xcodebuild archive -project StationCoach.xcodeproj -scheme StationCoach \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/StationCoach.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" | tail -n 60
+
+      - name: Export and upload to TestFlight
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>upload</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/StationCoach.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -n 40
+          echo "Uploaded build $BUILD_NUMBER. It shows in TestFlight after processing (usually 5-30 minutes)."
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

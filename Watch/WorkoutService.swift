@@ -21,6 +21,9 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
     try await store.requestAuthorization(toShare: share, read: read)
   }
 
+  /// HealthKit hides whether a read was declined, but it does say whether saving workouts was.
+  var workoutShareDenied: Bool { store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingDenied }
+
   /// An earlier run that was killed can leave a workout session alive at the system level. End it first.
   func endOrphanedSession() async {
     do {

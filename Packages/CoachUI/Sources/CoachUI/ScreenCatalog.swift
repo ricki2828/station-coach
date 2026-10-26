@@ -55,7 +55,7 @@ public enum ScreenCatalog {
   public static var watchScreens: [CatalogEntry] {
     let allStations = FinishScreenModel.stations(from: SampleData.result(extra: [1: -25, 5: 41]))
     let earlyStations = FinishScreenModel.stations(from: SampleData.result(until: 10))
-    let ready = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L")
+    let ready = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")
     let run = step(.run, .run, "Run 4", dominant: "3:12", dominantLabel: "Run time 3 minutes 12", secondary: "/ 5:24",
                    secondaryLabel: "Target 5 minutes 24", next: "Next: Burpee broad jumps", delta: -20)
     let station = step(.time, .skierg, "SkiErg", dominant: "2:10", dominantLabel: "Station time 2 minutes 10", secondary: "/ 4:25",
@@ -75,7 +75,7 @@ public enum ScreenCatalog {
       watch("ready-no-plan", CoachReadyScreen(model: .noPlan)),
       watch("ready", CoachReadyScreen(model: .ready(ready))),
       watch("ready-warnings", CoachReadyScreen(model: .ready(ReadyInfo(
-        sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L",
+        sessionName: "Full sim", targetText: "1:20:00",
         chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
         batteryLine: "Battery 54%. A full sim needs about 60%.")))),
       watch("run", CoachStepScreen(model: run, onMissed: {})),
@@ -83,9 +83,11 @@ public enum ScreenCatalog {
       watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("station-time", CoachStepScreen(model: station, onMissed: {})),
       watch("station-time-sled", CoachStepScreen(model: sled, onMissed: {})),
+      watch("run-hr-off", CoachStepScreen(model: { var m = run; m.hrOff = true; m.hrBpm = nil; return m }(), onMissed: {})),
       watch("station-reps", CoachStepScreen(model: walls, onMissed: {})),
       watch("station-reps-low-confidence", CoachStepScreen(model: lowConf, onMissed: {})),
       watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
+      watch("toast-no-headphones", CoachStepScreen(model: { var m = run; m.toast = "No headphones: cues by vibration"; return m }(), onMissed: {})),
       watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
       watch("menu", CoachMenuScreen()),
       watch("finish-undo-window", CoachFinishScreen(model: FinishScreenModel(
@@ -114,6 +116,7 @@ public enum ScreenCatalog {
     let partial = SampleData.result(extra: [4: 30], until: 10)
     return [
       phone("setup-first-launch", SetupScreen(model: SetupModel()).frame(width: Theme.phone.width)),
+      phone("setup-wall-ball-focus", SetupScreen(model: SetupModel(type: .wallBallFocus, wallBallReps: 75)).frame(width: Theme.phone.width)),
       phone("setup-sending", SetupScreen(model: SetupModel(send: .sending(watchName: "Apple Watch"))).frame(width: Theme.phone.width)),
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),

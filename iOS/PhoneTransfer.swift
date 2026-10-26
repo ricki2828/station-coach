@@ -16,8 +16,15 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
 
+  /// The newest finished session that has gone quiet for 3 minutes while the app is open.
+  @Published private(set) var syncFailedId: String?
+
   private let trackerKey = "transferTracker"
+  private let watchdogKey = "syncWatchdog"
   private var tracker: TransferTracker
+  private var watchdog: SyncWatchdog
+  private var openedAt = Date().timeIntervalSinceReferenceDate
+  private var syncTimer: Timer?
 
   override init() {
     if let data = UserDefaults.standard.data(forKey: "transferTracker"),
@@ -26,8 +33,29 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     } else {
       tracker = TransferTracker()
     }
+    if let data = UserDefaults.standard.data(forKey: "syncWatchdog"), let w = try? JSONDecoder().decode(SyncWatchdog.self, from: data) {
+      watchdog = w
+    } else {
+      watchdog = SyncWatchdog()
+    }
     super.init()
     refresh()
+  }
+
+  /// The app came to the front: time spent closed does not count towards the 3 minutes.
+  func appBecameActive() {
+    openedAt = Date().timeIntervalSinceReferenceDate
+    refresh()
+  }
+
+  private func saveWatchdog() {
+    if let data = try? JSONEncoder().encode(watchdog) { UserDefaults.standard.set(data, forKey: watchdogKey) }
+  }
+
+  private func evaluateSync() {
+    let now = Date().timeIntervalSinceReferenceDate
+    watchdog.prune(now: now)
+    syncFailedId = watchdog.failedSession(now: now, openSince: openedAt)
   }
 
   static var root: URL? { try? SessionFiles.defaultRoot() }
@@ -36,6 +64,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
+    syncTimer?.invalidate()
+    syncTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.evaluateSync() }
   }
 
   func refresh() {
@@ -43,6 +73,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     sessions = SessionFiles.summaries(in: root)
     completeIds = Set(sessions.map(\.id).filter { tracker.isComplete($0) })
     syncPercent = sessions.map(\.id).first { !tracker.isComplete($0) && tracker.progress($0) != nil }.flatMap { tracker.progress($0) }
+    for id in watchdog.pending where completeIds.contains(id) { watchdog.complete(session: id) }
+    saveWatchdog()
+    evaluateSync()
     latestCoach = nil
     for s in sessions where completeIds.contains(s.id) {
       let url = root.appendingPathComponent(s.id).appendingPathComponent(CoachResult.fileName)
@@ -78,6 +111,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func delete(_ id: String) {
     guard let root = Self.root else { return }
     try? FileManager.default.removeItem(at: root.appendingPathComponent(id))
+    watchdog.complete(session: id)
     refresh()
   }
 
@@ -107,6 +141,33 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func sessionDidBecomeInactive(_ session: WCSession) {}
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 
+  /// The watch's heartbeat while files are still outstanding: each one restarts the clock.
+  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    guard let ids = applicationContext["sending"] as? [String] else { return }
+    DispatchQueue.main.async {
+      let now = Date().timeIntervalSinceReferenceDate
+      for id in ids.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.activity(session: id, at: now) }
+      self.refresh()
+    }
+  }
+
+  func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    if let gone = userInfo["gone"] as? [String] { // sessions deleted on the watch
+      DispatchQueue.main.async {
+        for id in gone.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.complete(session: id) }
+        self.refresh()
+      }
+      return
+    }
+    guard let id = (userInfo["finished"] as? String).map({ ($0 as NSString).lastPathComponent }), !id.isEmpty, id != ".." else { return }
+    DispatchQueue.main.async {
+      if !self.tracker.isComplete(id) {
+        self.watchdog.finished(session: id, at: Date().timeIntervalSinceReferenceDate)
+      }
+      self.refresh()
+    }
+  }
+
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
     guard let md = file.metadata,
           let sid = (md["session"] as? String).map({ ($0 as NSString).lastPathComponent }),
@@ -127,6 +188,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       return
     }
     DispatchQueue.main.async {
+      self.watchdog.fileArrived(session: sid, at: Date().timeIntervalSinceReferenceDate)
       self.tracker.received(session: sid, name: name, expectedBytes: bytes, actualBytes: actual, total: total)
       if let data = try? JSONEncoder().encode(self.tracker) { UserDefaults.standard.set(data, forKey: self.trackerKey) }
       if self.tracker.isComplete(sid) { WCSession.default.transferUserInfo(["ack": sid]) }

@@ -11,6 +11,8 @@ final class RecorderController: ObservableObject {
   @Published var currentLabel: Activity?
   @Published var startedAt = Date()
   @Published var heartRate: Int?
+  /// No heart-rate samples when there should be some (read declined, band loose). The session carries on.
+  @Published var hrOff = false
   @Published var batteryPercent: Int?
   @Published var lastCue = "-"
   @Published var cueCount = 0
@@ -50,6 +52,9 @@ final class RecorderController: ObservableObject {
   let cues = CueRunner()
   private var writer: SessionWriter?
   private var labelLog = LabelLog()
+  private var hrWatch = HeartRateWatch()
+  private var clock: TimeInterval { Date().timeIntervalSinceReferenceDate }
+  static let hrMissedKey = "hrMissedLastSession"
   private var minuteTimer: Timer?
   private var alarmTimer: Timer?
   private var watchdogTimer: Timer?
@@ -69,6 +74,23 @@ final class RecorderController: ObservableObject {
     athlete = UserDefaults.standard.string(forKey: "athlete") ?? Self.athleteCodes[0]
     wrist = UserDefaults.standard.string(forKey: "wrist") ?? "left"
     refreshUnfinished()
+  }
+
+  /// The wrist the watch says it is on; the stored setting if it cannot tell.
+  private static func worn(fallback: String) -> String {
+    switch WKInterfaceDevice.current().wristLocation {
+    case .left: return "left"
+    case .right: return "right"
+    @unknown default: return fallback
+    }
+  }
+
+  private static func crown() -> String? {
+    switch WKInterfaceDevice.current().crownOrientation {
+    case .left: return "left"
+    case .right: return "right"
+    @unknown default: return nil
+    }
   }
 
   func start(coach: Bool = false, transitionSeconds: Int? = nil) async {
@@ -97,7 +119,9 @@ final class RecorderController: ObservableObject {
         cueIntervalSec: coach ? 0 : cueInterval,
         audioMode: audioMode.rawValue,
         athlete: athlete,
-        wrist: wrist,
+        // Coached sessions have no wrist picker: take the real wrist from the watch. Recorder-only keeps its setting.
+        wrist: coach ? Self.worn(fallback: wrist) : wrist,
+        crownOrientation: Self.crown(),
         labelSource: coach ? "coach" : "athlete_taps",
         transitionLabelSeconds: coach ? transitionSeconds : nil)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
@@ -116,11 +140,15 @@ final class RecorderController: ObservableObject {
       log("session_start", manifest.sessionId)
       await workout.endOrphanedSession()
       try await workout.start()
+      hrWatch.start(at: clock)
+      hrOff = false
+      heartRate = nil
       motion.onMagnitude = { [weak self] t, m in self?.onMotionMagnitude?(t, m) }
       motion.start(writer: writer)
       motionApi = motion.api
       cues.audioMode = audioMode
       await cues.prepare()
+      if cues.headphones == false { flash("No headphones: cues by vibration") }
       if !coach { cues.start(interval: TimeInterval(cueInterval)) }
       minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.minuteTick() }
@@ -152,6 +180,9 @@ final class RecorderController: ObservableObject {
     watchdogTimer?.invalidate()
     watchdogTimer = nil
     cues.stop(letSpeechFinish: coachMode)
+    UserDefaults.standard.set(hrWatch.missedEntireSession(endingAt: clock), forKey: Self.hrMissedKey)
+    hrWatch.stop()
+    hrOff = false
     motion?.writeRates(atMs: Clock.epochMs())
     motion?.stop()
     await workout.stop()
@@ -166,10 +197,34 @@ final class RecorderController: ObservableObject {
     self.writer = nil
     motion = nil
     WatchTransfer.shared.activeSessionId = nil
+    WatchTransfer.shared.announceFinished(id)
     WatchTransfer.shared.sendUnsent()
     statusMessage = "Saved \(id)"
     refreshUnfinished()
     phase = .idle
+  }
+
+  /// A short-lived notice over the running screen.
+  private func flash(_ text: String) {
+    toast = text
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 4_000_000_000)
+      if toast == text { toast = nil }
+    }
+  }
+
+  /// Called once a second by the coach and every 10 s by the watchdog.
+  func checkHeartRate() {
+    guard phase == .running else { return }
+    let off = hrWatch.isOff(at: clock)
+    guard off != hrOff else { return }
+    hrOff = off
+    if off { workout.onEvent?("hr_off", "no heart-rate sample") }
+  }
+
+  /// Shown on the Ready screen: saving workouts was declined, or the last session never produced a sample.
+  var heartRateWarning: Bool {
+    workout.workoutShareDenied || UserDefaults.standard.bool(forKey: Self.hrMissedKey)
   }
 
   func tap(_ activity: Activity, haptic: Bool = true) {
@@ -232,7 +287,13 @@ final class RecorderController: ObservableObject {
   private func wire(writer: SessionWriter, motion: MotionRecorder) {
     workout.onHeartRate = { [weak self] bpm in
       writer.append(.hr, Lines.hr(epochMs: Clock.epochMs(), bpm: bpm))
-      Task { @MainActor in self?.heartRate = Int(bpm.rounded()) }
+      Task { @MainActor in
+        guard let self else { return }
+        self.hrWatch.sample(at: self.clock)
+        if self.hrOff { writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: "hr_on", detail: "heart-rate sample after off")) }
+        self.hrOff = false
+        self.heartRate = Int(bpm.rounded())
+      }
     }
     workout.onUnexpectedEnd = { [weak self] message in Task { @MainActor in self?.raiseAlarm(message) } }
     workout.onEvent = { kind, detail in writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail)) }
@@ -265,6 +326,7 @@ final class RecorderController: ObservableObject {
   /// Alarms if no motion sample arrives within `startGraceSeconds` of the start, then if both streams
   /// deliver nothing for `stallSeconds`: alive but silent.
   private func watchdogTick() {
+    checkHeartRate()
     guard phase == .running, let motion else { return }
     let total = motion.totalRawSamples
     if !sawFirstSample {

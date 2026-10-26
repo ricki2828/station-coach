@@ -43,6 +43,8 @@ final class CoachController: ObservableObject {
   @Published private(set) var finish: FinishScreenModel?
   @Published private(set) var active = false
   @Published var showMenu = false
+  /// From the audio route after the session was activated in the chosen mode. Nil until known.
+  @Published private(set) var headphones: Bool?
 
   private let recorder: RecorderController
   private let transfer = WatchTransfer.shared
@@ -51,6 +53,7 @@ final class CoachController: ObservableObject {
   private let counter = LockedCounter()
   private var ticker: Timer?
   private var midCueDone = Set<Int>()
+  private var jogInDone = Set<Int>()
   private var announcedSets = Set<Int>()
   private var repCorrection = 0
   private var repsByStep: [Int: [Int64]] = [:]
@@ -60,7 +63,13 @@ final class CoachController: ObservableObject {
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
 
-  init(recorder: RecorderController) { self.recorder = recorder }
+  init(recorder: RecorderController) {
+    self.recorder = recorder
+    recorder.cues.onRouteStatus = { [weak self] present in Task { @MainActor in self?.headphones = present } }
+  }
+
+  /// Re-reads the route for the Ready chip (a brief activation; later changes arrive as route-change events).
+  func refreshAudioRoute() { recorder.cues.probeRoute() }
 
   private var nowMs: Int64 { Clock.epochMs() }
   private var clock: TimeInterval { Date().timeIntervalSinceReferenceDate }
@@ -70,7 +79,8 @@ final class CoachController: ObservableObject {
   var readyModel: ReadyScreenModel {
     guard let plan = transfer.plan else { return transfer.planChecked ? .noPlan : .loading }
     var chips: [String] = []
-    if !CueRunner.route().headphones { chips.append("No headphones: cues by vibration") }
+    if headphones == false { chips.append("No headphones: cues by vibration") }
+    if recorder.heartRateWarning { chips.append("Heart rate off. The coach still works.") }
     if let m = recorder.statusMessage, recorder.phase == .idle, !m.hasPrefix("Saved") { chips.append(m) }
     let device = WKInterfaceDevice.current()
     device.isBatteryMonitoringEnabled = true
@@ -81,7 +91,6 @@ final class CoachController: ObservableObject {
     }
     return .ready(ReadyInfo(
       sessionName: plan.title, targetText: Fmt.clock(plan.plannedSeconds),
-      athleteChip: "\(recorder.athlete) \u{00B7} \(recorder.wrist.prefix(1).uppercased())",
       chips: chips, batteryLine: battery))
   }
 
@@ -97,6 +106,7 @@ final class CoachController: ObservableObject {
     machine = m
     scheduler = CueScheduler()
     midCueDone = []
+    jogInDone = []
     announcedSets = []
     repCorrection = 0
     repsByStep = [:]
@@ -182,6 +192,7 @@ final class CoachController: ObservableObject {
 
   private func beginStep(announce: Bool = true) {
     guard let m = machine, let step = m.current else { return }
+    scheduler.drop(.jogIn) // still waiting out the cue gap when the athlete moved on: no use now
     applyLabel()
     if step.activity == .wallBalls {
       let fresh = !enteredWallBalls.contains(step.index)
@@ -216,6 +227,7 @@ final class CoachController: ObservableObject {
   // MARK: Tick
 
   private func tick() {
+    recorder.checkHeartRate()
     if active, let m = machine, let step = m.current {
       applyLabel()
       let elapsed = m.stepElapsedSeconds(at: nowMs)
@@ -223,6 +235,11 @@ final class CoachController: ObservableObject {
          let text = CoachCopy.midStation(step) {
         midCueDone.insert(step.index)
         offer(.midStation, text)
+      }
+      if step.isRun, !jogInDone.contains(step.index),
+         CoachCopy.jogInDue(run: step, next: m.next, elapsedSeconds: elapsed, transitionSeconds: m.plan.transitionSeconds) {
+        jogInDone.insert(step.index)
+        offer(.jogIn, CoachCopy.jogIn)
       }
       if step.activity == .wallBalls { announceSets(step) }
       refresh()
@@ -268,7 +285,7 @@ final class CoachController: ObservableObject {
     let delta = m.deltaSeconds(at: now)
     let elapsed = m.stepElapsedSeconds(at: now)
     let next = m.next.map { "Next: \($0.name)" } ?? "Next: Finish"
-    let common = (hr: recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
+    let common = (hr: recorder.hrOff ? nil : recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
     let target = "/ \(Fmt.clock(step.targetSeconds))"
     let targetLabel = "Target \(Fmt.spoken(step.targetSeconds))"
     if step.activity == .wallBalls {
@@ -287,7 +304,7 @@ final class CoachController: ObservableObject {
         kind: .reps, activity: .wallBalls, title: step.name, dominant: "\(left)",
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
-        next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, toast: common.toast,
+        next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx)
       return
     }
@@ -296,7 +313,7 @@ final class CoachController: ObservableObject {
       kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Transition" : nil,
       dominant: Fmt.clock(elapsed), dominantLabel: "\(step.isRun ? "Run" : "Station") time, \(Fmt.spoken(elapsed))",
       secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
-      hrBpm: common.hr, toast: common.toast, alarm: common.alarm)
+      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
   }
 
   // MARK: Finish
