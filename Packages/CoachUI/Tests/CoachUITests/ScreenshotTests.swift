@@ -1,4 +1,5 @@
 import CoachKit
+import UIKit
 import SwiftUI
 import XCTest
 @testable import CoachUI
@@ -13,6 +14,8 @@ final class ScreenshotTests: XCTestCase {
     return FileManager.default.temporaryDirectory.appendingPathComponent("screens", isDirectory: true)
   }
 
+  private func isCardName(_ n: String) -> Bool { n.contains("sharecard") }
+
   private func render(_ entry: CatalogEntry) throws -> Data {
     let content: AnyView
     if let size = entry.size {
@@ -20,8 +23,9 @@ final class ScreenshotTests: XCTestCase {
     } else {
       content = entry.view
     }
-    let renderer = ImageRenderer(content: content.environment(\.colorScheme, .dark))
-    renderer.scale = entry.size == nil ? 2 : 3
+    let isCard = entry.name.contains("sharecard")
+    let renderer = ImageRenderer(content: content.environment(\.colorScheme, entry.name.hasPrefix("watch-") ? .dark : .light))
+    renderer.scale = isCard ? ShareCardV2.renderScale : (entry.size == nil ? 2 : 3)
     guard let image = renderer.uiImage, let png = image.pngData() else {
       throw NSError(domain: "screens", code: 1, userInfo: [NSLocalizedDescriptionKey: "no image for \(entry.name)"])
     }
@@ -32,10 +36,15 @@ final class ScreenshotTests: XCTestCase {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     let entries = ScreenCatalog.all
     XCTAssertEqual(Set(entries.map(\.name)).count, entries.count, "screen names must be unique")
-    XCTAssertGreaterThanOrEqual(entries.count, 30)
+    XCTAssertGreaterThanOrEqual(entries.count, 50)
     for entry in entries {
       let png = try render(entry)
       XCTAssertGreaterThan(png.count, 3_000, "\(entry.name) looks blank")
+      if isCardName(entry.name) {
+        let image = UIImage(data: png)!
+        XCTAssertEqual(image.size.width * image.scale, 1080, entry.name)
+        XCTAssertEqual(image.size.height * image.scale, 1350, entry.name)
+      }
       try png.write(to: outDir.appendingPathComponent("\(entry.name).png"))
       let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
       attachment.name = entry.name

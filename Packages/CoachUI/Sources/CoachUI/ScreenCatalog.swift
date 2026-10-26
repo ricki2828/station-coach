@@ -112,25 +112,20 @@ public enum ScreenCatalog {
   }
 
   public static var phoneScreens: [CatalogEntry] {
-    let full = SampleData.result(extra: [4: 45, 5: 41, 13: 18])
-    let partial = SampleData.result(extra: [4: 30], until: 10)
-    return [
+    [
       phone("setup-first-launch", SetupScreen(model: SetupModel()).frame(width: Theme.phone.width)),
+      // After onboarding's "Build my first session": the recommended half sim is preset.
+      phone("setup-onboarding-preset", SetupScreen(model: SetupModel(type: .halfSim)).frame(width: Theme.phone.width)),
       phone("setup-wall-ball-focus", SetupScreen(model: SetupModel(type: .wallBallFocus, wallBallReps: 75)).frame(width: Theme.phone.width)),
       phone("setup-sending", SetupScreen(model: SetupModel(send: .sending(watchName: "Apple Watch"))).frame(width: Theme.phone.width)),
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),
       phone("setup-send-failed", SetupScreen(model: SetupModel(send: .failed)).frame(width: Theme.phone.width)),
-      phone("summary-empty", SummaryScreen(state: .empty).frame(width: Theme.phone.width, height: 300)),
-      phone("summary-syncing", SummaryScreen(state: .syncing(percent: 42)).frame(width: Theme.phone.width, height: 300)),
-      phone("summary-sync-failed", SummaryScreen(state: .failed).frame(width: Theme.phone.width, height: 300)),
-      phone("summary-full", SummaryScreen(state: .ready(full)).frame(width: Theme.phone.width)),
-      phone("summary-partial", SummaryScreen(state: .ready(partial)).frame(width: Theme.phone.width)),
-      phone("summary-share-error", SummaryScreen(state: .ready(full), shareError: true).frame(width: Theme.phone.width)),
-      phone("sharecard-full", ShareCardView(result: full)),
-      phone("sharecard-partial", ShareCardView(result: partial)),
+      phone("home-install-watch-card", InstallWatchCard().padding(20).background(PhoneTheme.paper).frame(width: Theme.phone.width)),
+      phone("history-sync-failed", VStack(spacing: 0) { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20); HistoryScreen(records: Array(HistorySamples.list.prefix(2))) }
+        .background(PhoneTheme.paper).frame(width: Theme.phone.width)),
     ]
   }
 
-  public static var all: [CatalogEntry] { watchScreens + phoneScreens }
+  public static var all: [CatalogEntry] { watchScreens + onboardingScreens + homeScreens + phoneScreens }
 }

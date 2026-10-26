@@ -246,4 +246,37 @@ final class CoachResultTests: XCTestCase {
     let r2 = CoachResult(plan: focus, splits: [], early: true, repTimesMs: [], repCorrection: 0, startedAtEpochMs: 0, endedAtEpochMs: 0, noReps: split)
     XCTAssertNotEqual(InsightPicker.pick(r2).rule, 4)
   }
+
+  func testCorrectionSurvivesResentCoachJSON() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent(CoachResult.fileName)
+    let original = try JSONEncoder().encode(withNoReps([1, 5, 5]))
+    try original.write(to: url)
+    let saved = try CoachResult.saveCorrection(WallBallCorrection(validReps: 95, noReps: 5), inSessionFolder: dir)
+    XCTAssertEqual(saved.validReps, 95)
+    XCTAssertEqual(try Data(contentsOf: url), original, "saving must not touch the watch's file")
+    // The watch re-sends the original file over the top.
+    try original.write(to: url)
+    let back = try CoachResult.load(inSessionFolder: dir)
+    XCTAssertEqual(back.validReps, 95)
+    XCTAssertEqual(back.noRepCount, 5)
+    XCTAssertEqual(try Data(contentsOf: url), original)
+  }
+
+  func testCorrectionIsClamped() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try JSONEncoder().encode(withNoReps([1])).write(to: dir.appendingPathComponent(CoachResult.fileName))
+    let r = try CoachResult.saveCorrection(WallBallCorrection(validReps: 9_999, noReps: -4), inSessionFolder: dir)
+    XCTAssertEqual(r.validReps, 300)
+    XCTAssertEqual(r.noRepCount, 0)
+  }
+
+  func testSaveCorrectionFailsWithoutCoachJSON() {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    XCTAssertThrowsError(try CoachResult.saveCorrection(WallBallCorrection(validReps: 90, noReps: 1), inSessionFolder: dir))
+  }
 }

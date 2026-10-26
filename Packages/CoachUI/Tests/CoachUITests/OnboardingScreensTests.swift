@@ -7,33 +7,6 @@ import XCTest
 /// Share cards render at 360 x 450 pt and scale 3 (1080 x 1350); the rest at scale 2.
 @MainActor
 final class OnboardingScreensTests: XCTestCase {
-  private var outDir: URL {
-    if let p = ProcessInfo.processInfo.environment["SCREENS_DIR"], !p.isEmpty { return URL(fileURLWithPath: p, isDirectory: true) }
-    return FileManager.default.temporaryDirectory.appendingPathComponent("screens", isDirectory: true)
-  }
-
-  func testRenderBatchBScreens() throws {
-    try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-    let entries = ScreenCatalog.onboardingScreens
-    XCTAssertEqual(Set(entries.map(\.name)).count, entries.count)
-    for entry in entries {
-      let isCard = entry.name.contains("sharecard")
-      let renderer = ImageRenderer(content: entry.view.environment(\.colorScheme, .light))
-      renderer.scale = isCard ? ShareCardV2.renderScale : 2
-      guard let image = renderer.uiImage, let png = image.pngData() else { return XCTFail("no image for \(entry.name)") }
-      XCTAssertGreaterThan(png.count, 5_000, "\(entry.name) looks blank")
-      if isCard {
-        XCTAssertEqual(image.size.width * image.scale, 1080, entry.name)
-        XCTAssertEqual(image.size.height * image.scale, 1350, entry.name)
-      }
-      try png.write(to: outDir.appendingPathComponent("\(entry.name).png"))
-      let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-      a.name = entry.name
-      a.lifetime = .keepAlways
-      add(a)
-    }
-  }
-
   func testMomentCopy() {
     let first = MomentDisplay.make(.first(.fullSim), totalSeconds: 4904, fadeSeconds: 27)
     XCTAssertEqual(first.kicker.uppercased(), "YOUR FIRST FULL SIM")

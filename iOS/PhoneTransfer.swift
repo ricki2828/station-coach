@@ -11,8 +11,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var sessions: [SessionSummary] = []
   @Published private(set) var completeIds: Set<String> = []
   @Published private(set) var sendState: SendState = .idle
-  /// The newest session that has a `coach.json`, and its folder name.
-  @Published private(set) var latestCoach: (id: String, result: CoachResult)?
+  /// Every complete session that has a `coach.json`, newest first.
+  @Published private(set) var coachSessions: [SessionRecord] = []
+  @Published private(set) var watchAppInstalled = false
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
 
@@ -76,14 +77,15 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     for id in watchdog.pending where completeIds.contains(id) { watchdog.complete(session: id) }
     saveWatchdog()
     evaluateSync()
-    latestCoach = nil
+    var records: [SessionRecord] = []
     for s in sessions where completeIds.contains(s.id) {
-      let url = root.appendingPathComponent(s.id).appendingPathComponent(CoachResult.fileName)
-      if let data = try? Data(contentsOf: url), let r = try? JSONDecoder().decode(CoachResult.self, from: data) {
-        latestCoach = (s.id, r)
-        break
+      if let r = try? CoachResult.load(inSessionFolder: root.appendingPathComponent(s.id)) {
+        records.append(SessionRecord(id: s.id, result: r))
       }
     }
+    let sorted = SessionRecord.sorted(records)
+    if sorted != coachSessions { coachSessions = sorted }
+    updateWatchInstalled()
   }
 
   /// Sends the plan to the watch as application context (the latest one wins; delivered when the watch is next awake).
@@ -115,6 +117,20 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     refresh()
   }
 
+  /// Saves the Edit count sheet's result to the phone-only sidecar, then refreshes every screen that reads it.
+  /// False when it could not be saved.
+  @discardableResult
+  func saveCorrection(_ correction: WallBallCorrection, for id: String) -> Bool {
+    guard let root = Self.root else { return false }
+    do {
+      try CoachResult.saveCorrection(correction, inSessionFolder: root.appendingPathComponent((id as NSString).lastPathComponent))
+    } catch {
+      return false
+    }
+    refresh()
+    return true
+  }
+
   /// A zip of the session folder in the temp directory, for the share sheet.
   func zip(_ id: String) throws -> URL {
     guard let root = Self.root else { throw CocoaError(.fileNoSuchFile) }
@@ -137,7 +153,20 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   // MARK: WCSessionDelegate
 
-  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+  private func updateWatchInstalled() {
+    guard WCSession.isSupported() else { return }
+    let s = WCSession.default
+    let installed = s.activationState == .activated && s.isPaired && s.isWatchAppInstalled
+    if installed != watchAppInstalled { watchAppInstalled = installed }
+  }
+
+  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    DispatchQueue.main.async { self.updateWatchInstalled() }
+  }
+
+  func sessionWatchStateDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { self.updateWatchInstalled() }
+  }
   func sessionDidBecomeInactive(_ session: WCSession) {}
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 
@@ -176,6 +205,11 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
           !sid.isEmpty, !name.isEmpty, sid != "..", name != ".." else { return }
     // The temporary file is deleted when this returns, so move it now.
     guard let root = Self.root else { return }
+    // A session already complete on the phone is never overwritten (a watch re-send carries no new data): just re-ack.
+    if DispatchQueue.main.sync(execute: { self.tracker.isComplete(sid) }) {
+      WCSession.default.transferUserInfo(["ack": sid])
+      return
+    }
     let folder = root.appendingPathComponent(sid, isDirectory: true)
     let dest = folder.appendingPathComponent(name)
     var actual = -1

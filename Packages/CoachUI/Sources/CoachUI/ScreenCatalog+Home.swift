@@ -52,6 +52,13 @@ public enum HistorySamples {
   /// Last session had a wall-ball problem: big rest, wall balls the worst station.
   public static let wallBalls = [record("w1", type: .fullSim, startDay: 1, fade: 18, stationExtra: [.wallBalls: 70], rest: 26)]
 
+  /// The same session with `count` no-reps logged on the watch.
+  public static func withNoReps(_ r: SessionRecord, count: Int) -> SessionRecord {
+    var result = r.result
+    result.noReps = (0..<count).map { NoRepEvent(tMs: Int64($0) * 20_000, setIndex: min($0 + 1, 6)) }
+    return SessionRecord(id: r.id, result: result)
+  }
+
   public static let list: [SessionRecord] = [
     record("h1", type: .fullSim, startDay: 1, fade: 19, stationExtra: [.sledPush: 20, .row: -15]),
     record("h2", type: .halfSim, startDay: -3, fade: 14, stationExtra: [.skierg: -30, .row: -20]),
@@ -84,6 +91,7 @@ extension ScreenCatalog {
     let list = HistorySamples.list
     let detailFull = list[0]
     let detailPartial = list[3]
+    let detailNoReps = HistorySamples.withNoReps(detailFull, count: 3)
     return homeStates.map { phoneW("home-\($0.name)", HomeScreen(model: $0.model, today: HistorySamples.today)) } + [
       phoneW("home-trend-down-xl", HomeScreen(model: homeStates[2].model, today: HistorySamples.today).environment(\.dynamicTypeSize, .xxxLarge)),
       phoneW("detail-full-xl", SessionDetailScreen(record: detailFull).environment(\.dynamicTypeSize, .xxxLarge)),
@@ -92,8 +100,9 @@ extension ScreenCatalog {
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),
       phoneW("detail-full", SessionDetailScreen(record: detailFull)),
       phoneW("detail-partial", SessionDetailScreen(record: detailPartial)),
-      phoneW("detail-no-reps", SessionDetailScreen(record: detailFull, noReps: 3, onSaveCount: { _ in })),
-      phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallEdit(validReps: 97, noReps: 3))),
+      phoneW("detail-no-reps", SessionDetailScreen(record: detailNoReps, onSaveCount: { _ in true })),
+      phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps))),
+      phoneW("detail-edit-count-error", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps), errorText: "Couldn't save. Try again.")),
     ]
   }
 }

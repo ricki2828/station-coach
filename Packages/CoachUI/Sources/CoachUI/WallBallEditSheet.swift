@@ -14,11 +14,13 @@ public struct WallBallEdit: Equatable {
 /// Small sheet: valid reps and no-reps, each with big minus / plus buttons.
 public struct WallBallEditSheet: View {
   @State private var edit: WallBallEdit
+  let errorText: String?
   let onSave: (WallBallEdit) -> Void
   let onCancel: () -> Void
 
-  public init(initial: WallBallEdit, onSave: @escaping (WallBallEdit) -> Void = { _ in }, onCancel: @escaping () -> Void = {}) {
+  public init(initial: WallBallEdit, errorText: String? = nil, onSave: @escaping (WallBallEdit) -> Void = { _ in }, onCancel: @escaping () -> Void = {}) {
     _edit = State(initialValue: initial)
+    self.errorText = errorText
     self.onSave = onSave
     self.onCancel = onCancel
   }
@@ -30,10 +32,13 @@ public struct WallBallEditSheet: View {
         .scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted).fixedSize(horizontal: false, vertical: true)
       PhoneCard {
         VStack(spacing: 16) {
-          counter("Valid reps", value: $edit.validReps)
+          counter("Valid reps", value: $edit.validReps, limit: WallBallCorrection.maxValidReps)
           Divider().overlay(PhoneTheme.hairline)
-          counter("No-reps", value: $edit.noReps)
+          counter("No-reps", value: $edit.noReps, limit: WallBallCorrection.maxNoReps)
         }
+      }
+      if let errorText {
+        Text(errorText).scaledFont(15, .bold).foregroundStyle(PhoneTheme.amberText).accessibilityAddTraits(.isStaticText)
       }
       VStack(spacing: 4) {
         PrimaryButton("Save") { onSave(edit) }
@@ -45,13 +50,13 @@ public struct WallBallEditSheet: View {
     .background(PhoneTheme.paper)
   }
 
-  private func counter(_ title: String, value: Binding<Int>) -> some View {
+  private func counter(_ title: String, value: Binding<Int>, limit: Int) -> some View {
     HStack(spacing: 12) {
       Text(title).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
       Spacer()
       roundButton("\u{2212}", label: "Fewer \(title.lowercased())") { value.wrappedValue = max(0, value.wrappedValue - 1) }
       Text("\(value.wrappedValue)").scaledStat().foregroundStyle(PhoneTheme.inkText).frame(minWidth: 52)
-      roundButton("+", label: "More \(title.lowercased())") { value.wrappedValue += 1 }
+      roundButton("+", label: "More \(title.lowercased())") { value.wrappedValue = min(limit, value.wrappedValue + 1) }
     }
   }
 
@@ -66,11 +71,9 @@ public struct WallBallEditSheet: View {
   }
 }
 
-/// The one place the sheet reads its starting counts from. Until the session result carries the correction
-/// (`validReps` / `noRepCount`), valid reps come from the detected sets, which count throws, no-reps included.
-/// TODO: switch to `record.result.validReps` and `record.result.noRepCount` once the wall-ball correction model is on main.
+/// The one place the sheet reads its starting counts from: all wall-ball steps, honouring an earlier correction.
 public enum WallBallCountAdapter {
-  public static func initial(for record: SessionRecord, noReps: Int) -> WallBallEdit {
-    WallBallEdit(validReps: record.result.wallBallSets().reduce(0) { $0 + $1.reps }, noReps: noReps)
+  public static func initial(for record: SessionRecord) -> WallBallEdit {
+    WallBallEdit(validReps: record.result.validReps, noReps: record.result.noRepCount)
   }
 }
