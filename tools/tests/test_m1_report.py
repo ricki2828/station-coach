@@ -27,6 +27,7 @@ class ReportTests(unittest.TestCase):
         r = m1_report.cue_delivery(m1_report.read_rows(FIXTURE / "cues.csv"))
         self.assertEqual((r["issued"], r["delivered"], r["haptic_only"], r["missed"]), (12, 10, 1, 1))
         self.assertEqual(r["route_headphones"], 11)
+        self.assertEqual(r["any_route"], 10)
         self.assertEqual(r["audio_modes"], ["A"])
         self.assertAlmostEqual(r["percent"], 100 * 10 / 12)
 
