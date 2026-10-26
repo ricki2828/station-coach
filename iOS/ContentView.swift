@@ -34,11 +34,13 @@ enum ShareCard {
 enum Route: Hashable {
   case detail(String)
   case rawFiles
+  case weekSummary
 }
 
 struct ContentView: View {
   @EnvironmentObject var phone: PhoneTransfer
   @StateObject private var app = AppModel(existingSessionIds: PhoneTransfer.shared.coachSessions.map(\.id))
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     Group {
@@ -55,7 +57,13 @@ struct ContentView: View {
     .environmentObject(app)
     .tint(PhoneTheme.inkText)
     .preferredColorScheme(.light)
-    .onAppear { app.evaluateMoments(phone.coachSessions) }
+    .onAppear {
+      app.evaluateMoments(phone.coachSessions)
+      WeeklyNotifier.shared.onOpenSummary = { app.openWeekSummary() }
+      if WeeklyNotifier.shared.consumePendingOpen() { app.openWeekSummary() }
+      app.refreshNotifyAuth()
+    }
+    .onChange(of: scenePhase) { _, phase in if phase == .active { app.refreshNotifyAuth() } }
     .onChange(of: phone.coachSessions) { _, records in app.evaluateMoments(records) }
     .onChange(of: app.onboarded) { _, _ in app.evaluateMoments(phone.coachSessions) }
     .fullScreenCover(item: $app.pendingMoment) { MomentHost(pending: $0) }
@@ -96,7 +104,9 @@ struct HomeHost: View {
             InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
           }
           HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
-                     onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan })
+                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()),
+                     onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan },
+                     onOpenWeek: { openSummary() })
         }
       }
       .background(PhoneTheme.paper)
@@ -105,7 +115,12 @@ struct HomeHost: View {
       .navigationDestination(for: Route.self) { RouteView(route: $0) }
       .onAppear { if phone.watchAppInstalled { app.watchDetected() } }
       .onChange(of: phone.watchAppInstalled) { _, installed in if installed { app.watchDetected() } }
+      .onChange(of: app.summaryRequest) { _, _ in openSummary() }
     }
+  }
+
+  private func openSummary() {
+    if path.last != .weekSummary { path.append(.weekSummary) }
   }
 
   private var syncFailed: Bool {
@@ -121,6 +136,7 @@ struct PlanHost: View {
     ScrollView {
       SetupScreen(
         model: { var m = app.setup; m.send = phone.sendState; return m }(),
+        notify: app.notifyState, onNotifyToggle: { app.setNotify($0) },
         onDivision: { app.setup.division = $0; changed() },
         onTargetStep: { app.setup.targetSeconds = PlanBuilder.clamped(app.setup.targetSeconds + $0); changed() },
         onType: { app.setup.type = $0; changed() },
@@ -139,13 +155,14 @@ struct PlanHost: View {
 struct HistoryHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @State private var path: [Route] = []
+  @State private var totalsMode: TotalsMode = .week
 
   var body: some View {
     NavigationStack(path: $path) {
       ScrollView {
         VStack(spacing: 0) {
           if syncFailed { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20) }
-          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent,
+          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent, totals: totals,
                         onOpen: { path.append(.detail($0.id)) }, onRawFiles: { path.append(.rawFiles) })
         }
       }
@@ -154,6 +171,15 @@ struct HistoryHost: View {
       .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: Route.self) { RouteView(route: $0) }
     }
+  }
+
+  private var totals: AnyView {
+    let now = Date()
+    let cal = LoadHistory.calendar()
+    return AnyView(TrainingTotalsCard(
+      mode: totalsMode, sessions: phone.loadSummary.sessions, now: now, calendar: cal,
+      bestFade: TrainingTotalsCard.bestFade(phone.coachSessions, now: now, calendar: cal),
+      onSelect: { totalsMode = $0 }, onOpenSummary: { path.append(.weekSummary) }))
   }
 
   private var syncFailed: Bool {
@@ -168,6 +194,39 @@ struct RouteView: View {
     switch route {
     case .detail(let id): SessionDetailHost(id: id)
     case .rawFiles: RawFilesHost()
+    case .weekSummary: WeekSummaryHost()
+    }
+  }
+}
+
+// MARK: Weekly summary
+
+/// The last complete week against its usual, with the Monday-notification opt-in once there is something worth a notice.
+struct WeekSummaryHost: View {
+  @EnvironmentObject var phone: PhoneTransfer
+  @EnvironmentObject var app: AppModel
+  @State private var showWhy = false
+
+  var body: some View {
+    let s = phone.loadSummary
+    let cal = LoadHistory.calendar()
+    let compare = LoadCompare.lastComplete(s.sessions, now: Date(), calendar: cal)
+    let weeks = LoadHistory.periods(s.sessions, unit: .week, ending: compare.current.start, count: 6, calendar: cal)
+    ScrollView {
+      VStack(spacing: 0) {
+        WeeklySummaryScreen(compare: compare, weeks: weeks, calendar: cal, onWhy: { showWhy = true })
+        if app.notifyState.showsOptInCard, WeeklyNotice.content(for: compare) != nil {
+          NotifyOptInCard(onYes: { app.setNotify(true) }, onNo: { app.declineNotifyCard() })
+            .padding(.horizontal, 20).padding(.bottom, 20)
+        }
+      }
+    }
+    .background(PhoneTheme.paper)
+    .navigationBarTitleDisplayMode(.inline)
+    .sheet(isPresented: $showWhy) {
+      ScrollView { WhyLoadSheet(period: compare.current, maxHR: s.maxHR) }
+        .background(PhoneTheme.paper)
+        .presentationDetents([.medium, .large])
     }
   }
 }

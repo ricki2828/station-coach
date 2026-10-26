@@ -84,11 +84,17 @@ public struct SetupScreen: View {
   var onType: (SessionType) -> Void = { _ in }
   var onWallBallReps: (Int) -> Void = { _ in }
   var onSend: () -> Void = {}
+  let notify: NotifySettingState?
+  let onNotifyToggle: (Bool) -> Void
 
-  public init(model: SetupModel, onDivision: @escaping (Division) -> Void = { _ in }, onTargetStep: @escaping (Int) -> Void = { _ in },
+  /// `notify` non-nil shows the Monday summary switch at the foot of the tab.
+  public init(model: SetupModel, notify: NotifySettingState? = nil, onNotifyToggle: @escaping (Bool) -> Void = { _ in },
+              onDivision: @escaping (Division) -> Void = { _ in }, onTargetStep: @escaping (Int) -> Void = { _ in },
               onType: @escaping (SessionType) -> Void = { _ in }, onWallBallReps: @escaping (Int) -> Void = { _ in },
               onSend: @escaping () -> Void = {}) {
     self.model = model
+    self.notify = notify
+    self.onNotifyToggle = onNotifyToggle
     self.onDivision = onDivision
     self.onTargetStep = onTargetStep
     self.onType = onType
@@ -141,6 +147,7 @@ public struct SetupScreen: View {
       }
       splitSummary
       sendArea
+      if let notify { MondaySummaryCard(state: notify, onToggle: onNotifyToggle) }
     }
     .padding(20)
     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -231,6 +238,48 @@ public struct SyncFailedCard: View {
       VStack(alignment: .leading, spacing: 6) {
         Text("Not received yet").phoneKicker(color: PhoneTheme.amberText)
         Text("On your watch: Home \u{2192} Send unsent").font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+      }
+    }
+  }
+}
+
+/// Plan-tab footer: the Monday summary notification, off until the athlete turns it on. A refusal in iOS shows here, with the way back.
+public struct MondaySummaryCard: View {
+  let state: NotifySettingState
+  let onToggle: (Bool) -> Void
+
+  public init(state: NotifySettingState, onToggle: @escaping (Bool) -> Void) {
+    self.state = state
+    self.onToggle = onToggle
+  }
+
+  public var body: some View {
+    PhoneCard {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Monday summary").phoneKicker()
+            Text("One notification a week, nothing else.").scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          Spacer(minLength: 8)
+          // Drawn, not Toggle: ImageRenderer cannot render the UIKit-backed switch.
+          Button { onToggle(!state.switchOn) } label: {
+            ZStack(alignment: state.switchOn ? .trailing : .leading) {
+              Capsule().fill(state.switchOn ? PhoneTheme.inkText : PhoneTheme.hairline).frame(width: 56, height: 34)
+                .overlay(Capsule().stroke(state.switchOn ? PhoneTheme.inkText : PhoneTheme.muted, lineWidth: 1.5))
+              Circle().fill(Color.white).frame(width: 28, height: 28).padding(3)
+            }
+            .frame(minWidth: 56, minHeight: 44)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Monday summary")
+          .accessibilityValue(state.switchOn ? "On" : "Off")
+        }
+        if state.blockedBySystem {
+          Text("Notifications are off for Station Coach in iOS Settings. Turn them on there and the summary starts by itself.")
+            .scaledFont(15, .semibold).foregroundStyle(PhoneTheme.amberText).fixedSize(horizontal: false, vertical: true)
+        }
       }
     }
   }

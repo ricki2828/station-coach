@@ -29,6 +29,11 @@ final class PhoneThemeTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(Palette.contrast(PhoneTheme.amberTextHex, PhoneTheme.paperHex), 4.5)
   }
 
+  func testOffSwitchOutlineIsVisibleOnTheCard() {
+    // Non-text contrast for the drawn Monday switch: its off outline against the white card.
+    XCTAssertGreaterThanOrEqual(Palette.contrast(PhoneTheme.mutedHex, PhoneTheme.cardHex), 3)
+  }
+
   func testSessionColoursAreDistinct() {
     XCTAssertEqual(Set(SessionType.allCases.map { PhoneTheme.sessionHex($0) }).count, SessionType.allCases.count)
   }

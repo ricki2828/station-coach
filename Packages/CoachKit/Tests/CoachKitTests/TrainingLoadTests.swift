@@ -402,11 +402,10 @@ final class TrainingLoadTests: XCTestCase {
   }
 
   func testSuggestions() {
-    let line = "Time for a full sim. It's the real test of the fade."
-    func s(_ k: LoadSample) -> String? { LoadWords.suggestion(TrainingLoad.sample(k).compare, usualLine: line) }
-    XCTAssertEqual(s(.bigJump), "Next week near 530, just above your usual, would balance it, for instance a half sim in place of a full one.")
+    func s(_ k: LoadSample) -> String? { LoadWords.suggestion(TrainingLoad.sample(k).compare) }
+    XCTAssertEqual(s(.bigJump), "Next week near 530, just above your usual, would balance it.")
     XCTAssertEqual(s(.stepUp), "A good step up. Holding here a week would let it settle.")
-    XCTAssertEqual(s(.usual), line)
+    XCTAssertEqual(s(.usual), "A steady week, in line with your usual. That keeps the fade comparisons fair.")
     XCTAssertEqual(s(.lighter), "A lighter week. About 480 next week would be back to your usual.")
     XCTAssertNil(s(.firstWeeks))
     XCTAssertNil(s(.returning))
@@ -447,13 +446,81 @@ final class TrainingLoadTests: XCTestCase {
   }
 
   func testNoticeSkips() {
-    // A first week with fewer than 2 sessions says nothing; with 2 it does.
+    // Nothing goes out in the first weeks, whether there is one session or two.
     let mon = Date(timeIntervalSince1970: 1_792_368_000)
     let one = LoadCompare.compare([load(300, at: mon.addingTimeInterval(86_400))], periodStart: mon, calendar: cal)
     XCTAssertEqual(one.state, .firstWeeks)
     XCTAssertNil(WeeklyNotice.content(for: one))
-    XCTAssertNotNil(WeeklyNotice.content(for: TrainingLoad.sample(.firstWeeks).compare))
+    XCTAssertNil(WeeklyNotice.content(for: TrainingLoad.sample(.firstWeeks).compare))
+    XCTAssertNil(WeeklyNotice.content(for: LoadCompare.compare([], periodStart: mon, calendar: cal)))
   }
+
+  // MARK: scheduling
+
+  private var monday19: Date { Date(timeIntervalSince1970: 1_792_368_000) }
+
+  func testNextFireIsTheNextMondayAtEight() {
+    func fire(_ d: Date) -> DateComponents { cal.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: d, calendar: cal)!) }
+    let wed = monday19.addingTimeInterval(9 * 86_400 + 12 * 3_600)
+    XCTAssertEqual(fire(wed), DateComponents(year: 2026, month: 11, day: 2, hour: 8, minute: 0, weekday: 2))
+    // Monday 07:59 fires that morning; exactly 08:00 waits a week.
+    XCTAssertEqual(fire(monday19.addingTimeInterval(7 * 3_600 + 59 * 60)).day, 19)
+    XCTAssertEqual(fire(monday19.addingTimeInterval(8 * 3_600)).day, 26)
+    XCTAssertEqual(fire(monday19.addingTimeInterval(6 * 86_400 + 23 * 3_600)).day, 26)
+  }
+
+  func testNextFireIsEightLocalAcrossClockChanges() {
+    func local(_ id: String, _ y: Int, _ m: Int, _ d: Int, _ h: Int) -> (Date, Calendar) {
+      var c = LoadHistory.calendar(timeZone: TimeZone(identifier: id)!)
+      c.locale = Locale(identifier: "en_US_POSIX")
+      return (c.date(from: DateComponents(year: y, month: m, day: d, hour: h))!, c)
+    }
+    // London: clocks go back Sun 25 Oct 2026. Friday 23 Oct to Monday 26 Oct is still 08:00 local, i.e. 08:00 UTC after the change.
+    let (london, lc) = local("Europe/London", 2026, 10, 23, 18)
+    let l = lc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: london, calendar: lc)!)
+    XCTAssertEqual(l, DateComponents(month: 10, day: 26, hour: 8, minute: 0, weekday: 2))
+    // Friday 18:00 to Monday 08:00 is 62 hours on the wall clock, 63 real hours because the clocks go back.
+    let gap: TimeInterval = WeeklyNotice.nextFire(after: london, calendar: lc)!.timeIntervalSince(london)
+    XCTAssertEqual(gap, 63 * 3_600)
+    // Sydney: clocks go forward Sun 4 Oct 2026.
+    let (sydney, sc) = local("Australia/Sydney", 2026, 10, 2, 18)
+    let sy = sc.dateComponents([.month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: sydney, calendar: sc)!)
+    XCTAssertEqual(sy, DateComponents(month: 10, day: 5, hour: 8, minute: 0, weekday: 2))
+  }
+
+  func testPlanReportsTheWeekAsItWillStandAtFireTime() {
+    let d = TrainingLoad.sample(.usual)
+    let sunEvening = monday19.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    let known = d.sessions.filter { $0.date < sunEvening }
+    let p = WeeklyNotice.plan(sessions: known, now: sunEvening, calendar: cal, optedIn: true)
+    XCTAssertEqual(p?.fire, DateComponents(year: 2026, month: 10, day: 26, hour: 8, minute: 0))
+    XCTAssertEqual(p?.content.title, "Your week: 480 load")
+    XCTAssertEqual(p?.content.body, "480 load, about your usual week. Tap for what changed.")
+  }
+
+  func testPlanNeedsOptInSessionsAndAUsual() {
+    let d = TrainingLoad.sample(.usual)
+    let sunEvening = monday19.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    let known = d.sessions.filter { $0.date < sunEvening }
+    XCTAssertNil(WeeklyNotice.plan(sessions: known, now: sunEvening, calendar: cal, optedIn: false))
+    XCTAssertNil(WeeklyNotice.plan(sessions: [], now: sunEvening, calendar: cal, optedIn: true))
+    // First weeks: nothing, even with two sessions in the week.
+    let f = TrainingLoad.sample(.firstWeeks)
+    let fNow = f.weekStart.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    XCTAssertNil(WeeklyNotice.plan(sessions: f.sessions.filter { $0.date < fNow }, now: fNow, calendar: cal, optedIn: true))
+    // A week with no sessions sends nothing, however long the history.
+    let quiet = monday19.addingTimeInterval(20 * 86_400)
+    XCTAssertNil(WeeklyNotice.plan(sessions: known, now: quiet, calendar: cal, optedIn: true))
+  }
+
+  func testCurrentWeekIsOnlySoFar() {
+    let d = TrainingLoad.sample(.usual)
+    let c = LoadCompare.current(d.sessions, now: d.now, calendar: d.calendar)
+    XCTAssertTrue(c.current.isCurrent)
+    XCTAssertEqual(c.current.sessions, 1)
+    XCTAssertNotEqual(c.state, .firstWeeks)
+  }
+
 
   func testPeriodHelpers() {
     let w = TrainingLoad.sample(.stepUp).weeks.last!

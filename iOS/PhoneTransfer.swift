@@ -13,6 +13,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var sendState: SendState = .idle
   /// Every complete session that has a `coach.json`, newest first.
   @Published private(set) var coachSessions: [SessionRecord] = []
+  /// Training load for every complete session, from `coach.json` and `hr.csv`. Rebuilt whenever the sessions change.
+  @Published private(set) var loadSummary = TrainingLoad.summarise([], now: Date())
   @Published private(set) var watchAppInstalled = false
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
@@ -26,6 +28,13 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   private var watchdog: SyncWatchdog
   private var openedAt = Date().timeIntervalSinceReferenceDate
   private var syncTimer: Timer?
+  /// Parsed `hr.csv` by session id (an empty series when the session has none). Touched on the main thread only.
+  /// A complete session is never overwritten (a re-send is dropped and re-acked), so a cached series cannot go stale;
+  /// if that rule is ever relaxed, the key must include the file's size or modification time.
+  private var hrCache: [String: HeartRateSeries] = [:]
+  private var loadGeneration = 0
+  private var noticeGate = NoticeRescheduleGate()
+  private var loadBuiltAt = Date.distantPast
 
   override init() {
     if let data = UserDefaults.standard.data(forKey: "transferTracker"),
@@ -47,6 +56,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func appBecameActive() {
     openedAt = Date().timeIntervalSinceReferenceDate
     refresh()
+    // The 180-day max-heart-rate and calibration windows move with the date, not only with new sessions.
+    if !Calendar.current.isDate(loadBuiltAt, inSameDayAs: Date()), let root = Self.root { rebuildLoad(coachSessions, root: root) }
   }
 
   private func saveWatchdog() {
@@ -84,8 +95,56 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       }
     }
     let sorted = SessionRecord.sorted(records)
-    if sorted != coachSessions { coachSessions = sorted }
+    if sorted != coachSessions {
+      coachSessions = sorted
+      rebuildLoad(sorted, root: root)
+    } else if sorted.isEmpty {
+      noticeGate.loadLanded() // nothing to wait for
+    }
     updateWatchInstalled()
+    rescheduleNotice()
+  }
+
+  /// Training load for `records`. The `hr.csv` files are read and the load computed off the main thread; the result lands
+  /// on the main thread, and the Monday notification is rebuilt from it. A newer rebuild supersedes an older one.
+  private func rebuildLoad(_ records: [SessionRecord], root: URL) {
+    loadGeneration += 1
+    let generation = loadGeneration
+    let known = hrCache
+    Task.detached(priority: .utility) { [weak self] in
+      var added: [String: HeartRateSeries] = [:]
+      let inputs = records.map { r -> LoadInput in
+        let series = known[r.id] ?? HeartRateSeries.load(url: root.appendingPathComponent(r.id).appendingPathComponent("hr.csv")) ?? HeartRateSeries(samples: [])
+        if known[r.id] == nil { added[r.id] = series }
+        return LoadInput(record: r, hr: series.isEmpty ? nil : series)
+      }
+      let summary = TrainingLoad.summarise(inputs, now: Date())
+      await MainActor.run {
+        guard let self, generation == self.loadGeneration else { return }
+        for (id, series) in added { self.hrCache[id] = series }
+        self.loadBuiltAt = Date()
+        self.loadSummary = summary
+        self.noticeGate.loadLanded()
+        self.rescheduleNotice()
+      }
+    }
+  }
+
+  /// Sessions the watch is still sending: ones it announced, or a partial folder that started recently. An abandoned partial
+  /// folder is not "unsent". Sessions the watch has not announced are invisible to the phone.
+  private var watchHasUnsent: Bool {
+    UnsentSessions.hasUnsent(partialIds: sessions.map(\.id).filter { !completeIds.contains($0) },
+                             pendingIds: watchdog.pending.filter { !completeIds.contains($0) }, now: Date())
+  }
+
+  /// Rebuild the Monday notification from what is on the phone now. Called after every refresh and every load rebuild, so a
+  /// file that arrives in the background updates it without any view being on screen.
+  func rescheduleNotice(now: Date = Date()) {
+    // Not before the first load has landed: an empty list would cancel the pending notification.
+    guard noticeGate.mayReschedule else { return }
+    let sessions = loadSummary.sessions
+    let unsent = watchHasUnsent
+    Task { @MainActor in WeeklyNotifier.shared.reschedule(sessions: sessions, watchHasUnsent: unsent, now: now) }
   }
 
   /// Sends the plan to the watch as application context (the latest one wins; delivered when the watch is next awake).
@@ -113,6 +172,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func delete(_ id: String) {
     guard let root = Self.root else { return }
     try? FileManager.default.removeItem(at: root.appendingPathComponent(id))
+    hrCache[id] = nil
     watchdog.complete(session: id)
     refresh()
   }

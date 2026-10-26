@@ -466,6 +466,12 @@ public struct LoadCompare: Equatable {
     return compare(sessions, periodStart: prev, unit: unit, calendar: calendar, now: now)
   }
 
+  /// The period `now` is in, so far. Its state says whether a comparison is coming (first weeks, returning, compared), but
+  /// the screens never show a band for it: a week in progress is only ever "so far".
+  public static func current(_ sessions: [LoadSession], unit: LoadUnit = .week, now: Date, calendar: Calendar) -> LoadCompare {
+    compare(sessions, periodStart: now, unit: unit, calendar: calendar, now: now)
+  }
+
   /// `periodStart` is any date in the period to judge. Periods before the first session do not count toward usual; empty ones
   /// do. A first month that began after its middle is left out of usual (a few days would drag it down). After a break of two
   /// or more empty periods the comparison waits for two non-empty periods, then uses only those. `now` marks the period in progress.
@@ -588,8 +594,8 @@ public enum LoadWords {
     return "\(int(cur.minutes)) work minutes, usual \(int(u.minutes))."
   }
 
-  /// One suggestion. `usualLine` is the coach's own line (`Recommendation.pick(...).line`) for a usual week.
-  public static func suggestion(_ c: LoadCompare, usualLine: String) -> String? {
+  /// One suggestion, always a description. Never an instruction, and never a coach line from `Recommendation.pick`.
+  public static func suggestion(_ c: LoadCompare) -> String? {
     switch c.state {
     case .noSessions, .returning, .firstWeeks: return nil
     case .compared(let band):
@@ -597,9 +603,9 @@ public enum LoadWords {
       switch band {
       case .bigJump:
         let cap = int(usual * 1.1 / 10) * 10
-        return "Next week near \(number(cap)), just above your usual, would balance it, for instance a half sim in place of a full one."
+        return "Next week near \(number(cap)), just above your usual, would balance it."
       case .stepUp: return "A good step up. Holding here a week would let it settle."
-      case .usual: return usualLine
+      case .usual: return "A steady week, in line with your usual. That keeps the fade comparisons fair."
       case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
       }
     }
@@ -643,14 +649,35 @@ public enum WeeklyNotice {
     public let body: String
   }
 
-  /// nil = send nothing: an empty week never nags, and a first week with fewer than 2 sessions is not worth a ping.
+  /// nil = send nothing: an empty week never nags, and nothing goes out in the first weeks, before there is a usual to compare with.
   /// `watchHasUnsent` adds the sync caveat.
   public static func content(for c: LoadCompare, watchHasUnsent: Bool = false) -> Content? {
-    guard c.current.sessions > 0 else { return nil }
-    if c.state == .firstWeeks, c.current.sessions < 2 { return nil }
+    guard c.current.sessions > 0, c.state != .firstWeeks else { return nil }
     var body = LoadWords.headline(c, includeUsual: false) + " Tap for what changed."
     if watchHasUnsent { body += " (sync your watch for the full week)" }
     return Content(title: "Your week: \(LoadWords.number(c.current.loadRounded)) load", body: body)
+  }
+
+  /// One local notification: when it fires and what it says.
+  public struct Scheduled: Equatable {
+    public static let identifier = "weekly-summary"
+    public let fire: DateComponents
+    public let content: Content
+  }
+
+  /// Monday 08:00 in the phone's time zone, the first one strictly after `now`.
+  public static func nextFire(after now: Date, calendar: Calendar) -> Date? {
+    calendar.nextDate(after: now, matching: DateComponents(hour: 8, minute: 0, weekday: 2), matchingPolicy: .nextTime)
+  }
+
+  /// What to schedule at `now`, or nil for nothing (and cancel the old one). Only when the athlete opted in. The text is the
+  /// last complete week as it will stand at the fire time, from the sessions on the phone now, so it is rebuilt on every sync
+  /// and every foreground. Sessions still on the watch are not in it.
+  public static func plan(sessions: [LoadSession], now: Date, calendar: Calendar, optedIn: Bool, watchHasUnsent: Bool = false) -> Scheduled? {
+    guard optedIn, let fire = nextFire(after: now, calendar: calendar) else { return nil }
+    let c = LoadCompare.lastComplete(sessions, unit: .week, now: fire, calendar: calendar)
+    guard let content = content(for: c, watchHasUnsent: watchHasUnsent) else { return nil }
+    return Scheduled(fire: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire), content: content)
   }
 }
 

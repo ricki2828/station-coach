@@ -1,6 +1,7 @@
 import CoachKit
 import CoachUI
 import SwiftUI
+import UIKit
 
 /// A moment waiting to be shown over the app.
 struct PendingMoment: Identifiable {
@@ -18,17 +19,24 @@ final class AppModel: ObservableObject {
   @Published var setup: SetupModel = AppModel.loadSetup()
   @Published private(set) var onboarded: Bool
   @Published var pendingMoment: PendingMoment?
+  @Published private(set) var notifyChoice: NotifyChoice
+  /// What iOS allows, re-read on every foreground: it can change in iOS Settings.
+  @Published private(set) var notifyAuth: NotifyAuthorization = .notDetermined
+  /// Bumped to open the weekly summary from a notification tap.
+  @Published private(set) var summaryRequest = 0
   /// Onboarding was skipped before the watch app was confirmed, and the nudge has not been dismissed.
   @Published private(set) var watchNudge: Bool
 
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
 
+
   init(existingSessionIds: [String] = []) {
     let d = UserDefaults.standard
     // Someone who already has sessions on the phone has been through setup; remember it so deleting them all does not bring onboarding back.
     let has = !existingSessionIds.isEmpty
     onboarded = d.bool(forKey: "onboarded") || has
+    notifyChoice = WeeklyNotifier.storedChoice
     watchNudge = d.object(forKey: "onboarding.watchChecked") as? Bool == false && !d.bool(forKey: "onboarding.watchNudgeDismissed")
     if has { d.set(true, forKey: "onboarded") }
     // First run of a build with moments: the sessions already here are history, not news.
@@ -87,6 +95,56 @@ final class AppModel: ObservableObject {
   func dismissWatchNudge() {
     defaults.set(true, forKey: "onboarding.watchNudgeDismissed")
     watchNudge = false
+  }
+
+  // MARK: Weekly summary
+
+  var notifyState: NotifySettingState { NotifySettingState(choice: notifyChoice, auth: notifyAuth) }
+
+  /// A notification tap or the Home card: show the last complete week.
+  func openWeekSummary() {
+    tab = .home
+    summaryRequest += 1
+  }
+
+  /// Foreground: iOS may have changed what it allows. Scheduling follows by itself.
+  func refreshNotifyAuth() {
+    Task {
+      notifyAuth = await WeeklyNotifier.shared.authorization()
+      PhoneTransfer.shared.rescheduleNotice()
+    }
+  }
+
+  /// The Plan-tab switch, and "Yes, Mondays" on the summary card. Turning it on records the wish first, then asks iOS or sends
+  /// the athlete to Settings. Declining the iOS prompt is not a permanent no: the wish stays, and granting later schedules again.
+  func setNotify(_ on: Bool) {
+    guard on else {
+      store(notifyState.turnedOff().choice)
+      PhoneTransfer.shared.rescheduleNotice()
+      return
+    }
+    let turned = notifyState.turnedOn()
+    store(turned.state.choice)
+    switch turned.action {
+    case .askSystem:
+      Task {
+        let granted = await WeeklyNotifier.shared.requestPermission()
+        notifyAuth = turned.state.afterPrompt(granted: granted).auth
+        PhoneTransfer.shared.rescheduleNotice()
+      }
+    case .openSystemSettings:
+      if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    case .nothing:
+      PhoneTransfer.shared.rescheduleNotice()
+    }
+  }
+
+  /// "No thanks" on the one-time card.
+  func declineNotifyCard() { store(notifyState.declinedCard().choice) }
+
+  private func store(_ choice: NotifyChoice) {
+    defaults.set(choice.rawValue, forKey: WeeklyNotifier.defaultsKey)
+    notifyChoice = choice
   }
 
   // MARK: Moments

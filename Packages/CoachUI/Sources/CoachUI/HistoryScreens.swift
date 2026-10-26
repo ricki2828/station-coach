@@ -32,8 +32,12 @@ public struct HistoryScreen: View {
   let syncPercent: Int?
   let onOpen: (SessionRecord) -> Void
   let onRawFiles: () -> Void
+  let totals: AnyView?
 
-  public init(records: [SessionRecord], syncPercent: Int? = nil, onOpen: @escaping (SessionRecord) -> Void = { _ in }, onRawFiles: @escaping () -> Void = {}) {
+  /// `totals` is the Week / Month / Year card, shown above the list once there is a session.
+  public init(records: [SessionRecord], syncPercent: Int? = nil, totals: AnyView? = nil, onOpen: @escaping (SessionRecord) -> Void = { _ in },
+              onRawFiles: @escaping () -> Void = {}) {
+    self.totals = totals
     self.records = SessionRecord.sorted(records)
     self.syncPercent = syncPercent
     self.onOpen = onOpen
@@ -63,6 +67,7 @@ public struct HistoryScreen: View {
         }
         .accessibilityElement(children: .combine)
       }
+      if !records.isEmpty, let totals { totals }
       if records.isEmpty && syncPercent == nil {
         PhoneCard {
           Text("No sessions yet. Your first lands here after you finish on the watch.")

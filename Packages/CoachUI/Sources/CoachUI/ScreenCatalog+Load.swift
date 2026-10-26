@@ -8,12 +8,9 @@ extension ScreenCatalog {
 
   private static func onPaper(_ v: some View) -> some View { v.padding(20).background(PhoneTheme.paper) }
 
-  /// Describes, never orders (the coach's own wording arrives with the app wiring).
-  static let loadUsualLine = "About your usual week. The next full sim is the real test of the fade."
-
   static func loadSummary(_ s: LoadSample, onWhy: @escaping () -> Void = {}) -> WeeklySummaryScreen {
     let d = TrainingLoad.sample(s)
-    return WeeklySummaryScreen(compare: d.compare, weeks: d.weeks, calendar: d.calendar, usualLine: loadUsualLine, onWhy: onWhy)
+    return WeeklySummaryScreen(compare: d.compare, weeks: d.weeks, calendar: d.calendar, onWhy: onWhy)
   }
 
   private static func demoLoad(_ t: SessionType, _ jitter: Int) -> SessionLoad {
@@ -56,6 +53,34 @@ extension ScreenCatalog {
       out.append(LoadSession(id: "demo-ly-\(w)", date: date, type: type, load: demoLoad(type, w % 7)))
     }
     return out + demoHistory(now: now, calendar: calendar)
+  }
+
+  /// The app's own path: session records through `TrainingLoad.summarise`, with no heart rate file.
+  static func loadSessions(_ records: [SessionRecord]) -> [LoadSession] {
+    TrainingLoad.summarise(records.map { LoadInput(record: $0, hr: nil) }, now: HistorySamples.today).sessions
+  }
+
+  /// Home and History as the app renders them, from real records rather than `LoadSampleData`.
+  public static var loadWiredScreens: [CatalogEntry] {
+    let cal = TrainingLoad.sampleCalendar
+    let now = HistorySamples.today
+    let trend = HistorySamples.trend(latestFade: 19)
+    let homeSessions = loadSessions(trend)
+    let listRecords = HistorySamples.list
+    let listSessions = loadSessions(listRecords)
+    func history(_ mode: TotalsMode) -> HistoryScreen {
+      HistoryScreen(records: listRecords, totals: AnyView(TrainingTotalsCard(
+        mode: mode, sessions: listSessions, now: now, calendar: cal,
+        bestFade: TrainingTotalsCard.bestFade(listRecords, now: now, calendar: cal), onOpenSummary: {})))
+    }
+    return [
+      loadW("home-week", HomeScreen(model: homeModel(trend), today: now, week: WeekCardModel.make(homeSessions, now: now, calendar: cal))),
+      loadW("history-totals-week", history(.week)),
+      loadW("history-totals-month", history(.month)),
+      loadW("setup-monday-off", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .undecided, auth: .notDetermined))),
+      loadW("setup-monday-on", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .yes, auth: .authorized))),
+      loadW("setup-monday-blocked", SetupScreen(model: SetupModel(), notify: NotifySettingState(choice: .yes, auth: .denied))),
+    ]
   }
 
   public static var loadScreens: [CatalogEntry] {

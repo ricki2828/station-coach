@@ -9,9 +9,14 @@ public struct HomeScreen: View {
   let onStart: (SessionType) -> Void
   let onOpenLast: (SessionRecord) -> Void
   let onOpenPlan: () -> Void
+  let week: WeekCardModel?
+  let onOpenWeek: () -> Void
 
-  public init(model: HomeModel, today: Date = Date(), onStart: @escaping (SessionType) -> Void = { _ in },
-              onOpenLast: @escaping (SessionRecord) -> Void = { _ in }, onOpenPlan: @escaping () -> Void = {}) {
+  public init(model: HomeModel, today: Date = Date(), week: WeekCardModel? = nil, onStart: @escaping (SessionType) -> Void = { _ in },
+              onOpenLast: @escaping (SessionRecord) -> Void = { _ in }, onOpenPlan: @escaping () -> Void = {},
+              onOpenWeek: @escaping () -> Void = {}) {
+    self.week = week
+    self.onOpenWeek = onOpenWeek
     self.model = model
     self.today = today
     self.onStart = onStart
@@ -49,6 +54,7 @@ public struct HomeScreen: View {
         }
         .buttonStyle(.plain)
       }
+      if let week { WeekCard(model: week, onOpen: onOpenWeek) }
       Button(action: onOpenPlan) {
         PhoneCard {
           HStack {
