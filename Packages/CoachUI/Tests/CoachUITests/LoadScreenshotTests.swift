@@ -13,9 +13,9 @@ final class LoadScreenshotTests: XCTestCase {
 
   func testRenderLoadScreens() throws {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-    let entries = ScreenCatalog.loadScreens
+    let entries = ScreenCatalog.loadScreens + ScreenCatalog.loadWiredScreens
     XCTAssertEqual(Set(entries.map(\.name)).count, entries.count)
-    XCTAssertEqual(entries.count, 17)
+    XCTAssertEqual(entries.count, 20)
     for entry in entries {
       let renderer = ImageRenderer(content: entry.view.environment(\.colorScheme, .light))
       renderer.scale = 2
@@ -73,6 +73,38 @@ final class LoadScreenshotTests: XCTestCase {
     let thin = LoadCompare.lastComplete(one, unit: .month, now: d.now, calendar: d.calendar)
     XCTAssertNil(TrainingTotalsCard.monthUsual(one, now: d.now, calendar: d.calendar))
     XCTAssertNil(TrainingTotalsCard.monthLine(thin, calendar: d.calendar))
+  }
+
+  func testHomeCardNoteIsTheWeekInProgressNotTheLastCompleteWeek() {
+    // Two complete weeks of history, one session this week: this week is "so far" and the card says nothing about thresholds
+    // once a usual exists.
+    let d = TrainingLoad.sample(.usual)
+    let m = WeekCardModel.make(d.sessions, now: d.now, calendar: d.calendar)
+    XCTAssertNotNil(m)
+    XCTAssertTrue(m!.period.isCurrent)
+    XCTAssertNil(m!.note)
+    // A first-weeks athlete on the Tuesday of week 2: the note follows this week's state, not the last complete week's.
+    let f = TrainingLoad.sample(.firstWeeks)
+    let tue = f.weekStart.addingTimeInterval(86_400 + 12 * 3_600)
+    let early = f.sessions.filter { $0.date < tue }
+    let fm = WeekCardModel.make(early, now: tue, calendar: f.calendar)
+    XCTAssertEqual(LoadCompare.current(early, now: tue, calendar: f.calendar).state, .firstWeeks)
+    XCTAssertEqual(fm?.note, "Your usual week takes shape after 3 sessions across 2 weeks.")
+    XCTAssertNil(WeekCardModel.make([], now: d.now, calendar: d.calendar))
+  }
+
+  func testBestFadeIsTheMonthsLowestCompleteFade() {
+    let now = HistorySamples.today
+    let cal = TrainingLoad.sampleCalendar
+    // list: fades 19, 14, 12 complete, 31 partial; all in October.
+    XCTAssertEqual(TrainingTotalsCard.bestFade(HistorySamples.list, now: now, calendar: cal), 12)
+    XCTAssertNil(TrainingTotalsCard.bestFade([], now: now, calendar: cal))
+  }
+
+  func testRealRecordsMakeLoadSessions() {
+    let sessions = ScreenCatalog.loadSessions(HistorySamples.list)
+    XCTAssertEqual(sessions.count, 4)
+    XCTAssertTrue(sessions.allSatisfy { $0.load.load > 0 })
   }
 
   func testScopeLabelIsOnEverySummary() {

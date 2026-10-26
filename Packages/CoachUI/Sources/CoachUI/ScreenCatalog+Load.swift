@@ -55,6 +55,31 @@ extension ScreenCatalog {
     return out + demoHistory(now: now, calendar: calendar)
   }
 
+  /// The app's own path: session records through `TrainingLoad.summarise`, with no heart rate file.
+  static func loadSessions(_ records: [SessionRecord]) -> [LoadSession] {
+    TrainingLoad.summarise(records.map { LoadInput(record: $0, hr: nil) }, now: HistorySamples.today).sessions
+  }
+
+  /// Home and History as the app renders them, from real records rather than `LoadSampleData`.
+  public static var loadWiredScreens: [CatalogEntry] {
+    let cal = TrainingLoad.sampleCalendar
+    let now = HistorySamples.today
+    let trend = HistorySamples.trend(latestFade: 19)
+    let homeSessions = loadSessions(trend)
+    let listRecords = HistorySamples.list
+    let listSessions = loadSessions(listRecords)
+    func history(_ mode: TotalsMode) -> HistoryScreen {
+      HistoryScreen(records: listRecords, totals: AnyView(TrainingTotalsCard(
+        mode: mode, sessions: listSessions, now: now, calendar: cal,
+        bestFade: TrainingTotalsCard.bestFade(listRecords, now: now, calendar: cal), onOpenSummary: {})))
+    }
+    return [
+      loadW("home-week", HomeScreen(model: homeModel(trend), today: now, week: WeekCardModel.make(homeSessions, now: now, calendar: cal))),
+      loadW("history-totals-week", history(.week)),
+      loadW("history-totals-month", history(.month)),
+    ]
+  }
+
   public static var loadScreens: [CatalogEntry] {
     let usual = TrainingLoad.sample(.usual)
     let first = TrainingLoad.sample(.firstWeeks)

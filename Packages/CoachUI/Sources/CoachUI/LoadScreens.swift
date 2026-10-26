@@ -189,6 +189,22 @@ private struct DashedRule: Shape {
 
 // MARK: - Week card (Home)
 
+/// What the Home card shows, built from the real sessions. The week in progress is only ever "so far": the note comes from
+/// that week's own state (first weeks, break), never from the last complete week's.
+public struct WeekCardModel: Equatable {
+  public let period: LoadPeriod
+  public let bars: [LoadBar]
+  public let note: String?
+
+  /// nil before the first session: Home stays fade-first and quiet.
+  public static func make(_ sessions: [LoadSession], now: Date, calendar: Calendar) -> WeekCardModel? {
+    guard !sessions.isEmpty else { return nil }
+    let weeks = LoadHistory.weeks(sessions, now: now, count: 6, calendar: calendar)
+    let current = LoadCompare.current(sessions, now: now, calendar: calendar)
+    return WeekCardModel(period: weeks[weeks.count - 1], bars: LoadBar.bars(weeks, calendar: calendar), note: LoadWords.cardNote(current))
+  }
+}
+
 /// Home card: this week so far, a 6-bar mini chart. Tapping opens the last complete week's summary.
 public struct WeekCard: View {
   let period: LoadPeriod
@@ -205,6 +221,10 @@ public struct WeekCard: View {
     self.bandWords = bandWords
     self.note = note
     self.onOpen = onOpen
+  }
+
+  public init(model: WeekCardModel, onOpen: @escaping () -> Void = {}) {
+    self.init(period: model.period, bars: model.bars, note: model.note, onOpen: onOpen)
   }
 
   public var body: some View {
@@ -405,8 +425,11 @@ public struct TrainingTotalsCard: View {
   let calendar: Calendar
   let bestFade: Int?
   let onSelect: (TotalsMode) -> Void
+  let onOpenSummary: (() -> Void)?
 
-  public init(mode: TotalsMode, sessions: [LoadSession], now: Date, calendar: Calendar, bestFade: Int? = nil, onSelect: @escaping (TotalsMode) -> Void = { _ in }) {
+  public init(mode: TotalsMode, sessions: [LoadSession], now: Date, calendar: Calendar, bestFade: Int? = nil,
+              onSelect: @escaping (TotalsMode) -> Void = { _ in }, onOpenSummary: (() -> Void)? = nil) {
+    self.onOpenSummary = onOpenSummary
     self.mode = mode
     self.sessions = sessions
     self.now = now
@@ -472,8 +495,16 @@ public struct TrainingTotalsCard: View {
       if let b = LoadWords.bandWords(last) {
         Text("Last week: \(b.prefix(1).lowercased() + b.dropFirst()).").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
+      if last.state != .noSessions, let open = onOpenSummary {
+        TextLinkButton("Last week in full", action: open)
+      }
       Text(LoadWords.scopeLabel).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
     }
+  }
+
+  /// The month's lowest complete run fade, or nil when there is none yet.
+  public static func bestFade(_ records: [SessionRecord], now: Date, calendar: Calendar) -> Int? {
+    records.filter { $0.isComplete && calendar.isDate($0.date, equalTo: now, toGranularity: .month) }.compactMap(\.fade).min()
   }
 
   /// The usual line and the sentence both come from the last complete month, so they cannot disagree. Nil without a comparison.

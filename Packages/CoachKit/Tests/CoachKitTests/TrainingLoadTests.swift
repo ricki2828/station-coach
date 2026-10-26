@@ -446,13 +446,62 @@ final class TrainingLoadTests: XCTestCase {
   }
 
   func testNoticeSkips() {
-    // A first week with fewer than 2 sessions says nothing; with 2 it does.
+    // Nothing goes out in the first weeks, whether there is one session or two.
     let mon = Date(timeIntervalSince1970: 1_792_368_000)
     let one = LoadCompare.compare([load(300, at: mon.addingTimeInterval(86_400))], periodStart: mon, calendar: cal)
     XCTAssertEqual(one.state, .firstWeeks)
     XCTAssertNil(WeeklyNotice.content(for: one))
-    XCTAssertNotNil(WeeklyNotice.content(for: TrainingLoad.sample(.firstWeeks).compare))
+    XCTAssertNil(WeeklyNotice.content(for: TrainingLoad.sample(.firstWeeks).compare))
+    XCTAssertNil(WeeklyNotice.content(for: LoadCompare.compare([], periodStart: mon, calendar: cal)))
   }
+
+  // MARK: scheduling
+
+  private var monday19: Date { Date(timeIntervalSince1970: 1_792_368_000) }
+
+  func testNextFireIsTheNextMondayAtEight() {
+    func fire(_ d: Date) -> DateComponents { cal.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: WeeklyNotice.nextFire(after: d, calendar: cal)!) }
+    let wed = monday19.addingTimeInterval(9 * 86_400 + 12 * 3_600)
+    XCTAssertEqual(fire(wed), DateComponents(year: 2026, month: 11, day: 2, hour: 8, minute: 0, weekday: 2))
+    // Monday 07:59 fires that morning; exactly 08:00 waits a week.
+    XCTAssertEqual(fire(monday19.addingTimeInterval(7 * 3_600 + 59 * 60)).day, 19)
+    XCTAssertEqual(fire(monday19.addingTimeInterval(8 * 3_600)).day, 26)
+    XCTAssertEqual(fire(monday19.addingTimeInterval(6 * 86_400 + 23 * 3_600)).day, 26)
+  }
+
+  func testPlanReportsTheWeekAsItWillStandAtFireTime() {
+    let d = TrainingLoad.sample(.usual)
+    let sunEvening = monday19.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    let known = d.sessions.filter { $0.date < sunEvening }
+    let p = WeeklyNotice.plan(sessions: known, now: sunEvening, calendar: cal, optedIn: true)
+    XCTAssertEqual(p?.fire, DateComponents(year: 2026, month: 10, day: 26, hour: 8, minute: 0))
+    XCTAssertEqual(p?.content.title, "Your week: 480 load")
+    XCTAssertEqual(p?.content.body, "480 load, about your usual week. Tap for what changed.")
+  }
+
+  func testPlanNeedsOptInSessionsAndAUsual() {
+    let d = TrainingLoad.sample(.usual)
+    let sunEvening = monday19.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    let known = d.sessions.filter { $0.date < sunEvening }
+    XCTAssertNil(WeeklyNotice.plan(sessions: known, now: sunEvening, calendar: cal, optedIn: false))
+    XCTAssertNil(WeeklyNotice.plan(sessions: [], now: sunEvening, calendar: cal, optedIn: true))
+    // First weeks: nothing, even with two sessions in the week.
+    let f = TrainingLoad.sample(.firstWeeks)
+    let fNow = f.weekStart.addingTimeInterval(6 * 86_400 + 20 * 3_600)
+    XCTAssertNil(WeeklyNotice.plan(sessions: f.sessions.filter { $0.date < fNow }, now: fNow, calendar: cal, optedIn: true))
+    // A week with no sessions sends nothing, however long the history.
+    let quiet = monday19.addingTimeInterval(20 * 86_400)
+    XCTAssertNil(WeeklyNotice.plan(sessions: known, now: quiet, calendar: cal, optedIn: true))
+  }
+
+  func testCurrentWeekIsOnlySoFar() {
+    let d = TrainingLoad.sample(.usual)
+    let c = LoadCompare.current(d.sessions, now: d.now, calendar: d.calendar)
+    XCTAssertTrue(c.current.isCurrent)
+    XCTAssertEqual(c.current.sessions, 1)
+    XCTAssertNotEqual(c.state, .firstWeeks)
+  }
+
 
   func testPeriodHelpers() {
     let w = TrainingLoad.sample(.stepUp).weeks.last!
