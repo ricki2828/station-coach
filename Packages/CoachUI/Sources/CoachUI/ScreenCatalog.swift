@@ -53,6 +53,8 @@ public enum ScreenCatalog {
   }
 
   public static var watchScreens: [CatalogEntry] {
+    let allStations = FinishScreenModel.stations(from: SampleData.result(extra: [1: -25, 5: 41]))
+    let earlyStations = FinishScreenModel.stations(from: SampleData.result(until: 10))
     let ready = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00", athleteChip: "A1 \u{00B7} L")
     let run = step(.run, .run, "Run 4", dominant: "3:12", dominantLabel: "Run time 3 minutes 12", secondary: "/ 5:24",
                    secondaryLabel: "Target 5 minutes 24", next: "Next: Burpee broad jumps", delta: -20)
@@ -87,17 +89,23 @@ public enum ScreenCatalog {
       watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
       watch("menu", CoachMenuScreen()),
       watch("finish-undo-window", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41", undoSecondsLeft: 8))),
+        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        undoSecondsLeft: 8, totalSeconds: 4722, stations: allStations), animate: false)),
       watch("finish-saving", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41", saving: true))),
+        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        saving: true, totalSeconds: 4722, stations: allStations), animate: false)),
       watch("finish-under", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41"))),
+        mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        totalSeconds: 4722, stations: allStations), animate: false)),
       watch("finish-over", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saved, totalText: "1:22:10", line: "2:10 over target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41"))),
+        mode: .saved, totalText: "1:22:10", line: "2:10 over target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        totalSeconds: 4930, stations: allStations), animate: false)),
       watch("finish-early", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saved, totalText: "52:10", line: "Ended at Row. 5 of 8 stations.", early: true))),
+        mode: .saved, totalText: "52:10", line: "Ended at Row. 5 of 8 stations.", early: true,
+        totalSeconds: 3130, stations: earlyStations), animate: false)),
       watch("finish-save-failed", CoachFinishScreen(model: FinishScreenModel(
-        mode: .saveFailed(missing: 1), totalText: "1:18:42", line: "1:18 under target", early: false))),
+        mode: .saveFailed(missing: 1), totalText: "1:18:42", line: "1:18 under target", early: false,
+        totalSeconds: 4722, stations: allStations), animate: false)),
     ]
   }
 

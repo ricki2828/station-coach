@@ -333,17 +333,62 @@ public struct CoachReadyScreen: View {
   }
 }
 
-/// The finish moment: a flood of colour, the total, one line, shown at once while the files close behind it.
-/// For a few seconds after a normal finish, UNDO reopens the last step. Reduce Motion: nothing here animates.
+/// The total as a clock that counts up; `value` is animated by SwiftUI, so the digits run from 0:00 to the total.
+struct CountUpClock: View, Animatable {
+  var value: Double
+
+  var animatableData: Double {
+    get { value }
+    set { value = newValue }
+  }
+
+  var body: some View {
+    Text(Fmt.clock(Int(value))).monospacedDigit()
+  }
+}
+
+/// The completed stations in their own colours, filling in from the left. Not-done stations stay dim.
+struct FinishStrip: View {
+  let stations: [FinishStation]
+  let fill: CGFloat
+
+  var body: some View {
+    ProportionalStrip(items: stations.map { ($0.done ? Theme.background($0.activity) : Theme.bone.opacity(0.18), Double(max($0.seconds, 1))) },
+                      height: 16, gap: 2)
+      .mask {
+        GeometryReader { g in
+          Rectangle().frame(width: g.size.width * fill, height: g.size.height)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .padding(4)
+      .background(Theme.ink, in: Capsule())
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(stations.filter(\.done).count) of \(stations.count) stations done")
+  }
+}
+
+/// The finish moment: a flood of colour, the total counting up to its value, the stations filling in, one line,
+/// shown at once while the files close behind it. For a few seconds after a normal finish, UNDO reopens the
+/// last step. Reduce Motion: the total and the strip fade in instead. `animate: false` shows the end state.
 public struct CoachFinishScreen: View {
   let model: FinishScreenModel
+  let animate: Bool
   var onDone: () -> Void = {}
   var onUndo: () -> Void = {}
+  @State private var shown: Double
+  @State private var fill: CGFloat
+  @State private var fade: Double
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  public init(model: FinishScreenModel, onDone: @escaping () -> Void = {}, onUndo: @escaping () -> Void = {}) {
+  public init(model: FinishScreenModel, animate: Bool = true, onDone: @escaping () -> Void = {}, onUndo: @escaping () -> Void = {}) {
     self.model = model
+    self.animate = animate
     self.onDone = onDone
     self.onUndo = onUndo
+    _shown = State(initialValue: animate ? 0 : Double(model.totalSeconds))
+    _fill = State(initialValue: animate ? 0 : 1)
+    _fade = State(initialValue: animate ? 0 : 1)
   }
 
   public var body: some View {
@@ -351,10 +396,14 @@ public struct CoachFinishScreen: View {
       (model.early ? Theme.finishMomentEarly : Theme.finishMoment).ignoresSafeArea()
       VStack(spacing: 4) {
         Spacer(minLength: 0)
-        Text(model.totalText)
+        total
           .font(Theme.number(Theme.Size.dominant)).condensed()
           .lineLimit(1).minimumScaleFactor(0.55)
+          .opacity(reduceMotion ? fade : 1)
           .accessibilityLabel("Total time \(model.totalText)")
+        if !model.stations.isEmpty {
+          FinishStrip(stations: model.stations, fill: reduceMotion ? 1 : fill).opacity(reduceMotion ? fade : 1)
+        }
         Text(model.line)
           .font(.system(size: 20, weight: .heavy)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
         if case .saveFailed(let missing) = model.mode {
@@ -385,7 +434,27 @@ public struct CoachFinishScreen: View {
       .foregroundStyle(Theme.ink)
       .padding(.horizontal, Theme.Space.watchEdge)
       .padding(.top, 4)
-      .padding(.bottom, 8)
+      .padding(.bottom, 10)
+    }
+    .onAppear {
+      guard animate else { return }
+      if reduceMotion {
+        shown = Double(model.totalSeconds)
+        withAnimation(.easeIn(duration: 0.4)) { fade = 1 }
+      } else {
+        withAnimation(.easeOut(duration: 1.5)) { shown = Double(model.totalSeconds) }
+        withAnimation(.easeOut(duration: 1.2).delay(0.3)) { fill = 1 }
+        fade = 1
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var total: some View {
+    if animate, !reduceMotion, model.totalSeconds > 0 {
+      CountUpClock(value: shown)
+    } else {
+      Text(model.totalText)
     }
   }
 }

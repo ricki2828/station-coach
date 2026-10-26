@@ -328,10 +328,11 @@ final class CoachController: ObservableObject {
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
       best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },
-      saving: false, undoSecondsLeft: early ? nil : Self.undoWindowSeconds)
+      saving: false, undoSecondsLeft: early ? nil : Self.undoWindowSeconds,
+      totalSeconds: total, stations: FinishScreenModel.stations(from: result))
     active = false
     screen = nil
-    WKInterfaceDevice.current().play(.success)
+    celebrate()
     finishTask?.cancel()
     finishTask = Task { @MainActor in
       if !early {
@@ -342,6 +343,18 @@ final class CoachController: ObservableObject {
         }
       }
       await completeFinish()
+    }
+  }
+
+  /// A short success pattern: the one loud moment of the session.
+  private func celebrate() {
+    let device = WKInterfaceDevice.current()
+    device.play(.success)
+    Task { @MainActor in
+      for (delay, kind) in [(350, WKHapticType.click), (250, .click), (350, .notification)] as [(Int, WKHapticType)] {
+        try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+        device.play(kind)
+      }
     }
   }
 

@@ -70,6 +70,19 @@ public struct ReadyInfo: Equatable {
   }
 }
 
+/// One station on the finish strip: its colour, how long it took (or was planned), and whether it was done.
+public struct FinishStation: Equatable {
+  public let activity: Activity
+  public let seconds: Int
+  public let done: Bool
+
+  public init(activity: Activity, seconds: Int, done: Bool) {
+    self.activity = activity
+    self.seconds = seconds
+    self.done = done
+  }
+}
+
 public struct FinishScreenModel: Equatable {
   public enum Mode: Equatable { case saved, saveFailed(missing: Int) }
   public var mode: Mode
@@ -83,9 +96,12 @@ public struct FinishScreenModel: Equatable {
   public var saving: Bool
   /// While set, UNDO reopens the last step (an accidental FINISH); the recorder is still running.
   public var undoSecondsLeft: Int?
+  /// The count-up target, in seconds (0 = just show `totalText`).
+  public var totalSeconds: Int
+  public var stations: [FinishStation]
 
   public init(mode: Mode, totalText: String, line: String, early: Bool, best: String? = nil, worst: String? = nil,
-              saving: Bool = false, undoSecondsLeft: Int? = nil) {
+              saving: Bool = false, undoSecondsLeft: Int? = nil, totalSeconds: Int = 0, stations: [FinishStation] = []) {
     self.mode = mode
     self.totalText = totalText
     self.line = line
@@ -94,5 +110,14 @@ public struct FinishScreenModel: Equatable {
     self.worst = worst
     self.saving = saving
     self.undoSecondsLeft = undoSecondsLeft
+    self.totalSeconds = totalSeconds
+    self.stations = stations
+  }
+
+  /// The eight stations of a plan in order; stations not completed are marked so, never shown as 0:00.
+  public static func stations(from result: CoachResult) -> [FinishStation] {
+    result.rows.filter { !$0.step.isRun }.map {
+      FinishStation(activity: $0.step.activity, seconds: $0.actualSeconds ?? $0.step.targetSeconds, done: $0.actualSeconds != nil)
+    }
   }
 }
