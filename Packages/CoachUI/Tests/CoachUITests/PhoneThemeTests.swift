@@ -51,7 +51,7 @@ final class PhoneThemeTests: XCTestCase {
         Wordmark(size: 44)
       }
       section("Session chips") {
-        HStack { ForEach(SessionType.allCases) { SessionChip($0) } }
+        HStack(spacing: 6) { ForEach(SessionType.allCases) { SessionChip($0) } }
       }
       section("Hero cards") {
         ForEach(SessionType.allCases) { t in

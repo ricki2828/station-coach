@@ -152,9 +152,9 @@ public struct SessionChip: View {
   public var body: some View {
     Text(type.title)
       .font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1)
-      .lineLimit(1).minimumScaleFactor(0.85)
+      .lineLimit(1).minimumScaleFactor(0.7)
       .foregroundStyle(PhoneTheme.sessionText(type))
-      .padding(.horizontal, 10).padding(.vertical, 5)
+      .padding(.horizontal, 9).padding(.vertical, 5)
       .background(PhoneTheme.sessionColor(type), in: Capsule())
   }
 }
