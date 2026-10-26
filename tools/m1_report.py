@@ -26,7 +26,7 @@ CUE_MARK = 95.0
 BATTERY_MARK = 30.0
 HZ_MARK = 50.0
 BATTERY_MINUTES = 90
-MIN_ACTIVITY_MINUTES = 0.0  # an activity counts as present above this many labelled minutes
+MIN_ACTIVITY_MINUTES = 0.0  # an activity counts as present only above this many labelled minutes
 COVERAGE_MARK = 0.95  # share of session seconds that must reach HZ_MARK
 CUE_ISSUED_MARK = 0.90  # issued cues as a share of interval x duration
 
@@ -161,6 +161,12 @@ def expected_cues(manifest, start_ms, end_ms):
     return int(((end_ms - start_ms) / 1000) // interval) if interval > 0 else 0
 
 
+def missing_activities(minutes):
+    """The activities, of the 10, with no more than MIN_ACTIVITY_MINUTES labelled (absent counts as 0).
+    One rule for the per-session line and the per-athlete summary."""
+    return [a for a in ACTIVITIES if minutes.get(a, 0.0) <= MIN_ACTIVITY_MINUTES]
+
+
 def label_minutes(rows, start_ms, end_ms):
     """Replay set/undo events (set pushes, undo pops) into minutes per activity."""
     stack = []
@@ -199,7 +205,7 @@ def athlete_summary(folders):
     lines = ["Per athlete (labelled minutes, all sessions):"]
     for athlete in sorted(groups):
         g = groups[athlete]
-        missing = [a for a in ACTIVITIES if g["minutes"].get(a, 0.0) < MIN_ACTIVITY_MINUTES]
+        missing = missing_activities(g["minutes"])
         lines.append(f"  {athlete}: {g['sessions']} session(s), wrist {'/'.join(sorted(g['wrists']))}, "
                      f"{sum(g['minutes'].values()):.1f} min labelled, "
                      + ("all 10 activities" if not missing else "missing " + ", ".join(missing)))
@@ -266,7 +272,7 @@ def report(folder):
     lines.append(f"3. Motion rate (stored): {'; '.join(hz_parts)}  {flag(hz_ok)} (mark {HZ_MARK:.0f} Hz)")
 
     mins = label_minutes(read_rows(folder / "labels.csv"), start, end)
-    missing = [a for a in ACTIVITIES if mins.get(a, 0) <= 0]
+    missing = missing_activities(mins)
     lines.append("4. Labelled minutes:")
     for a in ACTIVITIES + ["rest"]:
         lines.append(f"     {a:<20}{mins.get(a, 0.0):7.1f}")

@@ -120,6 +120,18 @@ class AthleteTests(unittest.TestCase):
         self.assertIn("A2: 1 session(s)", text)
         self.assertIn("run=0.7", text)  # A1: 2 x 20 s = 0.67 min
 
+    def test_absent_activity_fails_the_aggregate(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        f = tmp / "s"
+        shutil.copytree(FIXTURE, f)
+        rows = (f / "labels.csv").read_text().splitlines(keepends=True)
+        (f / "labels.csv").write_text("".join(r for r in rows if "wall_balls" not in r))
+        text = "\n".join(m1_report.athlete_summary([f]))
+        self.assertIn("missing wall_balls", text)
+        self.assertNotIn("all 10 activities", text)
+        self.assertEqual(m1_report.missing_activities({"run": 3.0}), [a for a in m1_report.ACTIVITIES if a != "run"])
+
     def test_missing_athlete_is_grouped_unknown(self):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, True)
