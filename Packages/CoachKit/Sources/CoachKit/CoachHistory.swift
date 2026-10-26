@@ -155,7 +155,7 @@ public struct HomeModel: Equatable {
     last = recs.first
     next = Recommendation.pick(records: recs, now: now)
     let recentPairs = Array(withFade.prefix(6).reversed())
-    recent = recentPairs.map(\.1)
+    recent = recentPairs.map { max(0, $0.1) }
     recentTypes = recentPairs.map { $0.0.type }
     latestFade = withFade.first?.1
     latestDate = withFade.first?.0.date
@@ -181,7 +181,8 @@ public struct HomeModel: Equatable {
     return seen
   }
 
-  public static func fadeText(_ s: Int) -> String { s < 0 ? "\u{2212}\(-s) s" : "\(s) s" }
+  /// A fade below zero reads "0 s": the line under it says "faster than run 1".
+  public static func fadeText(_ s: Int) -> String { "\(max(0, s)) s" }
 
   public var kicker: String { state == .baseline ? "YOUR RUN FADE \u{00B7} BASELINE" : "YOUR RUN FADE" }
 
@@ -195,7 +196,7 @@ public struct HomeModel: Equatable {
   public var line: String {
     switch state {
     case .none: return "One sim measures how much slower you run after each station. That's the number this app helps you shrink."
-    default: return "slower per run than run 1"
+    default: return (latestFade ?? 0) < 0 ? "faster than run 1" : "slower per run than run 1"
     }
   }
 

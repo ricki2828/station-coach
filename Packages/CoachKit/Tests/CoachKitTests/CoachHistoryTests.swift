@@ -66,6 +66,22 @@ final class CoachHistoryTests: XCTestCase {
     XCTAssertEqual(models[3].chip, "Holding since 24 Oct")
   }
 
+  func testNegativeFadeClampsToZero() {
+    let m = HomeModel(records: [record("a", fade: -3)], now: now)
+    XCTAssertEqual(m.latestFade, -3)
+    XCTAssertEqual(m.hero, "0 s")
+    XCTAssertEqual(m.line, "faster than run 1")
+    XCTAssertEqual(m.recent, [0])
+    XCTAssertEqual(HomeModel(records: [record("a", fade: 5)], now: now).line, "slower per run than run 1")
+  }
+
+  func testLegendOnlyWithMoreThanOneType() {
+    let one = HomeModel(records: [record("a", day: 0, fade: 5), record("b", day: 1, fade: 6)], now: now)
+    XCTAssertEqual(one.legendTypes, [.fullSim])
+    let two = HomeModel(records: [record("a", .halfSim, day: 0, fade: 5), record("b", day: 1, fade: 6)], now: now)
+    XCTAssertEqual(two.legendTypes, [.halfSim, .fullSim])
+  }
+
   func testRecentIsLastSixOldestFirst() {
     let recs = (0..<8).map { record("r\($0)", day: Int64($0), fade: 20 + $0) }
     XCTAssertEqual(HomeModel(records: recs, now: now).recent, [22, 23, 24, 25, 26, 27])
