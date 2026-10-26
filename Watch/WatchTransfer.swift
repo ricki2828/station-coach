@@ -49,6 +49,12 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
     }
   }
 
+  /// Tells the phone a session is closed and on its way, so the phone can say so if the files never come.
+  func announceFinished(_ id: String) {
+    guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+    WCSession.default.transferUserInfo(["finished": id])
+  }
+
   /// Called when a recording starts: drops queued transfers so nothing runs during the session.
   /// `sendUnsent()` re-queues them afterwards.
   func pauseForRecording() {

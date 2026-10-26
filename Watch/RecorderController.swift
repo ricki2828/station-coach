@@ -178,6 +178,7 @@ final class RecorderController: ObservableObject {
     self.writer = nil
     motion = nil
     WatchTransfer.shared.activeSessionId = nil
+    WatchTransfer.shared.announceFinished(id)
     WatchTransfer.shared.sendUnsent()
     statusMessage = "Saved \(id)"
     refreshUnfinished()

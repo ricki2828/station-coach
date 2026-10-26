@@ -81,6 +81,7 @@ struct SummaryHost: View {
   }
 
   private var state: SummaryState {
+    if phone.syncFailed { return .failed }
     if let latest = phone.latestCoach { return .ready(latest.result) }
     if let p = phone.syncPercent { return .syncing(percent: p) }
     return .empty
