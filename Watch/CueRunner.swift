@@ -14,6 +14,8 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   var onCue: ((CueEvent) -> Void)?
   var onNote: ((String, String) -> Void)?
   var onIssued: ((String) -> Void)?
+  /// The headphone route went away (any audio mode).
+  var onHeadphonesLost: (() -> Void)?
 
   private let synth = AVSpeechSynthesizer()
   private var timer: Timer?
@@ -22,6 +24,9 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   private var lastCueId: Int?
   private var reactivating = false
   private var awaitingHeadphones = false
+  private var releaseWhenIdle = false
+  /// Between `prepare()`/`start` and `stop`: the session is live, so route loss and interruptions are handled.
+  private var running = false
   /// A "didn't hear" tap applies to the latest cue only if it was issued within one cue interval.
   private var missedWindow: TimeInterval = 45
   private var flagged = Set<Int>()
@@ -39,6 +44,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
       let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 0
       self?.onNote?("route_change", "reason=\(reason) outputs=\(Self.route().outputs.joined(separator: ";"))")
+      if AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable { self?.onHeadphonesLost?() }
       self?.routeChanged(reason: AVAudioSession.RouteChangeReason(rawValue: reason))
     })
     observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
@@ -54,6 +60,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   /// it active until `stop()`; mode A does nothing now and activates before each cue.
   @MainActor
   func prepare() async {
+    running = true
     guard audioMode == .longForm else { return }
     do {
       let session = AVAudioSession.sharedInstance()
@@ -73,7 +80,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   /// Mode B only. Activating with no headphone output pops the system route picker over the label
   /// screen, so on loss we only note it and wait; we activate again once a headphone output is back.
   private func routeChanged(reason: AVAudioSession.RouteChangeReason?) {
-    guard audioMode == .longForm, timer != nil else { return }
+    guard audioMode == .longForm, running else { return }
     if reason == .oldDeviceUnavailable {
       awaitingHeadphones = true
       onNote?("audio_mode", "headphones lost; will re-activate when a headphone output reappears")
@@ -84,7 +91,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   }
 
   private func interruptionEnded() {
-    guard audioMode == .longForm, timer != nil else { return }
+    guard audioMode == .longForm, running else { return }
     if Self.route().headphones {
       awaitingHeadphones = false
       reactivate("interruption ended")
@@ -96,7 +103,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
 
   /// The long-form session is not re-established by the system after headphones drop or a call ends.
   private func reactivate(_ why: String) {
-    guard audioMode == .longForm, timer != nil, !reactivating else { return }
+    guard audioMode == .longForm, running, !reactivating else { return }
     reactivating = true
     Task { @MainActor in
       onNote?("audio_mode", "reactivating: \(why)")
@@ -105,15 +112,25 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     }
   }
 
+  /// True while a cue is being spoken: the coach never talks over one.
+  var isSpeaking: Bool { !inFlight.isEmpty }
+
   func start(interval: TimeInterval) {
     missedWindow = interval
+    running = true
     timer?.invalidate()
     timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in self?.fire() }
   }
 
-  func stop() {
+  /// `letSpeechFinish`: the finish cue is still being said; leave the audio session up until it ends.
+  func stop(letSpeechFinish: Bool = false) {
+    running = false
     timer?.invalidate()
     timer = nil
+    if letSpeechFinish, !inFlight.isEmpty {
+      releaseWhenIdle = true
+      return
+    }
     synth.stopSpeaking(at: .immediate)
     release(force: true)
   }
@@ -130,13 +147,19 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     return true
   }
 
+  /// The M1 test cue: the next rotating phrase.
   func fire() {
+    let phrase = CuePhrases.phrase(at: phraseIndex)
+    phraseIndex += 1
+    speak(phrase)
+  }
+
+  /// Any cue: a haptic and the phrase, logged to cues.csv like the test cues.
+  func speak(_ phrase: String) {
     nextId += 1
     let id = nextId
     lastCueId = id
     lastCueAt = Date()
-    let phrase = CuePhrases.phrase(at: phraseIndex)
-    phraseIndex += 1
     WKInterfaceDevice.current().play(.notification)
 
     // Speech is always attempted. The route is read after activation and only logged, never used to skip.
@@ -183,7 +206,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
       guard let id = self.utteranceIds.removeValue(forKey: ObjectIdentifier(utterance)),
             let ctx = self.inFlight.removeValue(forKey: id) else { return }
       self.emit(id, kind, mode: .speech, headphones: ctx.headphones, outputs: ctx.outputs, phrase: ctx.phrase, detail: "")
-      if self.inFlight.isEmpty { self.release(force: false) }
+      if self.inFlight.isEmpty { self.release(force: self.releaseWhenIdle); self.releaseWhenIdle = false }
     }
   }
 

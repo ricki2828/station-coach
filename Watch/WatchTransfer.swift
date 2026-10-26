@@ -8,6 +8,10 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
   static let shared = WatchTransfer()
 
   @Published private(set) var acked: Set<String>
+  /// The plan the phone sent, kept across launches.
+  @Published private(set) var plan: SessionPlan?
+  /// True once the phone connection has answered at least once (so "no plan" is a fact, not a loading state).
+  @Published private(set) var planChecked = false
   /// The folder being recorded right now; never sent.
   var activeSessionId: String?
 
@@ -15,6 +19,9 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   override init() {
     acked = Set(UserDefaults.standard.stringArray(forKey: "ackedSessions") ?? [])
+    if let json = UserDefaults.standard.string(forKey: "coachPlan"), let data = json.data(using: .utf8) {
+      plan = try? JSONDecoder().decode(SessionPlan.self, from: data)
+    }
     super.init()
   }
 
@@ -60,7 +67,24 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
   // MARK: WCSessionDelegate
 
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-    if activationState == .activated { sendUnsent() }
+    if activationState == .activated {
+      sendUnsent()
+      apply(session.receivedApplicationContext)
+    }
+    DispatchQueue.main.async { self.planChecked = true }
+  }
+
+  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    apply(applicationContext)
+  }
+
+  private func apply(_ context: [String: Any]) {
+    guard let json = context["plan"] as? String, let data = json.data(using: .utf8),
+          let decoded = try? JSONDecoder().decode(SessionPlan.self, from: data) else { return }
+    DispatchQueue.main.async {
+      self.plan = decoded
+      UserDefaults.standard.set(json, forKey: "coachPlan")
+    }
   }
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {

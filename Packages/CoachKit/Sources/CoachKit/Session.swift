@@ -269,6 +269,12 @@ public struct TransferTracker: Codable, Equatable {
     sessions[session] = entry
   }
 
+  /// Percent of announced files that have arrived intact; nil for a session never seen.
+  public func progress(_ session: String) -> Int? {
+    guard let e = sessions[session], e.total > 0 else { return nil }
+    return min(100, e.okFiles.values.filter { $0 }.count * 100 / e.total)
+  }
+
   public func isComplete(_ session: String) -> Bool {
     guard let e = sessions[session] else { return false }
     return e.okFiles.count >= e.total && e.okFiles.values.allSatisfy { $0 }

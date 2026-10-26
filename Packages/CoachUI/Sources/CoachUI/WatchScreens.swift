@@ -145,9 +145,11 @@ public struct CoachStepScreen: View {
   var onMinus: () -> Void = {}
   /// M1's "didn't hear" control, pinned beside NEXT on every coach screen. Nil hides it.
   var onMissed: (() -> Void)?
+  var onAlarm: () -> Void = {}
 
-  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil) {
+  public init(model: StepScreenModel, onNext: @escaping () -> Void = {}, onPlus: @escaping () -> Void = {}, onMinus: @escaping () -> Void = {}, onMissed: (() -> Void)? = nil, onAlarm: @escaping () -> Void = {}) {
     self.onMissed = onMissed
+    self.onAlarm = onAlarm
     self.model = model
     self.onNext = onNext
     self.onPlus = onPlus
@@ -209,7 +211,7 @@ public struct CoachStepScreen: View {
         Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66).frame(maxHeight: .infinity, alignment: .bottom)
       }
       if let alarm = model.alarm {
-        AlarmBanner(text: alarm, action: "Keep and send").padding(.horizontal, 6).frame(maxHeight: .infinity, alignment: .top)
+        AlarmBanner(text: alarm, action: "Keep and send", onAction: onAlarm).padding(.horizontal, 6).frame(maxHeight: .infinity, alignment: .top)
       }
     }
   }

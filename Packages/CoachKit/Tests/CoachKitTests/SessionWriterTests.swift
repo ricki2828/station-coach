@@ -126,6 +126,17 @@ final class SessionWriterTests: XCTestCase {
     XCTAssertTrue(t.isComplete("s"))
   }
 
+  func testTransferTrackerProgress() {
+    var t = TransferTracker()
+    XCTAssertNil(t.progress("s"))
+    t.received(session: "s", name: "a", expectedBytes: 1, actualBytes: 1, total: 4)
+    XCTAssertEqual(t.progress("s"), 25)
+    t.received(session: "s", name: "b", expectedBytes: 2, actualBytes: 1, total: 4) // wrong size: not counted
+    XCTAssertEqual(t.progress("s"), 25)
+    t.received(session: "s", name: "b", expectedBytes: 2, actualBytes: 2, total: 4)
+    XCTAssertEqual(t.progress("s"), 50)
+  }
+
   func testTransferTrackerRoundTripsThroughJSON() throws {
     var t = TransferTracker()
     t.received(session: "s", name: "a", expectedBytes: 1, actualBytes: 1, total: 1)

@@ -20,6 +20,12 @@ final class RecorderController: ObservableObject {
   @Published var statusMessage: String?
   /// Set when recording is no longer trustworthy (workout ended, motion stream died). Cleared by `dismissAlarm`.
   @Published var alarm: String?
+  /// Short-lived message such as "Headphones lost, vibrating instead".
+  @Published var toast: String?
+  /// Set by the coach: fed (epoch s, magnitude g) for each stored motion sample.
+  var onMotionMagnitude: ((Double, Double) -> Void)?
+  private var coachMode = false
+  var sessionFolder: URL? { writer?.folder }
   @Published var unfinished: [String] = []
   @Published var storeHz: Int {
     didSet { UserDefaults.standard.set(storeHz, forKey: "storeHz") }
@@ -41,7 +47,7 @@ final class RecorderController: ObservableObject {
 
   private let workout = WorkoutService()
   private var motion: MotionRecorder?
-  private let cues = CueRunner()
+  let cues = CueRunner()
   private var writer: SessionWriter?
   private var labelLog = LabelLog()
   private var minuteTimer: Timer?
@@ -65,12 +71,14 @@ final class RecorderController: ObservableObject {
     refreshUnfinished()
   }
 
-  func start() async {
+  func start(coach: Bool = false) async {
     guard phase == .idle else { return }
+    coachMode = coach
     phase = .starting
     statusMessage = nil
     do {
-      try await workout.requestAuthorization()
+      // A declined heart-rate permission must not stop the session: the coach still works.
+      try? await workout.requestAuthorization()
       let device = WKInterfaceDevice.current()
       device.isBatteryMonitoringEnabled = true
 
@@ -86,7 +94,7 @@ final class RecorderController: ObservableObject {
         motionApi: motion.api,
         requestedHz: motion.requestedHz,
         storeHz: motion.storeHz,
-        cueIntervalSec: cueInterval,
+        cueIntervalSec: coach ? 0 : cueInterval,
         audioMode: audioMode.rawValue,
         athlete: athlete,
         wrist: wrist)
@@ -106,11 +114,12 @@ final class RecorderController: ObservableObject {
       log("session_start", manifest.sessionId)
       await workout.endOrphanedSession()
       try await workout.start()
+      motion.onMagnitude = { [weak self] t, m in self?.onMotionMagnitude?(t, m) }
       motion.start(writer: writer)
       motionApi = motion.api
       cues.audioMode = audioMode
       await cues.prepare()
-      cues.start(interval: TimeInterval(cueInterval))
+      if !coach { cues.start(interval: TimeInterval(cueInterval)) }
       minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.minuteTick() }
       }
@@ -140,7 +149,7 @@ final class RecorderController: ObservableObject {
     minuteTimer = nil
     watchdogTimer?.invalidate()
     watchdogTimer = nil
-    cues.stop()
+    cues.stop(letSpeechFinish: coachMode)
     motion?.writeRates(atMs: Clock.epochMs())
     motion?.stop()
     await workout.stop()
@@ -161,12 +170,12 @@ final class RecorderController: ObservableObject {
     phase = .idle
   }
 
-  func tap(_ activity: Activity) {
+  func tap(_ activity: Activity, haptic: Bool = true) {
     guard phase == .running, let writer else { return }
     if let e = labelLog.set(activity, at: Clock.epochMs()) {
       writer.append(.labels, e.csvLine)
       currentLabel = labelLog.current
-      WKInterfaceDevice.current().play(.click)
+      if haptic { WKInterfaceDevice.current().play(.click) }
     }
   }
 
@@ -235,6 +244,13 @@ final class RecorderController: ObservableObject {
     cues.onCue = { [weak self] event in
       writer.append(.cues, event.csvLine)
       if event.kind == .issued { Task { @MainActor in self?.cueCount += 1 } }
+    }
+    cues.onHeadphonesLost = { [weak self] in
+      Task { @MainActor in
+        self?.toast = "Headphones lost, vibrating instead"
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        self?.toast = nil
+      }
     }
     cues.onNote = { kind, detail in writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail)) }
     cues.onIssued = { [weak self] phrase in self?.lastCue = phrase }

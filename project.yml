@@ -13,6 +13,8 @@ settings:
 packages:
   CoachKit:
     path: Packages/CoachKit
+  CoachUI:
+    path: Packages/CoachUI
 targets:
   StationCoach:
     type: application
@@ -20,6 +22,7 @@ targets:
     sources: [iOS]
     dependencies:
       - package: CoachKit
+      - package: CoachUI
       - target: StationCoachWatch
     info:
       path: iOS/Info.plist
@@ -40,6 +43,7 @@ targets:
     sources: [Watch]
     dependencies:
       - package: CoachKit
+      - package: CoachUI
     info:
       path: Watch/Info.plist
       properties:
