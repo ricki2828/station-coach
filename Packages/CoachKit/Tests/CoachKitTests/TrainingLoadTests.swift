@@ -388,7 +388,7 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.bigJump).compare), "960 load, about double your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.lighter).compare), "240 load, 50% less than your usual week (480).")
     XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.firstWeeks).compare), "360 load. Your usual week takes shape after 3 sessions.")
-    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.returning).compare), "240 load, your first week back. We compare from next week.")
+    XCTAssertEqual(LoadWords.headline(TrainingLoad.sample(.returning).compare), "240 load. Back after a break. We compare once you have two weeks back.")
   }
 
   func testBandWordsAndWhatChanged() {
@@ -436,7 +436,7 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(n(.stepUp)?.body, "600 load, 25% more than your usual week. Tap for what changed.")
     XCTAssertEqual(n(.bigJump)?.body, "960 load, about double your usual week. Tap for what changed.")
     XCTAssertEqual(n(.lighter)?.body, "240 load, 50% less than your usual week. Tap for what changed.")
-    XCTAssertEqual(n(.returning)?.body, "240 load, your first week back. We compare from next week. Tap for what changed.")
+    XCTAssertEqual(n(.returning)?.body, "240 load. Back after a break. We compare once you have two weeks back. Tap for what changed.")
     XCTAssertEqual(n(.usual, unsent: true)?.body, "480 load, about your usual week. Tap for what changed. (sync your watch for the full week)")
   }
 
@@ -548,7 +548,7 @@ final class TrainingLoadTests: XCTestCase {
     let back = [load(200, at: month(5, 3)), load(200, at: month(6, 3)), load(200, at: month(10, 4))]
     let r = LoadCompare.compare(back, periodStart: oct(), unit: .month, calendar: cal)
     XCTAssertEqual(r.state, .returning)
-    XCTAssertEqual(LoadWords.headline(r), "200 load, your first month back. We compare from next month.")
+    XCTAssertEqual(LoadWords.headline(r), "200 load. Back after a break. We compare once you have two months back.")
   }
 
   func testLateStartingFirstMonthDoesNotDragUsualDown() {

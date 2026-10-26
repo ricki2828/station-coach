@@ -558,7 +558,7 @@ public enum LoadWords {
     switch c.state {
     case .noSessions: return "No sessions this \(c.unit.word)."
     case .firstWeeks: return "\(load) load. Your usual \(c.unit.word) takes shape after 3 sessions."
-    case .returning: return "\(load) load, your first \(c.unit.word) back. We compare from next \(c.unit.word)."
+    case .returning: return "\(load) load. Back after a break. We compare once you have two \(c.unit.word)s back."
     case .compared:
       let usual = includeUsual ? c.usualRounded.map { " (\(number($0)))" } ?? "" : ""
       return "\(load) load, \(phrase(c) ?? "")\(usual)."
