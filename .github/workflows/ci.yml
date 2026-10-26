@@ -1,0 +1,46 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  report-tool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - run: python3 -m unittest discover -s tools/tests -v
+      - name: Fixture is current
+        run: |
+          python3 tools/make_fixture.py
+          git diff --exit-code tools/fixtures
+
+  apple:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun simctl list runtimes
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: CoachKit unit tests
+        working-directory: Packages/CoachKit
+        run: swift test
+      - name: Build watch app (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project StationCoach.xcodeproj -scheme StationCoachWatch \
+            -destination 'generic/platform=watchOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Build iOS app with embedded watch app (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project StationCoach.xcodeproj -scheme StationCoach \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 60

@@ -1,0 +1,3 @@
+epoch_ms,stream,raw_samples,raw_hz,stored_samples,stored_hz
+1790000060000,accel,48000,800.0,6000,100.0
+1790000060000,motion,12000,200.0,6000,100.0

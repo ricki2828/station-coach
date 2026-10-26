@@ -1,0 +1,60 @@
+name: StationCoach
+options:
+  bundleIdPrefix: app.stationcoach
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  CoachKit:
+    path: Packages/CoachKit
+targets:
+  StationCoach:
+    type: application
+    platform: iOS
+    sources: [iOS]
+    dependencies:
+      - package: CoachKit
+      - target: StationCoachWatch
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Station Recorder
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.stationcoach.recorder
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+  StationCoachWatch:
+    type: application
+    platform: watchOS
+    sources: [Watch]
+    dependencies:
+      - package: CoachKit
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Recorder
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: app.stationcoach.recorder
+        WKBackgroundModes: [workout-processing, audio]
+        NSHealthShareUsageDescription: Reads heart rate during a recorded session.
+        NSHealthUpdateUsageDescription: Saves the recorded session as a workout.
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Watch/StationCoachWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.stationcoach.recorder.watchkitapp
+        GENERATE_INFOPLIST_FILE: NO
