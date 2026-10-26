@@ -76,6 +76,15 @@ final class RecorderController: ObservableObject {
     refreshUnfinished()
   }
 
+  /// The wrist the watch says it is on; the stored setting if it cannot tell.
+  private static func worn(fallback: String) -> String {
+    switch WKInterfaceDevice.current().wristLocation {
+    case .left: return "left"
+    case .right: return "right"
+    @unknown default: return fallback
+    }
+  }
+
   func start(coach: Bool = false, transitionSeconds: Int? = nil) async {
     guard phase == .idle else { return }
     coachMode = coach
@@ -101,9 +110,9 @@ final class RecorderController: ObservableObject {
         storeHz: motion.storeHz,
         cueIntervalSec: coach ? 0 : cueInterval,
         audioMode: audioMode.rawValue,
-        // The coached flow has no athlete picker: the defaults apply. Recorder-only keeps its settings.
-        athlete: coach ? Self.athleteCodes[0] : athlete,
-        wrist: coach ? "left" : wrist,
+        athlete: athlete,
+        // Coached sessions have no wrist picker: take the real wrist from the watch. Recorder-only keeps its setting.
+        wrist: coach ? Self.worn(fallback: wrist) : wrist,
         labelSource: coach ? "coach" : "athlete_taps",
         transitionLabelSeconds: coach ? transitionSeconds : nil)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
