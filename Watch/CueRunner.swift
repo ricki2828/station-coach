@@ -57,9 +57,10 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
       try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
       let activated = try await session.activate(options: [])
       longFormError = activated ? nil : "not activated (route picker dismissed?)"
+      let outputs = Self.route().outputs.joined(separator: ";")
       onNote?("audio_mode", activated
-        ? "B long-form activated outputs=\(Self.route().outputs.joined(separator: \";\"))"
-        : "B long-form NOT activated (route picker dismissed?)")
+        ? "B long-form activated outputs=\(outputs)"
+        : "B long-form NOT activated (route picker dismissed?) outputs=\(outputs)")
     } catch {
       longFormError = "\(error)"
       onNote?("audio_mode", "B long-form activation failed: \(error)")
