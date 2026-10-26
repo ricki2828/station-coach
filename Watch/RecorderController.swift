@@ -85,6 +85,14 @@ final class RecorderController: ObservableObject {
     }
   }
 
+  private static func crown() -> String? {
+    switch WKInterfaceDevice.current().crownOrientation {
+    case .left: return "left"
+    case .right: return "right"
+    @unknown default: return nil
+    }
+  }
+
   func start(coach: Bool = false, transitionSeconds: Int? = nil) async {
     guard phase == .idle else { return }
     coachMode = coach
@@ -113,6 +121,7 @@ final class RecorderController: ObservableObject {
         athlete: athlete,
         // Coached sessions have no wrist picker: take the real wrist from the watch. Recorder-only keeps its setting.
         wrist: coach ? Self.worn(fallback: wrist) : wrist,
+        crownOrientation: Self.crown(),
         labelSource: coach ? "coach" : "athlete_taps",
         transitionLabelSeconds: coach ? transitionSeconds : nil)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)

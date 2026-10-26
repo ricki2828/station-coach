@@ -17,6 +17,17 @@ final class SessionWriterTests: XCTestCase {
 
   private func text(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
 
+  func testManifestCarriesTheCrownNextToTheWristAndOldFilesStillDecode() throws {
+    var m = manifest("s1")
+    m.wrist = "left"
+    m.crownOrientation = "right"
+    let back = try JSONDecoder().decode(SessionManifest.self, from: JSONEncoder().encode(m))
+    XCTAssertEqual(back.wrist, "left")
+    XCTAssertEqual(back.crownOrientation, "right")
+    let old = try JSONEncoder().encode(manifest("s2")) // no crown set: the key is simply absent
+    XCTAssertNil(try JSONDecoder().decode(SessionManifest.self, from: old).crownOrientation)
+  }
+
   func testCreatesFolderWithHeadersAndManifest() throws {
     let w = try SessionWriter(root: root, manifest: manifest("s1"))
     XCTAssertEqual(w.folder.lastPathComponent, "s1")
