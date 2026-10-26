@@ -129,6 +129,7 @@ final class RecorderController: ObservableObject {
       motionApi = motion.api
       cues.audioMode = audioMode
       await cues.prepare()
+      if cues.headphones == false { flash("No headphones: cues by vibration") }
       if !coach { cues.start(interval: TimeInterval(cueInterval)) }
       minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.minuteTick() }
@@ -181,6 +182,15 @@ final class RecorderController: ObservableObject {
     statusMessage = "Saved \(id)"
     refreshUnfinished()
     phase = .idle
+  }
+
+  /// A short-lived notice over the running screen.
+  private func flash(_ text: String) {
+    toast = text
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 4_000_000_000)
+      if toast == text { toast = nil }
+    }
   }
 
   /// Called once a second by the coach and every 10 s by the watchdog.

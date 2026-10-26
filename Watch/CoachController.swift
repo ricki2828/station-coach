@@ -43,6 +43,8 @@ final class CoachController: ObservableObject {
   @Published private(set) var finish: FinishScreenModel?
   @Published private(set) var active = false
   @Published var showMenu = false
+  /// From the audio route after the session was activated in the chosen mode. Nil until known.
+  @Published private(set) var headphones: Bool?
 
   private let recorder: RecorderController
   private let transfer = WatchTransfer.shared
@@ -60,7 +62,13 @@ final class CoachController: ObservableObject {
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
 
-  init(recorder: RecorderController) { self.recorder = recorder }
+  init(recorder: RecorderController) {
+    self.recorder = recorder
+    recorder.cues.onRouteStatus = { [weak self] present in Task { @MainActor in self?.headphones = present } }
+  }
+
+  /// Re-reads the route for the Ready chip (a brief activation; later changes arrive as route-change events).
+  func refreshAudioRoute() { recorder.cues.probeRoute() }
 
   private var nowMs: Int64 { Clock.epochMs() }
   private var clock: TimeInterval { Date().timeIntervalSinceReferenceDate }
@@ -70,7 +78,7 @@ final class CoachController: ObservableObject {
   var readyModel: ReadyScreenModel {
     guard let plan = transfer.plan else { return transfer.planChecked ? .noPlan : .loading }
     var chips: [String] = []
-    if !CueRunner.route().headphones { chips.append("No headphones: cues by vibration") }
+    if headphones == false { chips.append("No headphones: cues by vibration") }
     if recorder.heartRateWarning { chips.append("Heart rate off. The coach still works.") }
     if let m = recorder.statusMessage, recorder.phase == .idle, !m.hasPrefix("Saved") { chips.append(m) }
     let device = WKInterfaceDevice.current()

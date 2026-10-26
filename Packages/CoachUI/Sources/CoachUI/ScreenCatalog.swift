@@ -87,6 +87,7 @@ public enum ScreenCatalog {
       watch("station-reps", CoachStepScreen(model: walls, onMissed: {})),
       watch("station-reps-low-confidence", CoachStepScreen(model: lowConf, onMissed: {})),
       watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
+      watch("toast-no-headphones", CoachStepScreen(model: { var m = run; m.toast = "No headphones: cues by vibration"; return m }(), onMissed: {})),
       watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
       watch("menu", CoachMenuScreen()),
       watch("finish-undo-window", CoachFinishScreen(model: FinishScreenModel(

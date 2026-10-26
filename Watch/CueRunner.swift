@@ -17,7 +17,13 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   /// The headphone route went away (any audio mode).
   var onHeadphonesLost: (() -> Void)?
 
+  /// Whether headphones are on the route, read after the session was activated in the chosen mode. Nil until known.
+  private(set) var headphones: Bool?
+  /// Called on the main queue each time `headphones` is re-read.
+  var onRouteStatus: ((Bool) -> Void)?
+
   private let synth = AVSpeechSynthesizer()
+  private var probing = false
   private var timer: Timer?
   private var nextId = 0
   private var phraseIndex = 0
@@ -46,6 +52,9 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
       self?.onNote?("route_change", "reason=\(reason) outputs=\(Self.route().outputs.joined(separator: ";"))")
       if AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable { self?.onHeadphonesLost?() }
       self?.routeChanged(reason: AVAudioSession.RouteChangeReason(rawValue: reason))
+      // Only a device coming or going matters; the category change our own probe causes is ignored.
+      let r = AVAudioSession.RouteChangeReason(rawValue: reason)
+      if r == .newDeviceAvailable || r == .oldDeviceUnavailable { self?.recheckRoute() }
     })
     observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
       let type = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
@@ -61,7 +70,10 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   @MainActor
   func prepare() async {
     running = true
-    guard audioMode == .longForm else { return }
+    guard audioMode == .longForm else {
+      activateAndReadRoute()
+      return
+    }
     do {
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio, options: [])
@@ -71,9 +83,47 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
       onNote?("audio_mode", activated
         ? "B long-form activated outputs=\(outputs)"
         : "B long-form NOT activated (route picker dismissed?) outputs=\(outputs)")
+      if activated { publishRoute() }
     } catch {
       longFormError = "\(error)"
       onNote?("audio_mode", "B long-form activation failed: \(error)")
+    }
+  }
+
+  private func publishRoute() {
+    let h = Self.route().headphones
+    headphones = h
+    onRouteStatus?(h)
+  }
+
+  /// A brief activation in the cue category (mixing, so music is not ducked), then the route is read and the
+  /// session released. Reading the route of an inactive session can be stale.
+  private func activateAndReadRoute() {
+    guard !probing else { return }
+    probing = true
+    defer { probing = false }
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
+      try session.setActive(true)
+      publishRoute()
+      try? session.setActive(false, options: .notifyOthersOnDeactivation)
+    } catch {
+      onNote?("audio_mode", "route probe failed: \(error)")
+    }
+  }
+
+  /// Idle screen, mode A. Mode B is never activated while idle: with no headphones that opens the route picker.
+  func probeRoute() {
+    guard !running, audioMode == .shortForm else { return }
+    activateAndReadRoute()
+  }
+
+  private func recheckRoute() {
+    if audioMode == .longForm || isSpeaking {
+      if running { publishRoute() } // the session is live (mode B) or a cue is playing (mode A)
+    } else if running || audioMode == .shortForm {
+      activateAndReadRoute()
     }
   }
 

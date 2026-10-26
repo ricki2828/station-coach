@@ -29,6 +29,7 @@ struct IdleHost: View {
         }
       }
       .navigationDestination(isPresented: $showRecorder) { HomeView() }
+      .onAppear { coach.refreshAudioRoute() }
     }
   }
 }
