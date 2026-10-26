@@ -17,16 +17,20 @@ public struct SetupModel: Equatable {
   public var division: Division
   public var targetSeconds: Int
   public var type: SessionType
+  /// Reps per round of the wall-ball focus session.
+  public var wallBallReps: Int
   public var send: SendState
 
-  public init(division: Division = .openMen, targetSeconds: Int = 5400, type: SessionType = .fullSim, send: SendState = .idle) {
+  public init(division: Division = .openMen, targetSeconds: Int = 5400, type: SessionType = .fullSim,
+              wallBallReps: Int = PlanBuilder.defaultFocusReps, send: SendState = .idle) {
     self.division = division
     self.targetSeconds = targetSeconds
     self.type = type
+    self.wallBallReps = wallBallReps
     self.send = send
   }
 
-  public var plan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type) }
+  public var plan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type, wallBallReps: wallBallReps) }
 }
 
 struct Card<Content: View>: View {
@@ -86,14 +90,17 @@ public struct SetupScreen: View {
   var onDivision: (Division) -> Void = { _ in }
   var onTargetStep: (Int) -> Void = { _ in }
   var onType: (SessionType) -> Void = { _ in }
+  var onWallBallReps: (Int) -> Void = { _ in }
   var onSend: () -> Void = {}
 
   public init(model: SetupModel, onDivision: @escaping (Division) -> Void = { _ in }, onTargetStep: @escaping (Int) -> Void = { _ in },
-              onType: @escaping (SessionType) -> Void = { _ in }, onSend: @escaping () -> Void = {}) {
+              onType: @escaping (SessionType) -> Void = { _ in }, onWallBallReps: @escaping (Int) -> Void = { _ in },
+              onSend: @escaping () -> Void = {}) {
     self.model = model
     self.onDivision = onDivision
     self.onTargetStep = onTargetStep
     self.onType = onType
+    self.onWallBallReps = onWallBallReps
     self.onSend = onSend
   }
 
@@ -126,7 +133,15 @@ public struct SetupScreen: View {
         VStack(alignment: .leading, spacing: 8) {
           label("Session")
           ForEach(SessionType.allCases) { t in
-            Choice(title: "\(t.title) \u{00B7} \(t.detail)", selected: model.type == t) { onType(t) }
+            Choice(title: "\(t.title) \u{00B7} \(t.detail(wallBallReps: model.wallBallReps))", selected: model.type == t) { onType(t) }
+          }
+          if model.type == .wallBallFocus {
+            label("Wall balls per round")
+            HStack(spacing: 8) {
+              ForEach(PlanBuilder.focusRepOptions, id: \.self) { n in
+                Choice(title: "\(n)", selected: model.wallBallReps == n) { onWallBallReps(n) }
+              }
+            }
           }
         }
       }

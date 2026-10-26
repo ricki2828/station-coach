@@ -42,6 +42,7 @@ struct SetupHost: View {
         onDivision: { model.division = $0; changed() },
         onTargetStep: { model.targetSeconds = PlanBuilder.clamped(model.targetSeconds + $0); changed() },
         onType: { model.type = $0; changed() },
+        onWallBallReps: { model.wallBallReps = $0; changed() },
         onSend: { phone.sendPlan(model.plan) })
     }
     .background(Theme.ink)
@@ -53,6 +54,7 @@ struct SetupHost: View {
     d.set(model.division.rawValue, forKey: "setup.division")
     d.set(model.targetSeconds, forKey: "setup.target")
     d.set(model.type.rawValue, forKey: "setup.type")
+    d.set(model.wallBallReps, forKey: "setup.wbReps")
   }
 
   private static func load() -> SetupModel {
@@ -60,6 +62,7 @@ struct SetupHost: View {
     var m = SetupModel()
     if let r = d.string(forKey: "setup.division"), let v = Division(rawValue: r) { m.division = v }
     if let r = d.string(forKey: "setup.type"), let v = SessionType(rawValue: r) { m.type = v }
+    if PlanBuilder.focusRepOptions.contains(d.integer(forKey: "setup.wbReps")) { m.wallBallReps = d.integer(forKey: "setup.wbReps") }
     if d.integer(forKey: "setup.target") > 0 { m.targetSeconds = d.integer(forKey: "setup.target") }
     return m
   }

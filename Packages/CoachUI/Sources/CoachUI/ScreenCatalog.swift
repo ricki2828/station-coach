@@ -116,6 +116,7 @@ public enum ScreenCatalog {
     let partial = SampleData.result(extra: [4: 30], until: 10)
     return [
       phone("setup-first-launch", SetupScreen(model: SetupModel()).frame(width: Theme.phone.width)),
+      phone("setup-wall-ball-focus", SetupScreen(model: SetupModel(type: .wallBallFocus, wallBallReps: 75)).frame(width: Theme.phone.width)),
       phone("setup-sending", SetupScreen(model: SetupModel(send: .sending(watchName: "Apple Watch"))).frame(width: Theme.phone.width)),
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),
