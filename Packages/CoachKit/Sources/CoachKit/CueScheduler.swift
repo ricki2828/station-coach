@@ -34,6 +34,9 @@ public struct CueScheduler {
 
   public mutating func offer(_ cue: CoachCue) { pending.append(cue) }
 
+  /// Forgets waiting cues of `kind` (a "Jog in" that is no use once the step has moved on). Not counted as dropped for age.
+  public mutating func drop(_ kind: CoachCueKind) { pending.removeAll { $0.kind == kind } }
+
   /// The cue to say now, or nil. Call on a short timer and after each `offer`.
   public mutating func next(at t: TimeInterval, speaking: Bool) -> CoachCue? {
     let before = pending.count

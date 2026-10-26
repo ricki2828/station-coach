@@ -16,6 +16,18 @@ final class CueSchedulerTests: XCTestCase {
     XCTAssertEqual(s.next(at: 20, speaking: false)?.text, "b") // 8 s old: still fresh
   }
 
+  func testDroppingAKindRemovesOnlyThatKind() {
+    var s = CueScheduler()
+    s.offer(cue(.planAndRun, "a", at: 0))
+    _ = s.next(at: 0, speaking: false)
+    s.offer(cue(.jogIn, "Jog in.", at: 5))
+    s.offer(cue(.midStation, "mid", at: 5))
+    s.drop(.jogIn)
+    XCTAssertEqual(s.next(at: 20, speaking: false)?.text, "mid")
+    XCTAssertNil(s.next(at: 60, speaking: false))
+    XCTAssertEqual(s.dropped, 0)
+  }
+
   func testStaleCueIsDroppedAndCounted() {
     var s = CueScheduler()
     s.offer(cue(.planAndRun, "a", at: 0))

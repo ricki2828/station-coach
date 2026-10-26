@@ -192,6 +192,7 @@ final class CoachController: ObservableObject {
 
   private func beginStep(announce: Bool = true) {
     guard let m = machine, let step = m.current else { return }
+    scheduler.drop(.jogIn) // still waiting out the cue gap when the athlete moved on: no use now
     applyLabel()
     if step.activity == .wallBalls {
       let fresh = !enteredWallBalls.contains(step.index)
