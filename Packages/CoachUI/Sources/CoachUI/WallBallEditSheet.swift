@@ -25,9 +25,9 @@ public struct WallBallEditSheet: View {
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text("Edit count").phoneStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
+      Text("Edit count").scaledStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
       Text("The watch counts reps by motion. Fix it here if it missed or added some.")
-        .font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted).fixedSize(horizontal: false, vertical: true)
+        .scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted).fixedSize(horizontal: false, vertical: true)
       PhoneCard {
         VStack(spacing: 16) {
           counter("Valid reps", value: $edit.validReps)
@@ -47,17 +47,17 @@ public struct WallBallEditSheet: View {
 
   private func counter(_ title: String, value: Binding<Int>) -> some View {
     HStack(spacing: 12) {
-      Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+      Text(title).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
       Spacer()
       roundButton("\u{2212}", label: "Fewer \(title.lowercased())") { value.wrappedValue = max(0, value.wrappedValue - 1) }
-      Text("\(value.wrappedValue)").phoneStat().foregroundStyle(PhoneTheme.inkText).frame(minWidth: 52)
+      Text("\(value.wrappedValue)").scaledStat().foregroundStyle(PhoneTheme.inkText).frame(minWidth: 52)
       roundButton("+", label: "More \(title.lowercased())") { value.wrappedValue += 1 }
     }
   }
 
   private func roundButton(_ glyph: String, label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Text(glyph).font(.system(size: 28, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
+      Text(glyph).scaledFont(28, .heavy).foregroundStyle(PhoneTheme.inkText)
         .frame(width: 48, height: 48)
         .overlay(Circle().stroke(PhoneTheme.inkText, lineWidth: 2))
     }

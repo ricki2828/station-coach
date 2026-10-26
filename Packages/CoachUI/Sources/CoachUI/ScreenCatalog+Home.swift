@@ -85,6 +85,8 @@ extension ScreenCatalog {
     let detailFull = list[0]
     let detailPartial = list[3]
     return homeStates.map { phoneW("home-\($0.name)", HomeScreen(model: $0.model, today: HistorySamples.today)) } + [
+      phoneW("home-trend-down-xl", HomeScreen(model: homeStates[2].model, today: HistorySamples.today).environment(\.dynamicTypeSize, .xxxLarge)),
+      phoneW("detail-full-xl", SessionDetailScreen(record: detailFull).environment(\.dynamicTypeSize, .xxxLarge)),
       phoneW("history-empty", HistoryScreen(records: [])),
       phoneW("history-list", HistoryScreen(records: list)),
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),

@@ -11,14 +11,14 @@ struct SessionRowContent: View {
       HStack {
         SessionChip(record.type)
         Spacer()
-        Text(HistoryFormat.shortDate(record.date)).font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+        Text(HistoryFormat.shortDate(record.date)).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
       }
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Text(Fmt.clock(r.totalSeconds)).phoneStat().foregroundStyle(PhoneTheme.inkText)
+        Text(Fmt.clock(r.totalSeconds)).scaledStat().foregroundStyle(PhoneTheme.inkText)
         if let words = record.targetWords {
-          Text(words.text).font(.system(size: 15, weight: .semibold)).foregroundStyle(words.over ? PhoneTheme.amberText : PhoneTheme.inkText)
+          Text(words.text).scaledFont(15, .semibold).foregroundStyle(words.over ? PhoneTheme.amberText : PhoneTheme.inkText)
         } else {
-          Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+          Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
         }
       }
       StationStrip(result: r, height: 8)
@@ -43,14 +43,14 @@ public struct HistoryScreen: View {
   public var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       HStack(alignment: .firstTextBaseline) {
-        Text("History").phoneStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
+        Text("History").scaledStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
         Spacer()
         TextLinkButton("Raw files", action: onRawFiles)
       }
       if let p = syncPercent {
         PhoneCard {
           VStack(alignment: .leading, spacing: 10) {
-            Text("Syncing from watch\u{2026} \(p)%").font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+            Text("Syncing from watch\u{2026} \(p)%").scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
             // Drawn, not ProgressView: ImageRenderer cannot render the UIKit-backed control.
             GeometryReader { geo in
               ZStack(alignment: .leading) {
@@ -66,7 +66,7 @@ public struct HistoryScreen: View {
       if records.isEmpty && syncPercent == nil {
         PhoneCard {
           Text("No sessions yet. Your first lands here after you finish on the watch.")
-            .font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+            .scaledFont(17, .semibold).foregroundStyle(PhoneTheme.muted)
         }
       }
       ForEach(records) { rec in
@@ -114,19 +114,19 @@ public struct SessionDetailScreen: View {
     VStack(alignment: .leading, spacing: 20) {
       HeroCard(type: record.type) {
         VStack(alignment: .leading, spacing: 8) {
-          Text("\(record.type.title) \u{00B7} \(HistoryFormat.shortDate(record.date))").phoneKicker(color: PhoneTheme.sessionText(record.type))
-          Text(insight.headline).font(.system(size: 30, weight: .heavy)).fontWidth(.condensed)
-          Text(Fmt.clock(r.totalSeconds)).phoneHero()
+          Text("\(record.type.title) \u{00B7} \(HistoryFormat.shortDate(record.date))").scaledKicker(color: PhoneTheme.sessionText(record.type))
+          Text(insight.headline).scaledFont(30, .heavy).fontWidth(.condensed)
+          Text(Fmt.clock(r.totalSeconds)).scaledHero()
           if let words = record.targetWords {
-            Text(words.text).font(.system(size: 17, weight: .semibold))
+            Text(words.text).scaledFont(17, .semibold)
           } else {
-            Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").font(.system(size: 17, weight: .semibold))
+            Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").scaledFont(17, .semibold)
           }
         }
       }
       PhoneCard {
         VStack(alignment: .leading, spacing: 12) {
-          Text("Where the time went").phoneKicker()
+          Text("Where the time went").scaledKicker()
           ForEach(r.rows.filter { !$0.step.isRun }, id: \.step.index) { row in stationRow(row) }
         }
       }
@@ -134,11 +134,11 @@ public struct SessionDetailScreen: View {
       if !slows.isEmpty {
         PhoneCard {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Runs after each station").phoneKicker()
+            Text("Runs after each station").scaledKicker()
             RecentBars(values: slows.map { max(0, $0.seconds) }, colors: slows.map { PhoneTheme.stationColor($0.afterActivity) }, caption: "Taller = slower. Run 1 is the baseline.")
             HStack(spacing: 8) {
               ForEach(Array(slows.enumerated()), id: \.offset) { _, s in
-                Text(StationStrip.shortName(s.afterActivity)).font(.system(size: 11, weight: .bold)).foregroundStyle(PhoneTheme.muted)
+                Text(StationStrip.shortName(s.afterActivity)).scaledFont(11, .bold).foregroundStyle(PhoneTheme.muted)
                   .lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity)
               }
             }
@@ -149,23 +149,23 @@ public struct SessionDetailScreen: View {
         PhoneCard {
           VStack(alignment: .leading, spacing: 10) {
             HStack {
-              Text("Wall-ball sets").phoneKicker()
+              Text("Wall-ball sets").scaledKicker()
               Spacer()
               if onSaveCount != nil { TextLinkButton("Edit count") { editing = true } }
             }
             if noReps > 0 {
-              Text(noReps == 1 ? "1 no-rep" : "\(noReps) no-reps").font(.system(size: 17, weight: .heavy)).foregroundStyle(PhoneTheme.amberText)
+              Text(noReps == 1 ? "1 no-rep" : "\(noReps) no-reps").scaledFont(17, .heavy).foregroundStyle(PhoneTheme.amberText)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8, alignment: .top)], alignment: .leading, spacing: 10) {
               ForEach(Array(sets.enumerated()), id: \.offset) { _, s in
                 VStack(spacing: 2) {
-                  Text("\(s.reps)").font(.system(size: 17, weight: .heavy)).foregroundStyle(Theme.ink)
+                  Text("\(s.reps)").scaledFont(17, .heavy).foregroundStyle(Theme.ink)
                     .frame(width: 48, height: 32).background(PhoneTheme.sessionColor(.wallBallFocus), in: Capsule())
-                  Text(s.restBeforeSeconds > 0 ? "\(s.restBeforeSeconds) s rest" : "first").font(.system(size: 12, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+                  Text(s.restBeforeSeconds > 0 ? "\(s.restBeforeSeconds) s rest" : "first").scaledFont(12, .semibold).foregroundStyle(PhoneTheme.muted)
                 }
               }
             }
-            Text("Rep count is an estimate.").font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+            Text("Rep count is an estimate.").scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
           }
         }
       }
@@ -191,6 +191,8 @@ public struct SessionDetailScreen: View {
       ViewThatFits(in: .horizontal) {
         HStack(spacing: 8) { nameText(row.step.name); trailing(row) }
         HStack(spacing: 8) { nameText(row.step.activity == .burpeeBroadJump ? "BBJ" : row.step.name); trailing(row) }
+        // Largest text sizes: let the name wrap rather than clip.
+        HStack(spacing: 8) { Text(row.step.name).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText).lineLimit(2); trailing(row) }
       }
     }
     .accessibilityElement(children: .ignore)
@@ -204,19 +206,19 @@ public struct SessionDetailScreen: View {
   }
 
   private func nameText(_ s: String) -> some View {
-    Text(s).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+    Text(s).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize(horizontal: true, vertical: false)
   }
 
   @ViewBuilder private func trailing(_ row: CoachResult.Row) -> some View {
     Spacer(minLength: 8)
     if let actual = row.actualSeconds, let d = row.deltaSeconds {
       let w = DeltaWords.text(d)
-      Text(w.text).font(.system(size: 15, weight: .semibold)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+      Text(w.text).scaledFont(15, .semibold).lineLimit(1).fixedSize(horizontal: true, vertical: false)
         .foregroundStyle(w.over == nil ? PhoneTheme.muted : w.over! ? PhoneTheme.amberText : PhoneTheme.inkText)
-      Text(Fmt.clock(actual)).font(.system(size: 20, weight: .semibold)).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
+      Text(Fmt.clock(actual)).scaledFont(20, .semibold).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
         .frame(minWidth: 64, alignment: .trailing)
     } else {
-      Text("not done").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+      Text("not done").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
     }
   }
 }

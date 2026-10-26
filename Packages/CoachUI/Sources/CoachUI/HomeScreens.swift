@@ -27,13 +27,13 @@ public struct HomeScreen: View {
       HStack(alignment: .top) {
         Wordmark()
         Spacer()
-        Text(HistoryFormat.shortDate(today)).font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
+        Text(HistoryFormat.shortDate(today)).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
       }
       hero
       PhoneCard {
         VStack(alignment: .leading, spacing: 12) {
-          Text("How to get better").phoneKicker()
-          Text(model.next.line).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+          Text("How to get better").scaledKicker()
+          Text(model.next.line).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
             .fixedSize(horizontal: false, vertical: true)
           PrimaryButton(model.next.ctaTitle) { onStart(model.next.type) }
         }
@@ -42,7 +42,7 @@ public struct HomeScreen: View {
         Button { onOpenLast(last) } label: {
           PhoneCard {
             VStack(alignment: .leading, spacing: 10) {
-              Text("Last session").phoneKicker()
+              Text("Last session").scaledKicker()
               SessionRowContent(record: last)
             }
           }
@@ -53,11 +53,11 @@ public struct HomeScreen: View {
         PhoneCard {
           HStack {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Your target").phoneKicker()
-              Text(model.setup.summary).font(.system(size: 17, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
+              Text("Your target").scaledKicker()
+              Text(model.setup.summary).scaledFont(17, .heavy).foregroundStyle(PhoneTheme.inkText)
             }
             Spacer()
-            Text("\u{203A}").font(.system(size: 28, weight: .semibold)).foregroundStyle(PhoneTheme.muted).accessibilityHidden(true)
+            Text("\u{203A}").scaledFont(28, .semibold).foregroundStyle(PhoneTheme.muted).accessibilityHidden(true)
           }
         }
       }
@@ -72,19 +72,19 @@ public struct HomeScreen: View {
     let text = PhoneTheme.sessionText(heroType)
     HeroCard(type: heroType) {
       VStack(alignment: .leading, spacing: 10) {
-        Text(model.kicker).phoneKicker(color: text)
+        Text(model.kicker).scaledKicker(color: text)
         if model.state == .none {
-          Text(model.hero).phoneStatement().fixedSize(horizontal: false, vertical: true)
-          Text(model.line).font(.system(size: 17, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+          Text(model.hero).scaledStatement().fixedSize(horizontal: false, vertical: true)
+          Text(model.line).scaledFont(17, .semibold).fixedSize(horizontal: false, vertical: true)
           ghostBars(color: text)
         } else {
-          Text(model.hero).phoneHero()
-          Text(model.line).font(.system(size: 17, weight: .semibold))
+          Text(model.hero).scaledHero()
+          Text(model.line).scaledFont(17, .semibold)
           if let sub = model.sub {
-            Text(sub).font(.system(size: 15, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(sub).scaledFont(15, .semibold).fixedSize(horizontal: false, vertical: true)
           }
           if let chip = model.chip {
-            Text(chip).font(.system(size: 15, weight: .heavy)).foregroundStyle(Theme.ink)
+            Text(chip).scaledFont(15, .heavy).foregroundStyle(Theme.ink)
               .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.bone, in: Capsule())
           }
           if model.recent.count > 1 {
