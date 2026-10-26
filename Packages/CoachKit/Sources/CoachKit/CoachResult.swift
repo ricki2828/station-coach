@@ -33,10 +33,24 @@ public struct NoRepEvent: Codable, Equatable {
   public let tMs: Int64
   /// 0-based wall-ball set the rep belonged to.
   public let setIndex: Int
+  /// Plan step the tap happened in. Nil in files from before this field: the first wall-ball step.
+  public let stepIndex: Int?
 
-  public init(tMs: Int64, setIndex: Int) {
+  public init(tMs: Int64, setIndex: Int, stepIndex: Int? = nil) {
     self.tMs = tMs
     self.setIndex = setIndex
+    self.stepIndex = stepIndex
+  }
+}
+
+/// What the phone's Edit count sheet sets: the final counts for the wall balls, replacing the watch's.
+public struct WallBallCorrection: Codable, Equatable {
+  public var validReps: Int
+  public var noReps: Int
+
+  public init(validReps: Int, noReps: Int) {
+    self.validReps = validReps
+    self.noReps = noReps
   }
 }
 
@@ -67,11 +81,11 @@ public struct CoachResult: Codable, Equatable {
   public var endedAtEpochMs: Int64
   /// Every NO REP tap, in order. Absent in files written before the feature.
   public var noReps: [NoRepEvent]
-  /// Total throws as corrected afterwards (on the phone); nil = the watch's count stands.
-  public var wallBallCorrection: Int?
+  /// Counts as corrected afterwards on the phone; nil = the watch's data stands.
+  public var wallBallCorrection: WallBallCorrection?
 
   public init(plan: SessionPlan, splits: [StepSplit], early: Bool, repTimesMs: [Int64], repCorrection: Int, startedAtEpochMs: Int64, endedAtEpochMs: Int64,
-              noReps: [NoRepEvent] = [], wallBallCorrection: Int? = nil) {
+              noReps: [NoRepEvent] = [], wallBallCorrection: WallBallCorrection? = nil) {
     self.noReps = noReps
     self.wallBallCorrection = wallBallCorrection
     self.plan = plan
@@ -97,29 +111,44 @@ public struct CoachResult: Codable, Equatable {
     startedAtEpochMs = try c.decode(Int64.self, forKey: .startedAtEpochMs)
     endedAtEpochMs = try c.decode(Int64.self, forKey: .endedAtEpochMs)
     noReps = try c.decodeIfPresent([NoRepEvent].self, forKey: .noReps) ?? []
-    wallBallCorrection = try c.decodeIfPresent(Int.self, forKey: .wallBallCorrection)
+    if let corr = try? c.decodeIfPresent(WallBallCorrection.self, forKey: .wallBallCorrection) {
+      wallBallCorrection = corr
+    } else if let total = try? c.decodeIfPresent(Int.self, forKey: .wallBallCorrection) {
+      // Early builds stored the corrected total of throws; the no-reps were the logged taps.
+      wallBallCorrection = WallBallCorrection(validReps: max(0, total - noReps.count), noReps: noReps.count)
+    } else {
+      wallBallCorrection = nil
+    }
   }
 
   public static let fileName = "coach.json"
 
-  /// Sizes of the wall-ball sets in the plan (empty without a wall-ball step).
-  public var plannedWallBallSets: [Int] { plan.steps.first { $0.activity == .wallBalls }?.sets ?? [] }
+  /// No-reps: the phone's correction when set, else the taps logged on the watch.
+  public var noRepCount: Int { max(0, wallBallCorrection?.noReps ?? noReps.count) }
 
-  /// Throws the athlete made: the phone's corrected total when set, else the watch's count plus manual +/-.
-  /// Includes the no-reps.
-  public var totalThrows: Int {
-    max(0, wallBallCorrection ?? (repTimesMs.count + repCorrection))
+  /// Throws that counted: the phone's correction when set, else the watch's count (plus manual +/-) minus the no-reps.
+  public var validReps: Int {
+    max(0, wallBallCorrection?.validReps ?? (repTimesMs.count + repCorrection - noReps.count))
   }
 
-  public var totalNoReps: Int { noReps.count }
+  /// Every throw, no-reps included.
+  public var totalThrows: Int { validReps + noRepCount }
 
-  /// Throws that counted.
-  public var validReps: Int { max(0, totalThrows - totalNoReps) }
+  /// Index of the first wall-ball step, where events without a `stepIndex` belong.
+  private var firstWallBallStep: Int? { plan.steps.first { $0.activity == .wallBalls }?.index }
 
-  /// No-reps per planned set (index = set), sized to the plan's sets.
-  public var noRepsBySet: [Int] {
-    var out = [Int](repeating: 0, count: max(plannedWallBallSets.count, (noReps.map(\.setIndex).max() ?? -1) + 1))
-    for e in noReps where e.setIndex >= 0 { out[e.setIndex] += 1 }
+  /// Taps in one wall-ball step.
+  public func noReps(inStep step: Int) -> [NoRepEvent] {
+    noReps.filter { ($0.stepIndex ?? firstWallBallStep) == step }
+  }
+
+  /// No-reps per set of one wall-ball step (default: the first), sized to that step's sets. From the logged taps.
+  public func noRepsBySet(step: Int? = nil) -> [Int] {
+    let index = step ?? firstWallBallStep
+    let events = index.map(noReps(inStep:)) ?? []
+    let planned = index.map { plan.steps[$0].sets.count } ?? 0
+    var out = [Int](repeating: 0, count: max(planned, (events.map(\.setIndex).max() ?? -1) + 1))
+    for e in events where e.setIndex >= 0 { out[e.setIndex] += 1 }
     return out
   }
 
@@ -208,13 +237,16 @@ public enum InsightPicker {
         return Insight(rule: 3, headline: "You rested \(Fmt.gap(rest)) in wall balls, \(Int((share * 100).rounded()))% of the station")
       }
     }
-    // 4. No-reps that clustered in the last third of the sets.
-    let setCount = result.plannedWallBallSets.count
-    if setCount >= 3, result.totalNoReps >= lateNoRepsMin {
-      let firstLate = (setCount * 2 + 2) / 3 // ceil(2n/3): the first set of the last third
-      let late = result.noReps.filter { $0.setIndex >= firstLate }
-      if late.count >= lateNoRepsMin, late.count * 3 >= result.totalNoReps * 2 {
-        return Insight(rule: 4, headline: "Your no-reps came late: \(late.count) after set \(firstLate). Depth fades when you tire.")
+    // 4. No-reps that clustered in the last third of one wall-ball step's sets. Only when the taps are the whole story:
+    // a phone correction that changed the count makes the per-set split unreliable.
+    if result.noRepCount >= lateNoRepsMin, result.noRepCount == result.noReps.count {
+      for step in result.plan.steps where step.activity == .wallBalls && step.sets.count >= 3 {
+        let events = result.noReps(inStep: step.index)
+        let firstLate = (step.sets.count * 2 + 2) / 3 // ceil(2n/3): the first set of the last third
+        let late = events.filter { $0.setIndex >= firstLate }
+        if late.count >= lateNoRepsMin, late.count * 3 >= events.count * 2 {
+          return Insight(rule: 4, headline: "Your no-reps came late: \(late.count) after set \(firstLate). Depth fades when you tire.")
+        }
       }
     }
     let planned = result.plan.plannedSeconds
