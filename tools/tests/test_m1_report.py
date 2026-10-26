@@ -102,6 +102,36 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(m1_report.main(["m1_report.py"]), 2)
 
 
+class AthleteTests(unittest.TestCase):
+    def test_groups_by_athlete(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        import json
+        folders = []
+        for name, athlete in (("s1", "A1"), ("s2", "A1"), ("s3", "A2")):
+            f = tmp / name
+            shutil.copytree(FIXTURE, f)
+            m = json.loads((f / "manifest.json").read_text())
+            m["athlete"] = athlete
+            (f / "manifest.json").write_text(json.dumps(m))
+            folders.append(f)
+        text = "\n".join(m1_report.athlete_summary(folders))
+        self.assertIn("A1: 2 session(s), wrist left, 4.0 min labelled, all 10 activities", text)
+        self.assertIn("A2: 1 session(s)", text)
+        self.assertIn("run=0.7", text)  # A1: 2 x 20 s = 0.67 min
+
+    def test_missing_athlete_is_grouped_unknown(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        f = tmp / "s"
+        shutil.copytree(FIXTURE, f)
+        import json
+        m = json.loads((f / "manifest.json").read_text())
+        del m["athlete"]
+        (f / "manifest.json").write_text(json.dumps(m))
+        self.assertIn("?: 1 session(s)", "\n".join(m1_report.athlete_summary([f])))
+
+
 class DegradedSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

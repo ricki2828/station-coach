@@ -14,6 +14,13 @@ struct HomeView: View {
             Button("Keep and send") { recorder.keepUnfinished() }
           }
         }
+        Picker("Athlete", selection: $recorder.athlete) {
+          ForEach(RecorderController.athleteCodes, id: \.self) { Text($0).tag($0) }
+        }
+        Picker("Wrist", selection: $recorder.wrist) {
+          Text("Left").tag("left")
+          Text("Right").tag("right")
+        }
         Button("Start session") { Task { await recorder.start() } }
           .tint(.green)
         Stepper("Cue every \(recorder.cueInterval)s", value: $recorder.cueInterval, in: 10...300, step: 5)

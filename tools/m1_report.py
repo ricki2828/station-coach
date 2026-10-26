@@ -26,6 +26,7 @@ CUE_MARK = 95.0
 BATTERY_MARK = 30.0
 HZ_MARK = 50.0
 BATTERY_MINUTES = 90
+MIN_ACTIVITY_MINUTES = 0.0  # an activity counts as present above this many labelled minutes
 COVERAGE_MARK = 0.95  # share of session seconds that must reach HZ_MARK
 CUE_ISSUED_MARK = 0.90  # issued cues as a share of interval x duration
 
@@ -180,6 +181,32 @@ def label_minutes(rows, start_ms, end_ms):
     return minutes
 
 
+def athlete_summary(folders):
+    """Labelled minutes per activity, grouped by the manifest's athlete code (sessions with no code
+    are grouped as '?'). Needs all 10 activities per athlete to count as covered."""
+    groups = {}
+    for folder in folders:
+        manifest = load_manifest(folder)
+        start, end = session_bounds(manifest, folder)
+        if start is None:
+            continue
+        g = groups.setdefault(manifest.get("athlete") or "?", {"sessions": 0, "wrists": set(), "minutes": {}})
+        g["sessions"] += 1
+        g["wrists"].add(manifest.get("wrist") or "?")
+        for act, mins in label_minutes(read_rows(Path(folder) / "labels.csv"), start, end).items():
+            if act in ACTIVITIES:
+                g["minutes"][act] = g["minutes"].get(act, 0.0) + mins
+    lines = ["Per athlete (labelled minutes, all sessions):"]
+    for athlete in sorted(groups):
+        g = groups[athlete]
+        missing = [a for a in ACTIVITIES if g["minutes"].get(a, 0.0) < MIN_ACTIVITY_MINUTES]
+        lines.append(f"  {athlete}: {g['sessions']} session(s), wrist {'/'.join(sorted(g['wrists']))}, "
+                     f"{sum(g['minutes'].values()):.1f} min labelled, "
+                     + ("all 10 activities" if not missing else "missing " + ", ".join(missing)))
+        lines.append("     " + "  ".join(f"{a}={g['minutes'].get(a, 0.0):.1f}" for a in ACTIVITIES))
+    return lines
+
+
 def flag(ok):
     return "PASS" if ok else "FAIL"
 
@@ -188,7 +215,8 @@ def report(folder):
     folder = Path(folder)
     manifest = load_manifest(folder)
     start, end = session_bounds(manifest, folder)
-    lines = [f"Session {manifest.get('sessionId', folder.name)}"]
+    lines = [f"Session {manifest.get('sessionId', folder.name)}  athlete {manifest.get('athlete', '?')}  "
+             f"wrist {manifest.get('wrist', '?')}  audio mode {manifest.get('audioMode', '?')}"]
     if start is None:
         return lines + ["  no data"]
     lines.append(f"  device {manifest.get('device', '?')}  os {manifest.get('osVersion', '?')}  "
@@ -256,6 +284,8 @@ def main(argv):
         if i:
             print()
         print("\n".join(report(folder)))
+    print()
+    print("\n".join(athlete_summary(argv[1:])))
     return 0
 
 

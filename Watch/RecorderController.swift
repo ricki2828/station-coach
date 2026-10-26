@@ -27,6 +27,14 @@ final class RecorderController: ObservableObject {
   @Published var audioMode: AudioMode {
     didSet { UserDefaults.standard.set(audioMode.rawValue, forKey: "audioMode") }
   }
+  /// Athlete code (A1, A2, A3: never a name) and wrist side, stored in the manifest.
+  @Published var athlete: String {
+    didSet { UserDefaults.standard.set(athlete, forKey: "athlete") }
+  }
+  @Published var wrist: String {
+    didSet { UserDefaults.standard.set(wrist, forKey: "wrist") }
+  }
+  static let athleteCodes = ["A1", "A2", "A3", "A4"]
   @Published var cueInterval: Int {
     didSet { UserDefaults.standard.set(cueInterval, forKey: "cueInterval") }
   }
@@ -45,6 +53,8 @@ final class RecorderController: ObservableObject {
     let hz = UserDefaults.standard.integer(forKey: "storeHz")
     storeHz = hz > 0 ? hz : 100
     audioMode = AudioMode(rawValue: UserDefaults.standard.string(forKey: "audioMode") ?? "") ?? .shortForm
+    athlete = UserDefaults.standard.string(forKey: "athlete") ?? Self.athleteCodes[0]
+    wrist = UserDefaults.standard.string(forKey: "wrist") ?? "left"
     refreshUnfinished()
   }
 
@@ -70,7 +80,9 @@ final class RecorderController: ObservableObject {
         requestedHz: motion.requestedHz,
         storeHz: motion.storeHz,
         cueIntervalSec: cueInterval,
-        audioMode: audioMode.rawValue)
+        audioMode: audioMode.rawValue,
+        athlete: athlete,
+        wrist: wrist)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
       self.writer = writer
       self.motion = motion
