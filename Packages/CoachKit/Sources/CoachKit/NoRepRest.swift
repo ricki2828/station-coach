@@ -6,8 +6,12 @@ import Foundation
 public struct NoRepRest: Equatable {
   /// No counted rep for this long: the athlete is resting.
   public static let pauseMs: Int64 = 4000
-  /// At a set end the button may come up sooner, but never within this long of the last counted rep.
-  public static let settleMs: Int64 = 1500
+  /// At a set end the button may come up sooner than `pauseMs`, but never within this long of the last counted rep,
+  /// or 1.2x the athlete's median rep interval when that is longer: a slow thrower going straight into the next set
+  /// must not see it.
+  public static let settleMs: Int64 = 3000
+  public static let settleIntervalFactor = 1.2
+  private static let keptIntervals = 9
   /// A "No rep noted" that cannot start within this long of the tap is dropped.
   public static let cueMaxAgeSeconds: TimeInterval = 5
 
@@ -15,6 +19,7 @@ public struct NoRepRest: Equatable {
   public private(set) var undoUntilMs: Int64 = 0
   private var lastCount: Int
   private var lastRepMs: Int64
+  private var intervals: [Int64] = []
 
   public init(count: Int = 0, nowMs: Int64 = 0) {
     lastCount = count
@@ -33,6 +38,10 @@ public struct NoRepRest: Equatable {
   @discardableResult
   public mutating func update(nowMs: Int64, count: Int, done: Int, sets: [Int]) -> Bool {
     if count != lastCount {
+      if count > lastCount, lastCount > 0 {
+        intervals.append(nowMs - lastRepMs)
+        if intervals.count > Self.keptIntervals { intervals.removeFirst() }
+      }
       lastCount = count
       lastRepMs = nowMs
       shown = false
@@ -42,8 +51,17 @@ public struct NoRepRest: Equatable {
     let quiet = nowMs - lastRepMs
     var cumulative = 0
     let setEnd = sets.contains { cumulative += $0; return done == cumulative }
-    if quiet >= Self.pauseMs || (setEnd && quiet >= Self.settleMs) { shown = true }
+    if quiet >= Self.pauseMs || (setEnd && quiet >= settleMs) { shown = true }
     return shown
+  }
+
+  /// The quiet time a set end needs before the button shows.
+  public var settleMs: Int64 {
+    guard !intervals.isEmpty else { return Self.settleMs }
+    let sorted = intervals.sorted()
+    let n = sorted.count
+    let median = n % 2 == 1 ? Double(sorted[n / 2]) : Double(sorted[n / 2 - 1] + sorted[n / 2]) / 2
+    return max(Self.settleMs, Int64((median * Self.settleIntervalFactor).rounded()))
   }
 
   /// A NO REP was tapped: the Undo chip is up for `NoRepLog.undoWindowSeconds`, whatever the athlete does next.
