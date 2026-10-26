@@ -281,6 +281,7 @@ final class RecorderController: ObservableObject {
       Task { @MainActor in
         guard let self else { return }
         self.hrWatch.sample(at: self.clock)
+        if self.hrOff { writer.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: "hr_on", detail: "heart-rate sample after off")) }
         self.hrOff = false
         self.heartRate = Int(bpm.rounded())
       }

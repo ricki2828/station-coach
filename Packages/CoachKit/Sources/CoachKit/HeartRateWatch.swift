@@ -1,10 +1,10 @@
 import Foundation
 
 /// Decides whether heart rate should be called "off" during a session. HealthKit never says whether a
-/// read was declined, so the only evidence is samples: none within `firstSampleDeadline` of the start,
+/// read was declined, so the only evidence is samples: none within `firstSampleDeadline` of the start (a cold start can take 15 s or more),
 /// or none for `gapDeadline` after earlier ones (a strap-less wrist, a loose band).
 public struct HeartRateWatch: Equatable {
-  public static let firstSampleDeadline: TimeInterval = 20
+  public static let firstSampleDeadline: TimeInterval = 30
   public static let gapDeadline: TimeInterval = 60
 
   private var startedAt: TimeInterval?
