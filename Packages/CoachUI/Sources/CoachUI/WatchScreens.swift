@@ -293,12 +293,11 @@ public struct CoachStepScreen: View {
     VStack(spacing: c ? 2 : 3) {
       DeltaBand(seconds: model.deltaSeconds, height: c ? 22 : 26)
       HStack(spacing: 4) {
-        // The title keeps its room (scaling, never "WALL BA\u{2026}"); the LEFT badge and heart chip give way first.
+        // The title scales down (never "WALL BA\u{2026}"); the LEFT badge and heart chip keep their full width.
         Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.5)
-          .layoutPriority(1)
         if model.kind == .reps {
           // A low-confidence count is flagged in this badge ("LEFT ~"), not inside the number: the digits keep their room.
-          Text(model.approximate ? "LEFT ~" : "LEFT").font(.system(size: c ? 11 : 12, weight: .heavy)).lineLimit(1)
+          Text(model.approximate ? "LEFT ~" : "LEFT").font(.system(size: c ? 11 : 12, weight: .heavy)).lineLimit(1).fixedSize()
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(fg.opacity(0.18), in: Capsule())
             .accessibilityLabel(model.approximate ? "Reps left, estimated" : "Reps left")
@@ -310,9 +309,9 @@ public struct CoachStepScreen: View {
         }
         Spacer(minLength: 0)
         if model.hrOff {
-          HeartOffChip()
+          HeartOffChip().fixedSize().layoutPriority(2)
         } else if let bpm = model.hrBpm {
-          HeartChip(bpm: bpm)
+          HeartChip(bpm: bpm).fixedSize().layoutPriority(2)
         }
       }
       .foregroundStyle(fg)
