@@ -47,13 +47,14 @@ public enum CoachCopy {
   }
 
   /// Said as a run begins. After a heavy station it carries the legs line; after any station a plan check.
-  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int) -> String {
+  /// The spoken target is the kilometre alone: the plan's run target also holds two changeover allowances.
+  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0) -> String {
     var parts: [String] = []
     if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds)) }
     if let station, heavyLegs.contains(station.activity) {
       parts.append("Legs feel heavy for 200 metres. Short quick steps.")
     }
-    parts.append("Target \(Fmt.clock(run.targetSeconds)) for this kilometre.")
+    parts.append("Target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds))) for this kilometre.")
     return parts.joined(separator: " ")
   }
 

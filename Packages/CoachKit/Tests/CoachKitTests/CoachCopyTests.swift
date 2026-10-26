@@ -26,11 +26,11 @@ final class CoachCopyTests: XCTestCase {
   func testRunStartAfterSledCarriesLegsLine() {
     let run2 = plan.steps[2], push = plan.steps[3]
     XCTAssertEqual(
-      CoachCopy.runStart(run: plan.steps[4], after: push, deltaSeconds: -30),
-      "Thirty seconds up on plan. Legs feel heavy for 200 metres. Short quick steps. Target 5:24 for this kilometre.")
-    XCTAssertEqual(CoachCopy.runStart(run: run2, after: plan.steps[1], deltaSeconds: 20),
-                   "Twenty seconds down, stay calm. Target 5:24 for this kilometre.")
-    XCTAssertEqual(CoachCopy.runStart(run: plan.steps[0], after: nil, deltaSeconds: 0), "Target 5:24 for this kilometre.")
+      CoachCopy.runStart(run: plan.steps[4], after: push, deltaSeconds: -30, transitionSeconds: plan.transitionSeconds),
+      "Thirty seconds up on plan. Legs feel heavy for 200 metres. Short quick steps. Target 4:48 for this kilometre.")
+    XCTAssertEqual(CoachCopy.runStart(run: run2, after: plan.steps[1], deltaSeconds: 20, transitionSeconds: plan.transitionSeconds),
+                   "Twenty seconds down, stay calm. Target 4:48 for this kilometre.")
+    XCTAssertEqual(CoachCopy.runStart(run: plan.steps[0], after: nil, deltaSeconds: 0, transitionSeconds: plan.transitionSeconds), "Target 4:48 for this kilometre.")
   }
 
   func testMidStationCues() {

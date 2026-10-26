@@ -160,7 +160,7 @@ public struct SetupScreen: View {
           Text("ESTIMATE").font(.system(size: 11, weight: .heavy)).foregroundStyle(Theme.ink)
             .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
         }
-        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) each").font(.system(size: 17, weight: .semibold))
+        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) including transitions").font(.system(size: 17, weight: .semibold))
         ProportionalStrip(items: plan.steps.filter { !$0.isRun }.map { (Theme.background($0.activity), Double($0.targetSeconds)) }, height: 14)
         Text("Total \(Fmt.clock(plan.plannedSeconds)). Default split: runs about half, stations by typical shares.")
           .font(.system(size: 13)).foregroundStyle(Theme.bone.opacity(0.7))
