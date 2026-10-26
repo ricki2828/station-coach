@@ -87,7 +87,7 @@ public struct MomentScreen: View {
         .animation(animate && !reduceMotion ? .easeOut(duration: 1.1) : nil, value: shown)
       Text(display.line).font(.system(size: 17, weight: .semibold)).fixedSize(horizontal: false, vertical: true).padding(.top, 12)
       if let result {
-        StationStrip(result: result, labelled: true, height: 14)
+        ShareStrip(result: result)
           .padding(12)
           .background(PhoneTheme.paper.opacity(0.92), in: RoundedRectangle(cornerRadius: 14))
           .padding(.top, 24)
