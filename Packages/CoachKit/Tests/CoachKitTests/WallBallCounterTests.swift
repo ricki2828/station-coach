@@ -59,6 +59,20 @@ final class WallBallCounterTests: XCTestCase {
     XCTAssertEqual(c.count, 6)
   }
 
+  func testALongJogInBeforeTheFirstRepIsNotCounted() {
+    // NEXT tapped at the end of the run lane, then 15 s of jogging to the wall: arm swing every 0.4 s.
+    let jog = (0..<36).map { 0.5 + Double($0) * 0.4 }
+    let c = run(signal(bursts: jog + every(3, count: 20, from: 17.5), amp: 1.5, duration: 17.5 + 62 + 3))
+    XCTAssertEqual(c.count, 20)
+    XCTAssertEqual(c.confidence, .high)
+  }
+
+  func testRealRepsAtTheFastestRhythmAreNotMistakenForJogging() {
+    // throw, catch 1.3 s later, next throw 2 s after the first: three peaks inside 2 s, under the jog rule
+    let c = run(signal(bursts: every(2, count: 15), amp: 1.5, duration: 40, catchDelay: 1.3))
+    XCTAssertEqual(c.count, 15)
+  }
+
   func testEarlyPeaksAreSkippedAndLaterOnesCounted() {
     let c = run(signal(bursts: [1.0, 5.0], amp: 1.5, duration: 9))
     XCTAssertEqual(c.count, 1)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Heuristic wall-ball rep counter: peaks in the smoothed magnitude of wrist (user) acceleration, in g.
-/// A beta. It never blocks anything: feed it samples, read `count` and `confidence`; the athlete can correct.
+/// Jogging in (arm swing, 4+ peaks in 2 s) and the first 4 s of a station are not counted. A beta. It never blocks anything: feed it samples, read `count` and `confidence`; the athlete can correct.
 public struct WallBallCounter {
   public enum Confidence { case high, low }
 
@@ -26,7 +26,13 @@ public struct WallBallCounter {
   private let minInterval: TimeInterval
   private let ignoreFirst: TimeInterval
   private var firstT: TimeInterval?
-
+  /// Recent peak-like maxima (any spacing), to tell arm swing from reps: reps give at most about 3 in 2 s
+  /// (throw, catch, next throw), a jog gives 4 or more.
+  private var recentPeaks: [TimeInterval] = []
+  private var joggingUntil: TimeInterval = -.infinity
+  public static let joggingPeaks = 4
+  public static let joggingWindow: TimeInterval = 2
+  public static let joggingHold: TimeInterval = 1.5
   public init(minInterval: TimeInterval = WallBallCounter.defaultMinInterval, ignoreFirstSeconds: TimeInterval = WallBallCounter.defaultIgnoreFirst) {
     self.minInterval = minInterval
     self.ignoreFirst = ignoreFirstSeconds
@@ -47,7 +53,14 @@ public struct WallBallCounter {
     }
     guard samples >= 2 else { return false }
     let threshold = max(Self.minThreshold, 0.5 * envelope)
-    if prevS > prevPrevS, prevS >= s, prevS > threshold, prevT - lastPeakT >= minInterval, prevT - (firstT ?? t) >= ignoreFirst {
+    let isPeak = prevS > prevPrevS && prevS >= s && prevS > threshold
+    if isPeak {
+      recentPeaks.append(prevT)
+      recentPeaks.removeAll { prevT - $0 > Self.joggingWindow }
+      // Counting starts only once the rhythm is rep-like: no new rep while the arms are swinging in a jog.
+      if recentPeaks.count >= Self.joggingPeaks { joggingUntil = prevT + Self.joggingHold }
+    }
+    if isPeak, prevT > joggingUntil, prevT - lastPeakT >= minInterval, prevT - (firstT ?? t) >= ignoreFirst {
       lastPeakT = prevT
       count += 1
       repTimes.append(prevT)
