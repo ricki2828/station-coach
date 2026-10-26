@@ -50,7 +50,7 @@ jobs:
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/screens"
           xcodebuild -list | head -20
-          TEST_RUNNER_SCREENS_DIR="$RUNNER_TEMP/screens" xcodebuild test -scheme CoachUI-Package \
+          TEST_RUNNER_SCREENS_DIR="$RUNNER_TEMP/screens" xcodebuild test -scheme CoachUI \
             -destination 'platform=iOS Simulator,name=iPhone 16' | tail -60
           ls "$RUNNER_TEMP/screens" | wc -l
       - name: Upload screens
