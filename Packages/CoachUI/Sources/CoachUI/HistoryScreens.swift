@@ -178,7 +178,7 @@ public struct SessionDetailScreen: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(PhoneTheme.paper)
     .sheet(isPresented: $editing) {
-      WallBallEditSheet(initial: WallBallEdit(validReps: sets.reduce(0) { $0 + $1.reps }, noReps: noReps),
+      WallBallEditSheet(initial: WallBallCountAdapter.initial(for: record, noReps: noReps),
                         onSave: { onSaveCount?($0); editing = false }, onCancel: { editing = false })
         .presentationDetents([.medium])
     }

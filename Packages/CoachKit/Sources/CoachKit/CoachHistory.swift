@@ -69,6 +69,8 @@ public enum RunFade {
     return out
   }
 
+  // TODO (P3): run 1 is the denominator, so a deliberately easy run 1 inflates the fade. Do not coach "run 1 easy".
+  // The planned changeover (`plan.transitionSeconds`) is subtracted, not the measured one, so a slow changeover counts as fade.
   /// Mean slowdown over runs 2..N, in seconds. nil with fewer than 2 runs done.
   public static func fade(_ result: CoachResult) -> Int? {
     let s = slowdowns(result)
