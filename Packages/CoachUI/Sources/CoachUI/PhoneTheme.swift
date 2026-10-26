@@ -152,6 +152,7 @@ public struct SessionChip: View {
   public var body: some View {
     Text(type.title)
       .font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1)
+      .lineLimit(1).minimumScaleFactor(0.85)
       .foregroundStyle(PhoneTheme.sessionText(type))
       .padding(.horizontal, 10).padding(.vertical, 5)
       .background(PhoneTheme.sessionColor(type), in: Capsule())
@@ -178,11 +179,25 @@ public struct StationStrip: View {
     let initial: String?
   }
 
+  static func shortName(_ a: Activity) -> String {
+    switch a {
+    case .skierg: return "Ski"
+    case .sledPush: return "Push"
+    case .sledPull: return "Pull"
+    case .burpeeBroadJump: return "BBJ"
+    case .row: return "Row"
+    case .farmersCarry: return "Carry"
+    case .sandbagLunges: return "Lunge"
+    case .wallBalls: return "WB"
+    default: return "Run"
+    }
+  }
+
   private var segments: [Seg] {
     result.rows.map { r in
       let done = r.actualSeconds != nil
       let w = Double(max(1, r.actualSeconds ?? r.step.targetSeconds))
-      let initial = r.step.isRun ? nil : String(Stations.name(r.step.activity).prefix(1)).uppercased()
+      let initial = r.step.isRun ? nil : Self.shortName(r.step.activity)
       return Seg(id: r.step.index, weight: w, activity: r.step.activity, done: done, initial: initial)
     }
   }
@@ -207,18 +222,21 @@ public struct StationStrip: View {
       }
       .frame(height: height)
       if labelled {
+        // Short names centred under each station cell (runs stay unlabelled); they may overhang a narrow cell
+        // but stay clear of each other because a run always sits between two stations.
         GeometryReader { geo in
           let gaps = CGFloat(max(0, segs.count - 1)) * 2
           let avail = geo.size.width - gaps
-          HStack(spacing: 2) {
-            ForEach(segs) { s in
-              let w = max(2, avail * s.weight / total)
-              Text(s.initial ?? "")
-                .font(.system(size: 11, weight: .heavy))
+          let starts = segs.indices.map { i in segs[..<i].reduce(CGFloat(0)) { $0 + avail * $1.weight / total + 2 } }
+          ForEach(segs) { s in
+            if let name = s.initial {
+              let i = segs.firstIndex { $0.id == s.id } ?? 0
+              let w = avail * s.weight / total
+              Text(name)
+                .font(.system(size: 10, weight: .heavy)).textCase(.uppercase)
                 .foregroundStyle(s.done ? PhoneTheme.inkText : PhoneTheme.muted)
-                .frame(width: w)
                 .fixedSize()
-                .frame(width: w)
+                .position(x: min(max(starts[i] + w / 2, 14), geo.size.width - 14), y: 7)
             }
           }
         }
