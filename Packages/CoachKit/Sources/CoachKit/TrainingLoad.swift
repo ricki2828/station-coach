@@ -663,7 +663,7 @@ public struct LoadSampleData {
   /// The last complete week against its usual, as the app judges it at `now`.
   public var compare: LoadCompare { LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar) }
   /// Six weeks ending with the last complete one (what the weekly summary charts).
-  public var weeks: [LoadPeriod] { LoadHistory.weeks(sessions, now: weekStart, count: 6, calendar: calendar) }
+  public var weeks: [LoadPeriod] { LoadHistory.periods(sessions, unit: .week, ending: weekStart, count: 6, calendar: calendar) }
   /// Six weeks ending with the week in progress (`isCurrent`, so far), what the Home card and History show.
   public var weeksSoFar: [LoadPeriod] { LoadHistory.weeks(sessions, now: now, count: 6, calendar: calendar) }
 }
