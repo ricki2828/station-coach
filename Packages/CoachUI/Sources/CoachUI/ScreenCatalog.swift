@@ -121,8 +121,8 @@ public enum ScreenCatalog {
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),
       phone("setup-send-failed", SetupScreen(model: SetupModel(send: .failed)).frame(width: Theme.phone.width)),
-      phone("history-sync-failed", VStack(spacing: 14) { SyncFailedCard(); HistoryScreen(records: Array(HistorySamples.list.prefix(2))) }
-        .padding(.top, 20).background(PhoneTheme.paper).frame(width: Theme.phone.width)),
+      phone("history-sync-failed", VStack(spacing: 0) { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20); HistoryScreen(records: Array(HistorySamples.list.prefix(2))) }
+        .background(PhoneTheme.paper).frame(width: Theme.phone.width)),
     ]
   }
 
