@@ -174,6 +174,13 @@ public struct HomeModel: Equatable {
     }
   }
 
+  /// Session types behind the bars, in order of first appearance. The bars need a legend when there is more than one.
+  public var legendTypes: [SessionType] {
+    var seen: [SessionType] = []
+    for t in recentTypes where !seen.contains(t) { seen.append(t) }
+    return seen
+  }
+
   public static func fadeText(_ s: Int) -> String { s < 0 ? "\u{2212}\(-s) s" : "\(s) s" }
 
   public var kicker: String { state == .baseline ? "YOUR RUN FADE \u{00B7} BASELINE" : "YOUR RUN FADE" }

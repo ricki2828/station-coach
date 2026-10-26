@@ -88,7 +88,12 @@ public struct HomeScreen: View {
               .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.bone, in: Capsule())
           }
           if model.recent.count > 1 {
-            RecentBars(values: model.recent, colors: model.recentTypes.map { PhoneTheme.sessionColor($0) }, caption: "Lower is better")
+            VStack(alignment: .leading, spacing: 10) {
+              RecentBars(values: model.recent, colors: model.recentTypes.map { PhoneTheme.sessionColor($0) }, caption: "Lower is better")
+              if model.legendTypes.count > 1 {
+                HStack(spacing: 8) { ForEach(model.legendTypes) { SessionChip($0) } }
+              }
+            }
               .padding(14)
               .background(Theme.bone, in: RoundedRectangle(cornerRadius: 14))
               .foregroundStyle(PhoneTheme.muted)
