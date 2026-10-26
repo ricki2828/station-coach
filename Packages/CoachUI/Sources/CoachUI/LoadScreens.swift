@@ -131,7 +131,7 @@ public struct LoadBars: View {
             .lineLimit(1).minimumScaleFactor(0.6)
             .frame(height: 18)
           Text(bar.soFar ? "SO FAR" : " ").font(.system(size: 10, weight: .heavy)).tracking(0.5)
-            .foregroundStyle(PhoneTheme.inkText).lineLimit(1).minimumScaleFactor(0.6)
+            .foregroundStyle(PhoneTheme.inkText).lineLimit(1).fixedSize()
             .frame(height: showSoFarRow ? 12 : 0).opacity(showSoFarRow ? 1 : 0)
         }
       }
@@ -465,7 +465,7 @@ public struct TrainingTotalsCard: View {
     let cur = weeks[weeks.count - 1]
     let last = LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar)
     return VStack(alignment: .leading, spacing: 12) {
-      tiles(("Load so far", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Wall balls", LoadWords.number(cur.wallBallReps)))
+      tiles(("Load", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Wall balls", LoadWords.number(cur.wallBallReps)))
       if sessions.count <= 1 {
         Text("Your load builds week by week.").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
       }

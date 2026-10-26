@@ -29,7 +29,8 @@ extension ScreenCatalog {
   /// Last year (2025, Nov-Dec) only has the tail, so the year-vs-last line compares the same stretch honestly.
   static func demoHistory(now: Date, calendar: Calendar) -> [LoadSession] {
     let firstMonday = Date(timeIntervalSince1970: 1_762_128_000)  // Mon 3 Nov 2025
-    let perWeek = [1, 1, 2, 1, 0, 0, 1, 2, 2, 2, 1, 2, 2, 3, 2, 2, 2, 1, 2, 3, 2, 2, 2, 3, 2, 2, 1, 2, 3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 3, 2, 2]
+    let cycle = [1, 1, 2, 1, 0, 0, 1, 2, 2, 2, 1, 2, 2, 3, 2, 2, 2, 1, 2, 3, 2, 2, 2, 3, 2, 2, 1, 2, 3, 2]
+    let perWeek = (0..<53).map { cycle[$0 % cycle.count] }
     let types: [SessionType] = [.fullSim, .halfSim, .fullSim, .wallBallFocus, .fullSim, .halfSim]
     let days = [1, 3, 5]
     var out: [LoadSession] = []
