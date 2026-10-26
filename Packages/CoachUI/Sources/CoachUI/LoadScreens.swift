@@ -244,7 +244,7 @@ public struct WeekCard: View {
             Text(line).font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
               .fixedSize(horizontal: false, vertical: true)
           } else {
-            Text("\(period.sessions) \(period.sessions == 1 ? "session" : "sessions")")
+            Text(period.sessions == 0 ? "No sessions yet this week" : "\(period.sessions) \(period.sessions == 1 ? "session" : "sessions")")
               .font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
           }
           LoadBars(bars: bars, usual: nil, caption: nil, barMax: 48, showValues: false, showLabels: false)
