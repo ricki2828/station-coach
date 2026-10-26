@@ -14,6 +14,7 @@ final class RecorderController: ObservableObject {
   @Published var batteryPercent: Int?
   @Published var lastCue = "-"
   @Published var cueCount = 0
+  @Published var missedTaps = 0
   @Published var motionApi = "-"
   @Published var rawHz: Int?
   @Published var statusMessage: String?
@@ -76,6 +77,7 @@ final class RecorderController: ObservableObject {
       labelLog = LabelLog()
       currentLabel = nil
       cueCount = 0
+      missedTaps = 0
       lastCue = "-"
       startedAt = started
       WatchTransfer.shared.activeSessionId = manifest.sessionId
@@ -176,7 +178,14 @@ final class RecorderController: ObservableObject {
     alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
   }
 
-  func flagMissedCue() { cues.markLastMissed() }
+  func flagMissedCue() {
+    if cues.markLastMissed() {
+      missedTaps += 1
+      WKInterfaceDevice.current().play(.click)
+    } else {
+      WKInterfaceDevice.current().play(.failure) // nothing recent to flag
+    }
+  }
 
   // MARK: Wiring
 

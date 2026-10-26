@@ -22,6 +22,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   private var nextId = 0
   private var phraseIndex = 0
   private var lastCueId: Int?
+  private var flagged = Set<Int>()
   private var lastCueAt = Date.distantPast
   private var longFormError: String?
   private var utteranceIds: [ObjectIdentifier: Int] = [:]
@@ -77,6 +78,8 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   @discardableResult
   func markLastMissed() -> Bool {
     guard let id = lastCueId, Date().timeIntervalSince(lastCueAt) <= Self.missedWindow else { return false }
+    if flagged.contains(id) { return true }
+    flagged.insert(id)
     let route = Self.route()
     emit(id, .missed, mode: .speech, headphones: route.headphones, outputs: route.outputs, phrase: "", detail: "user flagged")
     return true

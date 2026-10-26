@@ -9,7 +9,15 @@ struct SessionView: View {
   private let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
 
   var body: some View {
-    ScrollView {
+    VStack(spacing: 4) {
+      // Pinned above the scroll so it is reachable mid-exercise without scrolling.
+      Button { recorder.flagMissedCue() } label: {
+        Text("DIDN'T HEAR (\(recorder.missedTaps))")
+          .font(.caption.bold())
+          .frame(maxWidth: .infinity, minHeight: 32)
+      }
+      .tint(.orange)
+      ScrollView {
       VStack(spacing: 6) {
         if let alarm = recorder.alarm {
           VStack(spacing: 2) {
@@ -33,9 +41,8 @@ struct SessionView: View {
           }
         }
         status
-        Button("Didn't hear last cue") { recorder.flagMissedCue() }
-          .font(.caption2)
         Button("End session", role: .destructive) { confirmStop = true }
+      }
       }
     }
     .alert("End session?", isPresented: $confirmStop) {

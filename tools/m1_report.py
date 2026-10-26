@@ -49,7 +49,7 @@ def cue_delivery(rows):
     by_id = {}
     for r in rows:
         by_id.setdefault(r["cue_id"], []).append(r)
-    issued = delivered = haptic_only = missed = on_route = 0
+    issued = delivered = haptic_only = missed = on_route = finished = 0
     modes = set()
     for events in by_id.values():
         first = next((e for e in events if e["event"] == "issued"), None)
@@ -60,6 +60,8 @@ def cue_delivery(rows):
         if first["headphones"] == "1":
             on_route += 1
         kinds = {e["event"] for e in events}
+        if "finished" in kinds:
+            finished += 1
         if "missed" in kinds:
             missed += 1
         if first["mode"] == "haptic_only":
@@ -69,7 +71,7 @@ def cue_delivery(rows):
             delivered += 1
     pct = 100.0 * delivered / issued if issued else 0.0
     return {"issued": issued, "delivered": delivered, "haptic_only": haptic_only,
-            "missed": missed, "percent": pct, "route_headphones": on_route,
+            "missed": missed, "percent": pct, "route_headphones": on_route, "finished": finished,
             "audio_modes": sorted(modes)}
 
 
@@ -200,6 +202,9 @@ def report(folder):
                  f"(route showed headphones {cues['route_headphones']}, haptic-only {cues['haptic_only']}, "
                  f"flagged missed {cues['missed']}, audio mode {'/'.join(cues['audio_modes']) or '?'})  "
                  f"{flag(cues_ok)} (mark {CUE_MARK:.0f}%)")
+    tap_rate = 100.0 * cues["missed"] / cues["issued"] if cues["issued"] else 0.0
+    lines.append(f"   synth finished {cues['finished']}; athlete flagged 'didn't hear' {cues['missed']} ({tap_rate:.0f}% tap rate)"
+                 + ("; no taps, so 'delivered' means the synth finished, NOT confirmed heard" if not cues["missed"] else ""))
     lines.append(f"   cues issued {cues['issued']} of ~{expected} expected "
                  f"({100 * issued_share:.0f}%, need {100 * CUE_ISSUED_MARK:.0f}%)")
 

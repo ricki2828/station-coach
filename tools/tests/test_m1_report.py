@@ -91,6 +91,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("1. Cue delivery: 10/12 = 83.3%", out)
         self.assertIn("FAIL (mark 95%)", out)
         self.assertIn("cues issued 12 of ~12 expected", out)
+        self.assertIn("athlete flagged 'didn't hear' 1 (8% tap rate)", out)
         self.assertIn("accel 100 Hz median", out)
         self.assertIn("100.0% of session seconds", out)
         self.assertIn("PASS all 10 activities", out)
