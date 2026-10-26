@@ -597,7 +597,7 @@ public enum LoadWords {
       switch band {
       case .bigJump:
         let cap = int(usual * 1.1 / 10) * 10
-        return "Next week near \(number(cap)), just above your usual, would balance it, for instance a half sim in place of a full one."
+        return "Next week near \(number(cap)), just above your usual, would balance it."
       case .stepUp: return "A good step up. Holding here a week would let it settle."
       case .usual: return "A steady week, in line with your usual. That keeps the fade comparisons fair."
       case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
