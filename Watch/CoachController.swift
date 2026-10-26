@@ -11,10 +11,16 @@ final class LockedCounter {
   private var counter = WallBallCounter()
   private var enabled = false
 
-  func setEnabled(_ on: Bool) {
+  /// Start counting; `fresh` starts from zero, otherwise the earlier count carries on (undo back into a step).
+  func begin(fresh: Bool) {
     lock.lock(); defer { lock.unlock() }
-    enabled = on
-    if on { counter = WallBallCounter() }
+    if fresh { counter = WallBallCounter() }
+    enabled = true
+  }
+
+  func pause() {
+    lock.lock(); defer { lock.unlock() }
+    enabled = false
   }
 
   func feed(_ t: Double, _ magnitude: Double) {
@@ -47,8 +53,9 @@ final class CoachController: ObservableObject {
   private var midCueDone = Set<Int>()
   private var announcedSets = Set<Int>()
   private var repCorrection = 0
-  private var totalCorrection = 0
   private var repsByStep: [Int: [Int64]] = [:]
+  private var correctionByStep: [Int: Int] = [:]
+  private var enteredWallBalls = Set<Int>()
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
@@ -92,8 +99,9 @@ final class CoachController: ObservableObject {
     midCueDone = []
     announcedSets = []
     repCorrection = 0
-    totalCorrection = 0
     repsByStep = [:]
+    correctionByStep = [:]
+    enteredWallBalls = []
     lastLabel = nil
     let c = counter
     recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
@@ -168,20 +176,27 @@ final class CoachController: ObservableObject {
     guard let step, step.activity == .wallBalls else { return }
     let snap = counter.snapshot()
     repsByStep[step.index] = snap.times.map { Int64(($0 * 1000).rounded()) }
-    totalCorrection += repCorrection
-    repCorrection = 0
-    counter.setEnabled(false)
+    correctionByStep[step.index] = repCorrection
+    counter.pause()
   }
 
   private func beginStep(announce: Bool = true) {
     guard let m = machine, let step = m.current else { return }
     applyLabel()
     if step.activity == .wallBalls {
-      counter.setEnabled(true)
-      repCorrection = 0
+      let fresh = !enteredWallBalls.contains(step.index)
+      enteredWallBalls.insert(step.index)
+      counter.begin(fresh: fresh)
+      repCorrection = fresh ? 0 : (correctionByStep[step.index] ?? 0)
+      // Sets already passed (an undo back into the step) are not announced again.
       announcedSets = []
+      var cumulative = 0
+      for (k, size) in step.sets.enumerated() {
+        cumulative += size
+        if repsDone(step) >= cumulative { announcedSets.insert(k) }
+      }
     } else {
-      counter.setEnabled(false)
+      counter.pause()
     }
     guard announce else { return }
     if step.isRun {
@@ -293,7 +308,7 @@ final class CoachController: ObservableObject {
     guard let m = machine, let started = m.startMs else { return }
     let ended = m.endMs ?? nowMs
     let allReps = repsByStep.values.flatMap { $0 }.sorted()
-    let result = CoachResult(plan: m.plan, splits: m.splits, early: early, repTimesMs: allReps, repCorrection: totalCorrection,
+    let result = CoachResult(plan: m.plan, splits: m.splits, early: early, repTimesMs: allReps, repCorrection: correctionByStep.values.reduce(0, +),
                              startedAtEpochMs: started, endedAtEpochMs: ended)
     let saved = writeResult(result)
 
