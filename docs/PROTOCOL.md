@@ -17,7 +17,7 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 
 ## Coached session
 - Build the plan on the phone (Plan tab), tap Send to watch, then open the watch app: the Ready screen shows the session, the target and the athlete chip. START begins the workout session, the recorder and the coach together.
-- NEXT (or a double pinch, if the watch supports it) moves to the next phase. A mistaken NEXT inside 3 s of the last one is ignored. Long press for Undo or End.
+- NEXT (or a double pinch, if the watch supports it) moves to the next phase. A mistaken NEXT inside 3 s of the last one is ignored. Press and hold for 1.5 s for Undo or End. The last step's button is HOLD TO FINISH (1 s).
 - NOT HEARD sits beside NEXT on every screen. The coach only speaks one cue per 20 s and never over a cue.
 - Tap NEXT when you pick up the ball, not while you are still jogging to the wall: the counter skips the first 4 s and any arm-swing rhythm, but it cannot tell a long walk from reps.
 - The wall-ball count is a beta estimate: correct it with + and -.

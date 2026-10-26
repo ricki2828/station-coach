@@ -52,7 +52,8 @@ struct CoachRunningHost: View {
         ProgressView()
       }
     }
-    .onLongPressGesture(minimumDuration: 0.8) { coach.showMenu = true }
+    // 1.5 s: longer than the 1.0 s HOLD TO FINISH, so holding FINISH can never open the menu first.
+    .onLongPressGesture(minimumDuration: 1.5) { coach.showMenu = true }
     .sheet(isPresented: $coach.showMenu) {
       CoachMenuScreen(onUndo: { coach.undo() }, onEnd: { coach.endEarly() }, onCancel: { coach.showMenu = false })
     }
