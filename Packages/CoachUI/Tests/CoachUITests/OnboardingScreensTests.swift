@@ -40,10 +40,15 @@ final class OnboardingScreensTests: XCTestCase {
     XCTAssertEqual(first.hero, "1:21:44")
     XCTAssertEqual(first.line, "Your fade baseline is 27\u{00A0}s.")
     let best = MomentDisplay.make(.best(.fullSim, previousBest: 4864), totalSeconds: 4702, fadeSeconds: nil, previousDate: "24 Oct")
-    XCTAssertEqual(best.kicker.uppercased(), "NEW FULL SIM BEST")
-    XCTAssertEqual(best.line, "2:42 faster than 24 Oct.")
+    XCTAssertEqual(best.badge, "NEW BEST")
+    XCTAssertEqual(best.line, "\u{25B2} 2:42 faster than 24 Oct.")
     let fade = MomentDisplay.make(.leastFade(previous: 27), totalSeconds: 4800, fadeSeconds: 19)
     XCTAssertEqual(fade.hero, "19\u{00A0}s")
+    XCTAssertEqual(fade.line, "8\u{00A0}s less than your best fade. The runs are holding.")
+    XCTAssertEqual(MomentDisplay.make(.leastFade(previous: 27), totalSeconds: 4800, fadeSeconds: nil).hero, "\u{2014}")
+    let partial = MomentDisplay.make(.first(.fullSim), totalSeconds: 2975, fadeSeconds: 27, partial: (done: 5, of: 8))
+    XCTAssertTrue(partial.kicker.contains("5 of 8 stations"))
+    XCTAssertFalse(partial.line.contains("baseline is"))
   }
 
   func testMomentColoursPassContrast() {
@@ -51,7 +56,7 @@ final class OnboardingScreensTests: XCTestCase {
       let d = MomentDisplay.make(.first(t), totalSeconds: 3000, fadeSeconds: nil)
       XCTAssertEqual(d.flood, PhoneTheme.sessionColor(t))
     }
-    XCTAssertEqual(MomentDisplay.make(.best(.halfSim, previousBest: 3000), totalSeconds: 2900, fadeSeconds: nil).flood, PhoneTheme.best)
+    XCTAssertNotNil(MomentDisplay.make(.best(.halfSim, previousBest: 3000), totalSeconds: 2900, fadeSeconds: nil).badge)
   }
 
   func testMomentHeroesDiffer() {

@@ -29,6 +29,7 @@ public extension ScreenCatalog {
 
     let first = MomentDisplay.make(.first(.fullSim), totalSeconds: 4904, fadeSeconds: 27)
     let firstHalf = MomentDisplay.make(.first(.halfSim), totalSeconds: 2410, fadeSeconds: 18)
+    let firstPartial = MomentDisplay.make(.first(.fullSim), totalSeconds: 2975, fadeSeconds: 27, partial: (done: 5, of: 8))
     let best = MomentDisplay.make(.best(.fullSim, previousBest: 4864), totalSeconds: 4702, fadeSeconds: nil, previousDate: "24 Oct")
     let leastFade = MomentDisplay.make(.leastFade(previous: 27), totalSeconds: 4800, fadeSeconds: 19, sessionType: .fullSim)
 
@@ -39,11 +40,13 @@ public extension ScreenCatalog {
       phoneFull("onboarding-watch-missing", OnboardingWatchScreen(model: missing)),
       phoneFull("moment-first-full", MomentScreen(display: first, result: full, animate: false)),
       phoneFull("moment-first-half", MomentScreen(display: firstHalf, result: half, animate: false)),
+      phoneFull("moment-first-partial", MomentScreen(display: firstPartial, result: partial, animate: false)),
       phoneFull("moment-best", MomentScreen(display: best, result: full, animate: false)),
       phoneFull("moment-least-fade", MomentScreen(display: leastFade, result: full, animate: false)),
       card("sharecard-v2-full", ShareCardV2(result: full, dateText: date)),
       card("sharecard-v2-partial", ShareCardV2(result: partial, dateText: date)),
       card("sharecard-v2-moment-best", ShareCardV2(result: full, dateText: date, moment: best)),
+      card("sharecard-v2-moment-first-partial", ShareCardV2(result: partial, dateText: date, moment: firstPartial)),
       card("sharecard-v2-moment-first", ShareCardV2(result: full, dateText: date, moment: first)),
     ]
   }

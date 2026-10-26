@@ -11,31 +11,54 @@ public struct MomentDisplay: Equatable {
   public let line: String
   public let flood: Color
   public let text: Color
-  /// Seconds the hero counts up to (nil: a plain string).
+  /// Bold bone pill ("NEW BEST") that tells a best moment from a first one on the same colour.
+  public let badge: String?
+  /// Seconds the hero counts up to (nil: a plain string such as an em dash).
   public let heroSeconds: Int?
   public let heroIsClock: Bool
+  /// Set for an early-ended session: stations done and in the plan. Share cards keep this in their kicker.
+  public let partial: (done: Int, of: Int)?
+
+  public static func == (l: MomentDisplay, r: MomentDisplay) -> Bool {
+    l.kicker == r.kicker && l.hero == r.hero && l.line == r.line && l.badge == r.badge && l.flood == r.flood
+      && l.partial?.done == r.partial?.done && l.partial?.of == r.partial?.of
+  }
 
   /// - totalSeconds: the new session's total.
   /// - fadeSeconds: its run fade (nil with fewer than 2 runs).
   /// - previousDate: "24 Oct", for the new-best line.
   /// - sessionType: colours a least-fade moment (violet when unknown).
-  public static func make(_ moment: Moment, totalSeconds: Int, fadeSeconds: Int?, previousDate: String? = nil, sessionType: SessionType? = nil) -> MomentDisplay {
+  /// - partial: stations done / in the plan when the session ended early. A partial never claims a fade baseline.
+  public static func make(_ moment: Moment, totalSeconds: Int, fadeSeconds: Int?, previousDate: String? = nil, sessionType: SessionType? = nil,
+                          partial: (done: Int, of: Int)? = nil) -> MomentDisplay {
     switch moment {
     case .first(let t):
-      let line = fadeSeconds.map { "Your fade baseline is \($0)\u{00A0}s." } ?? "That sets your baseline."
-      return MomentDisplay(kicker: "Your first \(t.title)", hero: Fmt.clock(totalSeconds), line: line,
-                           flood: PhoneTheme.sessionColor(t), text: PhoneTheme.sessionText(t), heroSeconds: totalSeconds, heroIsClock: true)
+      let kicker = "Your first \(t.title)" + (partial.map { " \u{00B7} \($0.done) of \($0.of) stations" } ?? "")
+      let line: String
+      if partial != nil {
+        line = "Ended early. Finish one to set your baseline."
+      } else {
+        line = fadeSeconds.map { "Your fade baseline is \($0)\u{00A0}s." } ?? "That sets your baseline."
+      }
+      return MomentDisplay(kicker: kicker, hero: Fmt.clock(totalSeconds), line: line,
+                           flood: PhoneTheme.sessionColor(t), text: PhoneTheme.sessionText(t), badge: nil,
+                           heroSeconds: totalSeconds, heroIsClock: true, partial: partial)
     case .best(let t, let previousBest):
       let faster = Fmt.gap(previousBest - totalSeconds)
-      let line = previousDate.map { "\(faster) faster than \($0)." } ?? "\(faster) faster than your last best."
-      return MomentDisplay(kicker: "New \(t.title) best", hero: Fmt.clock(totalSeconds), line: line,
-                           flood: PhoneTheme.best, text: PhoneTheme.bestText, heroSeconds: totalSeconds, heroIsClock: true)
+      let line = previousDate.map { "\u{25B2} \(faster) faster than \($0)." } ?? "\u{25B2} \(faster) faster than your last best."
+      return MomentDisplay(kicker: t.title, hero: Fmt.clock(totalSeconds), line: line,
+                           flood: PhoneTheme.sessionColor(t), text: PhoneTheme.sessionText(t), badge: "NEW BEST",
+                           heroSeconds: totalSeconds, heroIsClock: true, partial: partial)
     case .leastFade(let previous):
-      let fade = fadeSeconds ?? 0
       let t = sessionType ?? .fullSim
+      let flood = PhoneTheme.sessionColor(t), text = PhoneTheme.sessionText(t)
+      guard let fade = fadeSeconds else {
+        return MomentDisplay(kicker: "Least fade yet", hero: "\u{2014}", line: "The runs are holding.", flood: flood, text: text,
+                             badge: nil, heroSeconds: nil, heroIsClock: false, partial: partial)
+      }
       return MomentDisplay(kicker: "Least fade yet", hero: "\(fade)\u{00A0}s",
-                           line: "Your lowest fade yet. \(max(0, previous - fade))\u{00A0}s better than your previous best.",
-                           flood: PhoneTheme.sessionColor(t), text: PhoneTheme.sessionText(t), heroSeconds: fade, heroIsClock: false)
+                           line: "\(max(0, previous - fade))\u{00A0}s less than your best fade. The runs are holding.",
+                           flood: flood, text: text, badge: nil, heroSeconds: fade, heroIsClock: false, partial: partial)
     }
   }
 }
@@ -79,13 +102,26 @@ public struct MomentScreen: View {
 
   private var content: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Text(display.kicker).font(.system(size: 15, weight: .heavy)).textCase(.uppercase).tracking(1)
-      CountingText(value: Double(settled ? (display.heroSeconds ?? 0) : 0), clock: display.heroIsClock)
-        .phoneHero(size: 96).lineLimit(1).minimumScaleFactor(0.5)
-        .padding(.top, 8)
-        .accessibilityLabel(display.hero)
-        .animation(animate && !reduceMotion ? .easeOut(duration: 1.1) : nil, value: shown)
-      Text(display.line).font(.system(size: 17, weight: .semibold)).fixedSize(horizontal: false, vertical: true).padding(.top, 12)
+      if let badge = display.badge {
+        Text(badge).scaledFont(size: 13, weight: .heavy).tracking(1)
+          .foregroundStyle(Theme.ink)
+          .padding(.horizontal, 12).padding(.vertical, 6)
+          .background(Theme.bone, in: Capsule())
+          .padding(.bottom, 12)
+      }
+      Text(display.kicker).scaledFont(size: 15, weight: .heavy).textCase(.uppercase).tracking(1)
+      Group {
+        if let secs = display.heroSeconds {
+          CountingText(value: Double(settled ? secs : 0), clock: display.heroIsClock)
+        } else {
+          Text(display.hero)
+        }
+      }
+      .scaledHero(size: 96).lineLimit(1).minimumScaleFactor(0.5)
+      .padding(.top, 8)
+      .accessibilityLabel(display.hero)
+      .animation(animate && !reduceMotion ? .easeOut(duration: 1.1) : nil, value: shown)
+      Text(display.line).scaledFont(size: 17, weight: .semibold).fixedSize(horizontal: false, vertical: true).padding(.top, 12)
       if let result {
         ShareStrip(result: result)
           .padding(12)
@@ -103,12 +139,12 @@ public struct MomentScreen: View {
       }
       HStack(spacing: 12) {
         Button(action: onNice) {
-          Text("Nice").font(.system(size: 17, weight: .heavy)).foregroundStyle(display.text)
+          Text("Nice").scaledFont(size: 17, weight: .heavy, cap: 1.3).foregroundStyle(display.text)
             .frame(maxWidth: .infinity, minHeight: PhoneTheme.buttonHeight)
             .overlay(RoundedRectangle(cornerRadius: PhoneTheme.buttonRadius).stroke(display.text, lineWidth: 2))
         }
         Button(action: onShare) {
-          Text("Share").font(.system(size: 17, weight: .heavy)).foregroundStyle(display.flood)
+          Text("Share").scaledFont(size: 17, weight: .heavy, cap: 1.3).foregroundStyle(display.flood)
             .frame(maxWidth: .infinity, minHeight: PhoneTheme.buttonHeight)
             .background(display.text, in: RoundedRectangle(cornerRadius: PhoneTheme.buttonRadius))
         }
@@ -124,7 +160,7 @@ public struct MomentScreen: View {
     .opacity(animate && reduceMotion && !shown ? 0 : 1)
     .animation(animate && reduceMotion ? .easeIn(duration: 0.4) : nil, value: shown)
     .onAppear {
-      guard animate else { return }
+      guard animate, !shown else { return }
       shown = true
       #if os(iOS)
       UINotificationFeedbackGenerator().notificationOccurred(.success)

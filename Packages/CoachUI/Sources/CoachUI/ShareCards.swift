@@ -30,16 +30,28 @@ public struct ShareCardV2: View {
   private var textColor: Color { moment?.text ?? PhoneTheme.sessionText(type) }
 
   private var kicker: String {
-    if let moment { return moment.kicker }
+    if let moment { return result.early && moment.partial == nil ? moment.kicker + " \u{00B7} \(result.completedStationCount) of \(result.plan.stationCount) stations" : moment.kicker }
     if result.early { return "\(type.title) \u{00B7} \(result.completedStationCount) of \(result.plan.stationCount) stations" }
     return type.title
   }
 
   private var heroLine: String? {
-    if let moment { return moment.line }
     if result.early { return "Ended early" }
+    if let moment { return moment.line }
     let d = result.totalSeconds - result.plan.plannedSeconds
     return "\(Fmt.gap(d)) \(d <= 0 ? "under" : "over") target"
+  }
+
+  /// A partial card never compares against the whole plan: it speaks about the stations done, against the plan for those parts.
+  private var insight: String {
+    guard result.early else { return InsightPicker.pick(result).headline }
+    let done = result.rows.filter { $0.actualSeconds != nil }
+    let actual = done.reduce(0) { $0 + ($1.actualSeconds ?? 0) }
+    let planned = done.reduce(0) { $0 + $1.step.targetSeconds }
+    let d = actual - planned
+    let n = result.completedStationCount
+    if abs(d) < 5 { return "On plan through \(n) stations." }
+    return "\(Fmt.gap(d)) \(d < 0 ? "ahead of" : "behind") plan through \(n) stations."
   }
 
   public var body: some View {
@@ -47,6 +59,10 @@ public struct ShareCardV2: View {
       Wordmark(size: 18)
       HeroCard(color: color, textColor: textColor) {
         VStack(alignment: .leading, spacing: 4) {
+          if let badge = moment?.badge {
+            Text(badge).font(.system(size: 11, weight: .heavy)).tracking(1).foregroundStyle(Theme.ink)
+              .padding(.horizontal, 10).padding(.vertical, 4).background(Theme.bone, in: Capsule())
+          }
           Text(kicker).font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1).lineLimit(1).minimumScaleFactor(0.7)
           Text(moment?.hero ?? Fmt.clock(result.totalSeconds)).phoneHero(size: 110).lineLimit(1).minimumScaleFactor(0.4)
           if let heroLine {
@@ -56,7 +72,7 @@ public struct ShareCardV2: View {
       }
       .padding(.top, 16)
       ShareStrip(result: result).padding(.top, 20)
-      Text(InsightPicker.pick(result).headline).font(.system(size: 18, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+      Text(insight).font(.system(size: 18, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
         .fixedSize(horizontal: false, vertical: true).padding(.top, 18)
       Spacer(minLength: 8)
       HStack {
