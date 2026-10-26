@@ -1,5 +1,6 @@
 import CoachKit
 import SwiftUI
+import UIKit
 import XCTest
 @testable import CoachUI
 
@@ -14,7 +15,7 @@ final class NoRepScreenshotTests: XCTestCase {
   func testRenderNoRepScreens() throws {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     let entries = NoRepScreens.watchScreens
-    XCTAssertEqual(entries.count, 6)
+    XCTAssertEqual(entries.count, 9)
     let existing = Set(ScreenCatalog.all.map(\.name))
     for entry in entries {
       XCTAssertFalse(existing.contains(entry.name), "\(entry.name) clashes with the catalog")
@@ -40,5 +41,28 @@ final class NoRepScreenshotTests: XCTestCase {
                             secondaryLabel: "", next: "", deltaSeconds: 0)
     XCTAssertFalse(m.noRepVisible)
     XCTAssertEqual(m.noRepCount, 0)
+  }
+
+  /// The natural height of the screen must fit under the clock inset at 41 mm, or the bottom row clips.
+  private func naturalHeight(_ model: StepScreenModel, compact: Bool) -> CGFloat {
+    let host = UIHostingController(rootView: CoachStepScreen(model: model, onMissed: {}).environment(\.watchCompact, compact).fixedSize(horizontal: false, vertical: true))
+    return host.sizeThatFits(in: CGSize(width: NoRepScreens.watch41.width, height: 10_000)).height
+  }
+
+  func testStepScreenFitsAt41mmWithAndWithoutNoRep() {
+    let budget = NoRepScreens.watch41.height - WatchChrome<EmptyView>.topInset
+    var plain = NoRepScreens.walls(left: 45, set: 4, noReps: 0)
+    plain.noRepVisible = false
+    var resumed = NoRepScreens.walls(left: 46, set: 4, noReps: 1, undo: true)
+    resumed.noRepVisible = false
+    let cases: [(String, StepScreenModel)] = [
+      ("plain", plain), ("no rep", NoRepScreens.walls(left: 45, set: 4, noReps: 0)),
+      ("no rep x2", NoRepScreens.walls(left: 47, set: 4, noReps: 2)),
+      ("undo", NoRepScreens.walls(left: 46, set: 4, noReps: 1, undo: true)), ("undo, resumed", resumed),
+    ]
+    for (name, model) in cases {
+      let h = naturalHeight(model, compact: true)
+      XCTAssertLessThanOrEqual(h, budget, "\(name) is \(h) pt tall; 41 mm has \(budget) under the clock")
+    }
   }
 }

@@ -17,6 +17,7 @@ public struct WatchChrome<Content: View>: View {
 
   public var body: some View {
     content
+      .environment(\.watchCompact, size.height <= watchCompactMaxHeight)
       .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topInset) }
       .frame(width: size.width, height: size.height)
       .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
