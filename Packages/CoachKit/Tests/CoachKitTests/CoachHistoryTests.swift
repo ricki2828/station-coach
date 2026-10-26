@@ -118,7 +118,7 @@ final class CoachHistoryTests: XCTestCase {
     let half = record("b", .halfSim, day: 7, fade: 12)
     XCTAssertEqual(MomentPicker.pick(previous: [full], new: half), .first(.halfSim))
     // Within a type it still fires.
-    let half2 = record("c", .halfSim, day: 14, fade: 5)
+    let half2 = record("c", .halfSim, day: 14, fade: 5, total: 40)
     XCTAssertEqual(MomentPicker.pick(previous: [full, half], new: half2), .leastFade(previous: 12))
   }
 
