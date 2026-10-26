@@ -57,6 +57,7 @@ jobs:
           xcodebuild -list | head -20
           TEST_RUNNER_SCREENS_DIR="$RUNNER_TEMP/screens" xcodebuild test -scheme CoachUI \
             -destination 'platform=iOS Simulator,name=iPhone 16' | tail -60
+          cp "$GITHUB_WORKSPACE"/iOS/Assets.xcassets/AppIcon.appiconset/icon-1024.png "$RUNNER_TEMP/screens/app-icon.png"
           ls "$RUNNER_TEMP/screens" | wc -l
       - name: Upload screens
         if: always()
