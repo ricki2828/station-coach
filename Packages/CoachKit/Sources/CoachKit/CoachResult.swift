@@ -119,7 +119,7 @@ public enum InsightPicker {
         let slow = a - first
         if slow >= runSlowdownMin, slow > (worst?.0 ?? 0) { worst = (slow, rows[i - 1].step.name.lowercased()) }
       }
-      if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.1) was \(worst.0) s slower than run 1") }
+      if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.1) was \(worst.0)\u{00A0}s slower than run 1") }
     }
     // 2. Station furthest over plan.
     let over = rows.filter { !$0.step.isRun }.compactMap { r in r.deltaSeconds.map { (r.step.name, $0) } }.max { $0.1 < $1.1 }

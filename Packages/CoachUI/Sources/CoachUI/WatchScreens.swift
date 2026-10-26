@@ -262,18 +262,19 @@ public struct CoachReadyScreen: View {
           Spacer()
           secondaryButton("Recorder only")
         case .ready(let info):
-          HStack {
+          let tight = !info.chips.isEmpty || info.batteryLine != nil
+          HStack(spacing: 6) {
             Text(info.athleteChip).font(.system(size: 15, weight: .heavy)).foregroundStyle(Theme.ink)
               .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.bone, in: Capsule())
-            Spacer()
+            Text(info.sessionName.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
           }
-          Text(info.sessionName.uppercased()).font(Theme.label(Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.7)
-          Text(info.targetText).font(Theme.number(info.chips.isEmpty && info.batteryLine == nil ? Theme.Size.dominant : 44)).condensed().lineLimit(1).minimumScaleFactor(0.5)
+          Text(info.targetText).font(Theme.number(tight ? Theme.Size.floor + 4 : Theme.Size.dominant)).condensed().lineLimit(1).minimumScaleFactor(0.5)
             .accessibilityLabel("Target \(info.targetText)")
           ForEach(info.chips, id: \.self) { chip in
             Text(chip).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
               .fixedSize(horizontal: false, vertical: true)
-              .padding(.horizontal, 8).padding(.vertical, 2)
+              .padding(.horizontal, 8).padding(.vertical, 1)
               .background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
           }
           if let b = info.batteryLine {
@@ -283,7 +284,7 @@ public struct CoachReadyScreen: View {
           Spacer(minLength: 0)
           Button(action: onStart) {
             Text("START").font(.system(size: 22, weight: .heavy)).foregroundStyle(Theme.ink)
-              .frame(maxWidth: .infinity, minHeight: 56)
+              .frame(maxWidth: .infinity, minHeight: tight ? 48 : 56)
               .background(Theme.finishFlood, in: RoundedRectangle(cornerRadius: 14))
           }.buttonStyle(.plain)
         }
