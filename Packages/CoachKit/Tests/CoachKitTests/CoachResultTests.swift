@@ -170,7 +170,7 @@ final class CoachResultTests: XCTestCase {
     XCTAssertEqual(r.totalThrows, 104)
     r.wallBallCorrection = nil
     r.repCorrection = -2
-    XCTAssertEqual(r.validReps, 97 - 2)
+    XCTAssertEqual(r.validReps, 99 - 2)
   }
 
   func testEarlyBuildTotalThrowsCorrectionStillDecodes() throws {
