@@ -47,12 +47,16 @@ def cue_delivery(rows):
     by_id = {}
     for r in rows:
         by_id.setdefault(r["cue_id"], []).append(r)
-    issued = delivered = haptic_only = missed = 0
+    issued = delivered = haptic_only = missed = on_route = 0
+    modes = set()
     for events in by_id.values():
         first = next((e for e in events if e["event"] == "issued"), None)
         if first is None:
             continue
         issued += 1
+        modes.add(first.get("audio_mode") or "?")
+        if first["headphones"] == "1":
+            on_route += 1
         kinds = {e["event"] for e in events}
         if "missed" in kinds:
             missed += 1
@@ -63,7 +67,8 @@ def cue_delivery(rows):
             delivered += 1
     pct = 100.0 * delivered / issued if issued else 0.0
     return {"issued": issued, "delivered": delivered, "haptic_only": haptic_only,
-            "missed": missed, "percent": pct}
+            "missed": missed, "percent": pct, "route_headphones": on_route,
+            "audio_modes": sorted(modes)}
 
 
 def session_bounds(manifest, folder):
@@ -159,7 +164,8 @@ def report(folder):
 
     cues = cue_delivery(read_rows(folder / "cues.csv"))
     lines.append(f"1. Cue delivery: {cues['delivered']}/{cues['issued']} = {cues['percent']:.1f}% "
-                 f"(haptic-only {cues['haptic_only']}, flagged missed {cues['missed']})  "
+                 f"(route showed headphones {cues['route_headphones']}, haptic-only {cues['haptic_only']}, "
+                 f"flagged missed {cues['missed']}, audio mode {'/'.join(cues['audio_modes']) or '?'})  "
                  f"{flag(cues['issued'] > 0 and cues['percent'] >= CUE_MARK)} (mark {CUE_MARK:.0f}%)")
 
     bat = battery_at(read_rows(folder / "battery.csv"), start, end)

@@ -6,7 +6,7 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 |---|---|---|
 | `manifest.json` | `formatVersion`, `sessionId`, `startedAtEpochMs`, `endedAtEpochMs`, `device`, `osVersion`, `appVersion`, `workoutActivityType`, `motionApi`, `requestedHz`, `storeHz`, `cueIntervalSec`, `files` | at start, rewritten at finish (`endedAtEpochMs` and `files` are absent from a session that never finished) |
 | `labels.csv` | `epoch_ms,event,activity` | on each tap / undo |
-| `cues.csv` | `epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail` | per cue event |
+| `cues.csv` | `epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode` | per cue event |
 | `battery.csv` | `epoch_ms,level,state` | every 60 s |
 | `hr.csv` | `epoch_ms,bpm` | on each HealthKit heart-rate sample |
 | `accel.csv` | `epoch_us,x,y,z` (g) | decimated to at most `storeHz` (100) |
@@ -20,7 +20,8 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 
 ## Cues
 `event`: `issued` (once per cue), then `finished` or `cancelled` (the speech synthesizer's delegate), `timeout` (no finish within 15 s), `failed`, or `missed` (the athlete tapped "Didn't hear last cue").
-`mode`: `speech` or `haptic_only` (no headphone route, or the audio session could not be activated). Every cue also plays a haptic.
+`mode`: `speech` (speech is always attempted whatever the route reads; a failed audio session is noted in `detail`) or `haptic_only` (older sessions only). Every cue also plays a haptic.
+`audio_mode`: `A` = `.playback`/`.spokenAudio` with ducking, session activated before each cue; `B` = `.longFormAudio` route policy, activated once at session start and kept active. Chosen on the watch home screen; also in `manifest.json`.
 `headphones`: `1` if any output port at that moment was Bluetooth A2DP/HFP/LE, wired headphones or AirPlay. `outputs` is `PortType/PortName` joined by `;`.
 A cue counts as delivered only if it was `speech` to headphones, `finished`, and not `missed`. All issued cues are in the denominator. `finished` means the synthesizer finished, not that a person heard it: the "Didn't hear" button is the human check.
 

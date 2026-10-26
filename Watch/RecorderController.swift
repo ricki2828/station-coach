@@ -20,6 +20,9 @@ final class RecorderController: ObservableObject {
   @Published var storeHz: Int {
     didSet { UserDefaults.standard.set(storeHz, forKey: "storeHz") }
   }
+  @Published var audioMode: AudioMode {
+    didSet { UserDefaults.standard.set(audioMode.rawValue, forKey: "audioMode") }
+  }
   @Published var cueInterval: Int {
     didSet { UserDefaults.standard.set(cueInterval, forKey: "cueInterval") }
   }
@@ -36,6 +39,7 @@ final class RecorderController: ObservableObject {
     cueInterval = saved > 0 ? saved : 45
     let hz = UserDefaults.standard.integer(forKey: "storeHz")
     storeHz = hz > 0 ? hz : 100
+    audioMode = AudioMode(rawValue: UserDefaults.standard.string(forKey: "audioMode") ?? "") ?? .shortForm
   }
 
   func start() async {
@@ -59,7 +63,8 @@ final class RecorderController: ObservableObject {
         motionApi: motion.api,
         requestedHz: motion.requestedHz,
         storeHz: motion.storeHz,
-        cueIntervalSec: cueInterval)
+        cueIntervalSec: cueInterval,
+        audioMode: audioMode.rawValue)
       let writer = try SessionWriter(root: SessionFiles.defaultRoot(), manifest: manifest)
       self.writer = writer
       self.motion = motion
@@ -75,6 +80,8 @@ final class RecorderController: ObservableObject {
       try await workout.start()
       motion.start(writer: writer)
       motionApi = motion.api
+      cues.audioMode = audioMode
+      await cues.prepare()
       cues.start(interval: TimeInterval(cueInterval))
       minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.minuteTick() }

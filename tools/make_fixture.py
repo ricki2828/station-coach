@@ -45,13 +45,13 @@ def main():
     for i in range(1, 21):
         t = T0 + i * 45_000
         if i == 5:
-            cues.append(f"{t},{i},issued,haptic_only,0,BuiltInSpeaker/Watch Speaker,Keep your rhythm.,no headphones")
+            cues.append(f"{t},{i},issued,haptic_only,0,BuiltInSpeaker/Watch Speaker,Keep your rhythm.,no headphones,A")
             continue
-        cues.append(f"{t},{i},issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,")
-        cues.append(f"{t + 2500},{i},finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,")
+        cues.append(f"{t},{i},issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A")
+        cues.append(f"{t + 2500},{i},finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A")
         if i == 9:
-            cues.append(f"{t + 6000},{i},missed,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,")
-    write("cues.csv", "epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail", cues)
+            cues.append(f"{t + 6000},{i},missed,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A")
+    write("cues.csv", "epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode", cues)
 
     write("battery.csv", "epoch_ms,level,state",
           [f"{T0 + m * MIN},{1 - 0.005 * m:.2f},unplugged" for m in range(0, 101)])

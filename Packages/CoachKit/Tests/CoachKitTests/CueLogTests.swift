@@ -23,14 +23,14 @@ final class CueLogTests: XCTestCase {
   }
 
   func testCsvLineQuotesFieldsWithCommas() {
-    let e = CueEvent(epochMs: 5, cueId: 2, kind: .issued, mode: .hapticOnly, headphones: false, outputs: ["Speaker/Watch, built-in", "x"], phrase: "a \"b\"", detail: "")
-    XCTAssertEqual(e.csvLine, "5,2,issued,haptic_only,0,\"Speaker/Watch, built-in;x\",\"a \"\"b\"\"\",")
+    let e = CueEvent(epochMs: 5, cueId: 2, kind: .issued, mode: .hapticOnly, headphones: false, outputs: ["Speaker/Watch, built-in", "x"], phrase: "a \"b\"", detail: "", audioMode: "B")
+    XCTAssertEqual(e.csvLine, "5,2,issued,haptic_only,0,\"Speaker/Watch, built-in;x\",\"a \"\"b\"\"\",,B")
   }
 
   func testHeaderColumnCountMatchesLine() {
     let e = ev(1, .issued)
-    XCTAssertEqual(CueEvent.csvHeader.split(separator: ",").count, 8)
-    XCTAssertEqual(e.csvLine.split(separator: ",", omittingEmptySubsequences: false).count, 8)
+    XCTAssertEqual(CueEvent.csvHeader.split(separator: ",").count, 9)
+    XCTAssertEqual(e.csvLine.split(separator: ",", omittingEmptySubsequences: false).count, 9)
   }
 
   func testRouteClassifier() {

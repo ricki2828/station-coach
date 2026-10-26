@@ -13,6 +13,9 @@ struct HomeView: View {
         Picker("Store motion", selection: $recorder.storeHz) {
           ForEach([25, 50, 100, 200], id: \.self) { Text("\($0) Hz").tag($0) }
         }
+        Picker("Cue audio", selection: $recorder.audioMode) {
+          ForEach(AudioMode.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
         NavigationLink("Sessions") { SessionsView() }
         if let m = recorder.statusMessage {
           Text(m).font(.footnote).foregroundStyle(.secondary)

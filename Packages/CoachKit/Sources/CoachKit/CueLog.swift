@@ -12,8 +12,10 @@ public struct CueEvent: Equatable {
   public let outputs: [String]
   public let phrase: String
   public let detail: String
+  /// `AudioMode` raw value in force when the cue ran ("A" or "B").
+  public let audioMode: String
 
-  public init(epochMs: Int64, cueId: Int, kind: Kind, mode: Mode, headphones: Bool, outputs: [String], phrase: String, detail: String = "") {
+  public init(epochMs: Int64, cueId: Int, kind: Kind, mode: Mode, headphones: Bool, outputs: [String], phrase: String, detail: String = "", audioMode: String = "") {
     self.epochMs = epochMs
     self.cueId = cueId
     self.kind = kind
@@ -22,16 +24,27 @@ public struct CueEvent: Equatable {
     self.outputs = outputs
     self.phrase = phrase
     self.detail = detail
+    self.audioMode = audioMode
   }
 
-  public static let csvHeader = "epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail"
+  public static let csvHeader = "epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode"
 
   public var csvLine: String {
     [
       "\(epochMs)", "\(cueId)", kind.rawValue, mode.rawValue, headphones ? "1" : "0",
-      Csv.field(outputs.joined(separator: ";")), Csv.field(phrase), Csv.field(detail),
+      Csv.field(outputs.joined(separator: ";")), Csv.field(phrase), Csv.field(detail), audioMode,
     ].joined(separator: ",")
   }
+}
+
+/// How the watch asks for audio. Switchable on the home screen so both can be tried without a rebuild.
+public enum AudioMode: String, CaseIterable, Codable {
+  /// `.playback` / `.spokenAudio` with ducking, `setActive(true)` before each cue.
+  case shortForm = "A"
+  /// `.longFormAudio` route-sharing policy, activated once at session start and kept active.
+  case longForm = "B"
+
+  public var title: String { self == .shortForm ? "A: per-cue" : "B: long-form" }
 }
 
 public struct CueStats: Equatable {

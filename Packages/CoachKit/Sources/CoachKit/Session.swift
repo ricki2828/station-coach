@@ -37,10 +37,14 @@ public struct SessionManifest: Codable, Equatable {
   public var storeHz: Double
   public var cueIntervalSec: Int
   public var files: [String]?
+  public var audioMode: String?
+  public var athlete: String?
+  public var wrist: String?
 
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
-    workoutActivityType: String, motionApi: String, requestedHz: Double, storeHz: Double, cueIntervalSec: Int
+    workoutActivityType: String, motionApi: String, requestedHz: Double, storeHz: Double, cueIntervalSec: Int,
+    audioMode: String? = nil, athlete: String? = nil, wrist: String? = nil
   ) {
     self.formatVersion = SessionFormat.version
     self.sessionId = sessionId
@@ -53,6 +57,9 @@ public struct SessionManifest: Codable, Equatable {
     self.requestedHz = requestedHz
     self.storeHz = storeHz
     self.cueIntervalSec = cueIntervalSec
+    self.audioMode = audioMode
+    self.athlete = athlete
+    self.wrist = wrist
   }
 }
 
