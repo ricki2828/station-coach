@@ -36,9 +36,10 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   /// While files are outstanding, tells the phone which sessions are still sending. The phone gets no progress
   /// events for a single large file, and would otherwise call a slow transfer failed.
-  func sendHeartbeat() {
+  func sendHeartbeat(finished extra: String? = nil) {
     guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
-    let ids = Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["session"] as? String })
+    var ids = Set(WCSession.default.outstandingFileTransfers.compactMap { $0.file.metadata?["session"] as? String })
+    if let extra { ids.insert(extra) }
     guard !ids.isEmpty else { return }
     try? WCSession.default.updateApplicationContext(["sending": ids.sorted(), "at": Date().timeIntervalSince1970])
   }
@@ -94,6 +95,11 @@ final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
       apply(session.receivedApplicationContext)
     }
     DispatchQueue.main.async { self.planChecked = true }
+  }
+
+  /// The system wakes the app for each finished file, even when the 30 s timer is suspended: say so.
+  func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+    sendHeartbeat(finished: fileTransfer.file.metadata?["session"] as? String)
   }
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

@@ -188,7 +188,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       return
     }
     DispatchQueue.main.async {
-      self.watchdog.activity(session: sid, at: Date().timeIntervalSinceReferenceDate)
+      self.watchdog.fileArrived(session: sid, at: Date().timeIntervalSinceReferenceDate)
       self.tracker.received(session: sid, name: name, expectedBytes: bytes, actualBytes: actual, total: total)
       if let data = try? JSONEncoder().encode(self.tracker) { UserDefaults.standard.set(data, forKey: self.trackerKey) }
       if self.tracker.isComplete(sid) { WCSession.default.transferUserInfo(["ack": sid]) }

@@ -47,6 +47,27 @@ final class SyncWatchdogTests: XCTestCase {
     XCTAssertEqual(w.failedSession(now: 900 + 181, openSince: 0), "s1") // heartbeats stop: it fails
   }
 
+  func testOnceAFileHasArrivedTheGraceIsFifteenMinutes() {
+    var w = SyncWatchdog()
+    w.finished(session: "s1", at: 0)
+    w.fileArrived(session: "s1", at: 100)
+    XCTAssertNil(w.failedSession(now: 100 + 899, openSince: 0)) // the watch app is suspended, no heartbeats
+    XCTAssertEqual(w.failedSession(now: 100 + 901, openSince: 0), "s1")
+    w.fileArrived(session: "s1", at: 1000) // each further file restarts it
+    XCTAssertNil(w.failedSession(now: 1000 + 899, openSince: 0))
+  }
+
+  func testAFileForAnUnknownSessionIsIgnoredAndCompleteResetsTheGrace() {
+    var w = SyncWatchdog()
+    w.fileArrived(session: "x", at: 5)
+    XCTAssertTrue(w.pending.isEmpty)
+    w.finished(session: "s1", at: 0)
+    w.fileArrived(session: "s1", at: 1)
+    w.complete(session: "s1")
+    w.finished(session: "s1", at: 2000)
+    XCTAssertEqual(w.failedSession(now: 2000 + 181, openSince: 0), "s1") // back to the 3-minute grace
+  }
+
   func testEntriesExpireAfterADay() {
     var w = SyncWatchdog()
     w.finished(session: "s1", at: 0)
