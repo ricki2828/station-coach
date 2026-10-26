@@ -9,6 +9,12 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 - Earlier sessions show "on phone" in the watch's Sessions list. The recorder does not transfer while recording, but a pending transfer from a previous session should finish first.
 - On the home screen set the athlete code (A1, A2, ...; never a name), the wrist, the cue interval and the audio mode (A or B). Run a 10-minute desk test with 10 s cues in each mode before gym day and check `cues.csv`: `mode=speech`, outputs containing `BluetoothA2DPOutput`, and by ear.
 
+### Desk test additions
+- Mode B with the AirPods **not** connected: starting a session may show the system audio route picker and wait. Note what happens if you dismiss it (the log should say "NOT activated") and whether cues then speak at all.
+- Mode B, then switch the AirPods off mid-session and on again: `events.csv` should show a route change and "reactivating", and cues should resume (the picker may appear).
+- Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start").
+- Compare `headphones` in `cues.csv` with what you heard, cue by cue, in each mode. If the report's "finished and not flagged, any route" line is well above the main figure, the route read is unreliable.
+
 ## During
 - Tap the activity when you start it. Hold the top of the screen to undo a mistaken tap.
 - Tap DIDN'T HEAR (pinned at the top) when you miss a cue, before the next cue. Without taps, "delivered" only means the speech synthesizer finished, not that it was heard.
