@@ -404,7 +404,7 @@ final class TrainingLoadTests: XCTestCase {
   func testSuggestions() {
     let line = "Time for a full sim. It's the real test of the fade."
     func s(_ k: LoadSample) -> String? { LoadWords.suggestion(TrainingLoad.sample(k).compare, usualLine: line) }
-    XCTAssertEqual(s(.bigJump), "Big week: about double your usual. A lighter week around 530 would balance it, e.g. a half sim instead of a full one.")
+    XCTAssertEqual(s(.bigJump), "Big week: about double your usual. A lighter week around 530 would balance it, for instance a half sim instead of a full one.")
     XCTAssertEqual(s(.stepUp), "A good step up. Holding here a week would let it settle.")
     XCTAssertEqual(s(.usual), line)
     XCTAssertEqual(s(.lighter), "A lighter week. About 480 next week would be back to your usual.")
@@ -587,5 +587,16 @@ final class TrainingLoadTests: XCTestCase {
   func testDominantTypeTieGoesToTheBiggerSession() {
     let p = LoadPeriod.make(start: at(0), sessions: [load(100, type: .halfSim, at: at(0)), load(100, type: .fullSim, at: at(0))])
     XCTAssertEqual(p.dominantType, .fullSim)
+  }
+
+  func testLongStandingAthleteWithAThinStretchGetsBreakCopy() {
+    // Trained long ago, then one session in week -3 and one in week -1: not a new athlete, so no "takes shape after 3 sessions".
+    let s = [load(200, at: at(-10)), load(200, at: at(-9)), load(200, at: at(-3)), load(200, at: at(-1)), load(200, at: at(0))]
+    let c = LoadCompare.compare(s, periodStart: at(0), calendar: cal)
+    XCTAssertEqual(c.state, .returning)
+    XCTAssertEqual(LoadWords.headline(c), "200 load. Back after a break. We compare once you have two weeks back.")
+    // A genuinely new athlete still gets the first-weeks line.
+    let fresh = [load(200, at: at(-1)), load(200, at: at(0))]
+    XCTAssertEqual(LoadCompare.compare(fresh, periodStart: at(0), calendar: cal).state, .firstWeeks)
   }
 }

@@ -488,19 +488,23 @@ public struct LoadCompare: Equatable {
     }
     // A break: the nearest pair of empty periods that sits after the first session.
     var window = priors
+    var afterBreak = false
     if let j = (0..<(priors.count - 1)).first(where: { priors[$0].sessions == 0 && priors[$0 + 1].sessions == 0 && priors[$0 + 1].start >= firstStart }) {
       if priors[0..<j].filter({ $0.sessions > 0 }).count < 2 { return result(.returning) }
       window = Array(priors[0..<j])
+      afterBreak = true
     }
+    // Someone with history from before the window is not new: a thin stretch reads as a break, not as a first period.
+    let thin: LoadState = afterBreak || first < priors[priors.count - 1].start ? .returning : .firstWeeks
     let counted = window.filter { $0.start >= firstStart }
     let total = counted.reduce(0) { $0 + $1.sessions }
-    guard total >= 3, counted.filter({ $0.sessions > 0 }).count >= 2 else { return result(.firstWeeks) }
+    guard total >= 3, counted.filter({ $0.sessions > 0 }).count >= 2 else { return result(thin) }
     func mean(_ f: (LoadPeriod) -> Double) -> Double { counted.reduce(0) { $0 + f($1) } / Double(counted.count) }
     let usual = UsualPeriod(load: mean { $0.load }, fullSims: mean { Double($0.fullSims) }, wallBallReps: mean { Double($0.wallBallReps) },
                             hardMinutes: mean { $0.hardMinutes }, minutes: mean { $0.minutes }, heartRateShare: mean { $0.heartRateShare })
     let ratio = cur.load / usual.load
     // No usual to compare with (all load zero or not a number): say so rather than invent a band.
-    guard usual.load.isFinite, usual.load > 0, ratio.isFinite else { return result(.firstWeeks) }
+    guard usual.load.isFinite, usual.load > 0, ratio.isFinite else { return result(thin) }
     return result(.compared(LoadBand.of(ratio: ratio)), ratio: ratio, usual: usual)
   }
 }
@@ -595,7 +599,7 @@ public enum LoadWords {
       case .bigJump:
         let cap = int(usual * 1.1 / 10) * 10
         let size = c.isDouble ? "about double your usual" : "\(c.percent ?? 0)% more than your usual"
-        return "Big week: \(size). A lighter week around \(number(cap)) would balance it, e.g. a half sim instead of a full one."
+        return "Big week: \(size). A lighter week around \(number(cap)) would balance it, for instance a half sim instead of a full one."
       case .stepUp: return "A good step up. Holding here a week would let it settle."
       case .usual: return usualLine
       case .lighter: return "A lighter week. About \(number(int(usual))) next week would be back to your usual."
