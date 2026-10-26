@@ -21,6 +21,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   private var phraseIndex = 0
   private var lastCueId: Int?
   private var reactivating = false
+  private var awaitingHeadphones = false
   /// A "didn't hear" tap applies to the latest cue only if it was issued within one cue interval.
   private var missedWindow: TimeInterval = 45
   private var flagged = Set<Int>()
@@ -37,12 +38,12 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
       let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) ?? 0
       self?.onNote?("route_change", "reason=\(reason) outputs=\(Self.route().outputs.joined(separator: ";"))")
-      if AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable { self?.reactivate("route lost") }
+      self?.routeChanged(reason: AVAudioSession.RouteChangeReason(rawValue: reason))
     })
     observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
       let type = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) ?? 0
       self?.onNote?("audio_interruption", "type=\(type)")
-      if AVAudioSession.InterruptionType(rawValue: type) == .ended { self?.reactivate("interruption ended") }
+      if AVAudioSession.InterruptionType(rawValue: type) == .ended { self?.interruptionEnded() }
     })
   }
 
@@ -67,8 +68,31 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     }
   }
 
-  /// Mode B only, while cues are running: the long-form session is not re-established by the system
-  /// after headphones drop or a call ends, so ask again (this may show the route picker).
+  /// Mode B only. Activating with no headphone output pops the system route picker over the label
+  /// screen, so on loss we only note it and wait; we activate again once a headphone output is back.
+  private func routeChanged(reason: AVAudioSession.RouteChangeReason?) {
+    guard audioMode == .longForm, timer != nil else { return }
+    if reason == .oldDeviceUnavailable {
+      awaitingHeadphones = true
+      onNote?("audio_mode", "headphones lost; will re-activate when a headphone output reappears")
+    } else if awaitingHeadphones, Self.route().headphones {
+      awaitingHeadphones = false
+      reactivate("headphones back")
+    }
+  }
+
+  private func interruptionEnded() {
+    guard audioMode == .longForm, timer != nil else { return }
+    if Self.route().headphones {
+      awaitingHeadphones = false
+      reactivate("interruption ended")
+    } else {
+      awaitingHeadphones = true
+      onNote?("audio_mode", "interruption ended with no headphone output; waiting")
+    }
+  }
+
+  /// The long-form session is not re-established by the system after headphones drop or a call ends.
   private func reactivate(_ why: String) {
     guard audioMode == .longForm, timer != nil, !reactivating else { return }
     reactivating = true
