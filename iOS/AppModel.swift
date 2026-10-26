@@ -77,6 +77,13 @@ final class AppModel: ObservableObject {
     start(.halfSim)
   }
 
+  /// The watch app was seen on this phone: the install check is done for good, so the nudge never comes back.
+  func watchDetected() {
+    guard watchNudge else { return }
+    defaults.set(true, forKey: "onboarding.watchChecked")
+    watchNudge = false
+  }
+
   func dismissWatchNudge() {
     defaults.set(true, forKey: "onboarding.watchNudgeDismissed")
     watchNudge = false

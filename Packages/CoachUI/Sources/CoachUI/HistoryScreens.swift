@@ -176,7 +176,7 @@ public struct SessionDetailScreen: View {
     .padding(20)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(PhoneTheme.paper)
-    .sheet(isPresented: $editing) {
+    .sheet(isPresented: $editing, onDismiss: { saveFailed = false }) {
       WallBallEditSheet(initial: WallBallCountAdapter.initial(for: record),
                         errorText: saveFailed ? "Couldn't save. Try again." : nil,
                         onSave: { edit in
