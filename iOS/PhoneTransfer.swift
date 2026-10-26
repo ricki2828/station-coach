@@ -17,7 +17,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var syncPercent: Int?
 
   /// The newest finished session that has gone quiet for 3 minutes while the app is open.
-  @Published private(set) var syncFailed = false
+  @Published private(set) var syncFailedId: String?
 
   private let trackerKey = "transferTracker"
   private let watchdogKey = "syncWatchdog"
@@ -53,7 +53,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   }
 
   private func evaluateSync() {
-    syncFailed = watchdog.failedSession(now: Date().timeIntervalSinceReferenceDate, openSince: openedAt) != nil
+    let now = Date().timeIntervalSinceReferenceDate
+    watchdog.prune(now: now)
+    syncFailedId = watchdog.failedSession(now: now, openSince: openedAt)
   }
 
   static var root: URL? { try? SessionFiles.defaultRoot() }
@@ -109,6 +111,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func delete(_ id: String) {
     guard let root = Self.root else { return }
     try? FileManager.default.removeItem(at: root.appendingPathComponent(id))
+    watchdog.complete(session: id)
     refresh()
   }
 
@@ -138,7 +141,24 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func sessionDidBecomeInactive(_ session: WCSession) {}
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 
+  /// The watch's heartbeat while files are still outstanding: each one restarts the clock.
+  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+    guard let ids = applicationContext["sending"] as? [String] else { return }
+    DispatchQueue.main.async {
+      let now = Date().timeIntervalSinceReferenceDate
+      for id in ids.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.activity(session: id, at: now) }
+      self.refresh()
+    }
+  }
+
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    if let gone = userInfo["gone"] as? [String] { // sessions deleted on the watch
+      DispatchQueue.main.async {
+        for id in gone.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.complete(session: id) }
+        self.refresh()
+      }
+      return
+    }
     guard let id = (userInfo["finished"] as? String).map({ ($0 as NSString).lastPathComponent }), !id.isEmpty, id != ".." else { return }
     DispatchQueue.main.async {
       if !self.tracker.isComplete(id) {
