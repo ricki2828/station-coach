@@ -34,6 +34,8 @@ final class MotionRecorder {
   let storeHz: Double
   private var lastRawHz: Double?
   private var totalRaw = 0
+  private var startedAt: Date?
+  private var firstSampleAt: Date?
 
   init(storeHz: Double) {
     self.storeHz = storeHz
@@ -44,6 +46,9 @@ final class MotionRecorder {
 
   func start(writer: SessionWriter) {
     self.writer = writer
+    lock.lock()
+    startedAt = Date()
+    lock.unlock()
     if Self.batchedSupported {
       onEvent?("motion_api", "CMBatchedSensorManager accel=\(batched.accelerometerDataFrequency)Hz motion=\(batched.deviceMotionDataFrequency)Hz")
       tasks.append(Task { [weak self] in await self?.runBatchedAccel() })
@@ -81,6 +86,13 @@ final class MotionRecorder {
   var totalRawSamples: Int {
     lock.lock(); defer { lock.unlock() }
     return totalRaw
+  }
+
+  /// Seconds from `start` to the first delivered sample; nil until one arrives.
+  var firstSampleDelay: TimeInterval? {
+    lock.lock(); defer { lock.unlock() }
+    guard let startedAt, let firstSampleAt else { return nil }
+    return firstSampleAt.timeIntervalSince(startedAt)
   }
 
   var latestRawHz: Double? {
@@ -155,6 +167,7 @@ final class MotionRecorder {
     lock.lock(); defer { lock.unlock() }
     var lines: [String] = []
     totalRaw += batch.count
+    if firstSampleAt == nil, !batch.isEmpty { firstSampleAt = Date() }
     for (t, x, y, z) in batch {
       accelRaw.add(t)
       guard accelDec.keep(t) else { continue }
@@ -168,6 +181,7 @@ final class MotionRecorder {
     lock.lock(); defer { lock.unlock() }
     var lines: [String] = []
     totalRaw += batch.count
+    if firstSampleAt == nil, !batch.isEmpty { firstSampleAt = Date() }
     for d in batch {
       motionRaw.add(d.timestamp)
       guard motionDec.keep(d.timestamp) else { continue }

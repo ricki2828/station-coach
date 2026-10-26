@@ -50,6 +50,9 @@ final class RecorderController: ObservableObject {
   private var watchdogTotal = 0
   private var watchdogSince = Date()
   static let stallSeconds: TimeInterval = 30
+  /// Time allowed for the first motion sample (the batched stream can start slowly).
+  static let startGraceSeconds: TimeInterval = 90
+  private var sawFirstSample = false
 
   init() {
     let saved = UserDefaults.standard.integer(forKey: "cueInterval")
@@ -112,6 +115,7 @@ final class RecorderController: ObservableObject {
         Task { @MainActor in self?.minuteTick() }
       }
       watchdogTotal = 0
+      sawFirstSample = false
       watchdogSince = Date()
       watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
         Task { @MainActor in self?.watchdogTick() }
@@ -240,10 +244,22 @@ final class RecorderController: ObservableObject {
     writer?.append(.events, Lines.event(epochMs: Clock.epochMs(), kind: kind, detail: detail))
   }
 
-  /// Alarms when both motion streams deliver nothing for `stallSeconds`: alive but silent.
+  /// Alarms if no motion sample arrives within `startGraceSeconds` of the start, then if both streams
+  /// deliver nothing for `stallSeconds`: alive but silent.
   private func watchdogTick() {
     guard phase == .running, let motion else { return }
     let total = motion.totalRawSamples
+    if !sawFirstSample {
+      if total > 0 {
+        sawFirstSample = true
+        watchdogTotal = total
+        watchdogSince = Date()
+        log("first_motion_sample", String(format: "delay=%.1fs", motion.firstSampleDelay ?? -1))
+      } else if Date().timeIntervalSince(watchdogSince) >= Self.startGraceSeconds {
+        raiseAlarm("Motion never started")
+      }
+      return
+    }
     if total != watchdogTotal {
       watchdogTotal = total
       watchdogSince = Date()
