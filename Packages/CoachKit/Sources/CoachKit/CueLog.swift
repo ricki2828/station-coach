@@ -36,7 +36,7 @@ public struct CueEvent: Equatable {
 
 public struct CueStats: Equatable {
   public let issued: Int
-  /// Spoken to a headphone route, the synthesizer reported finish, and Ray did not mark it missed.
+  /// Spoken to a headphone route, the synthesizer reported finish, and the athlete did not mark it missed.
   public let delivered: Int
   public let hapticOnly: Int
   public let missed: Int
