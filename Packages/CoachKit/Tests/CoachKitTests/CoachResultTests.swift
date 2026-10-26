@@ -279,4 +279,16 @@ final class CoachResultTests: XCTestCase {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     XCTAssertThrowsError(try CoachResult.saveCorrection(WallBallCorrection(validReps: 90, noReps: 1), inSessionFolder: dir))
   }
+
+  func testSidecarIsHiddenFromSessionSummaries() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let dir = root.appendingPathComponent("s1")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try JSONEncoder().encode(withNoReps([1])).write(to: dir.appendingPathComponent(CoachResult.fileName))
+    let before = SessionFiles.summaries(in: root)
+    try CoachResult.saveCorrection(WallBallCorrection(validReps: 90, noReps: 2), inSessionFolder: dir)
+    XCTAssertEqual(SessionFiles.summaries(in: root), before)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent(CoachResult.correctionFileName).path))
+  }
 }

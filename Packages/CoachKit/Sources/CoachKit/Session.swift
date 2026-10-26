@@ -104,7 +104,9 @@ public enum SessionFiles {
       let folder = root.appendingPathComponent(name)
       guard fm.fileExists(atPath: folder.path, isDirectory: &isDir), isDir.boolValue,
             let files = try? list(folder) else { return nil }
-      return SessionSummary(id: name, bytes: files.reduce(0) { $0 + $1.bytes }, fileCount: files.count)
+      // The phone's own correction sidecar is not one of the watch's files: it stays out of the Raw files counts (the zip still has it).
+      let received = files.filter { $0.name != CoachResult.correctionFileName }
+      return SessionSummary(id: name, bytes: received.reduce(0) { $0 + $1.bytes }, fileCount: received.count)
     }
   }
 
