@@ -44,3 +44,19 @@ jobs:
           xcodebuild -project StationCoach.xcodeproj -scheme StationCoach \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Render screens (iOS simulator host, watch views at 46 mm)
+        working-directory: Packages/CoachUI
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/screens"
+          xcodebuild -list | head -20
+          TEST_RUNNER_SCREENS_DIR="$RUNNER_TEMP/screens" xcodebuild test -scheme CoachUI \
+            -destination 'platform=iOS Simulator,name=iPhone 16' | tail -60
+          ls "$RUNNER_TEMP/screens" | wc -l
+      - name: Upload screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: warn

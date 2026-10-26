@@ -15,6 +15,25 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 - Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start").
 - Compare `headphones` in `cues.csv` with what you heard, cue by cue, in each mode. If the report's "finished and not flagged, any route" line is well above the main figure, the route read is unreliable.
 
+## Coached session
+- Build the plan on the phone (Plan tab), tap Send to watch, then open the watch app: the Ready screen shows the session, the target and the athlete chip. START begins the workout session, the recorder and the coach together.
+- NEXT (or a double pinch, if the watch supports it) moves to the next phase. A mistaken NEXT inside 3 s of the last one is ignored. Press and hold for 1.5 s for Undo or End. The last step's button is HOLD TO FINISH (1 s).
+- NOT HEARD sits beside NEXT on every screen. The coach only speaks one cue per 20 s and never over a cue.
+- Tap NEXT when you pick up the ball, not while you are still jogging to the wall: the counter skips the first 4 s and any arm-swing rhythm, but it cannot tell a long walk from reps.
+- The wall-ball count is a beta estimate: correct it with + and -.
+- After the session the Summary tab shows the insight, table, chart and share card once the files have reached the phone.
+
+### Desk test: wall balls
+- Do 20 real wall balls after a 15 s jog-in (NEXT tapped as you start jogging) and compare the watch's count with 20. Log the counter's rep times in `coach.json`, and note any phantom reps from the jog or from picking the ball up between sets.
+- Hold HOLD TO FINISH for about 1 s and expect the finish screen, not the Undo/End menu. The menu needs a 1.5 s long press elsewhere on the screen; if it opens first, say so.
+
+## Before gym day: coached-session checklist
+Do these on the watch, in order, before the first real session. Note what you see; none of them has been run on a device yet.
+1. **Finish and undo.** Hold HOLD TO FINISH for 1 s on the last step: it should finish, not open the Undo/End menu. Then tap UNDO inside the 10 s window and check the wall-ball count carries on from where it was (the count and the +/- correction are kept, and sets already passed are not announced again).
+2. **Wall balls after a jog-in.** Do 20 real wall balls after a 15 s jog-in (NEXT tapped as you start jogging). Compare the watch's count, and any "Set done" it spoke, with the true count. Note phantom reps from the jog or from picking the ball up, and any set cue spoken at the wrong count.
+3. **Corners and clock.** On the wrist, check the screens against the snapshot mask: nothing under the clock, the delta band and the HR chip not clipped, and the bottom NEXT / NOT HEARD buttons not cut by the rounded corners. The mask in the PNGs (44 pt corners, 24 pt top inset) is an estimate.
+4. **Finish cue logged.** After a coached session, open `cues.csv` and confirm the finish cue has both an `issued` and a `finished` row. If it only has `issued`, the writer closed before the speech ended.
+
 ## During
 - Tap the activity when you start it. Hold the top of the screen to undo a mistaken tap.
 - Tap DIDN'T HEAR (pinned at the top) when you miss a cue, before the next cue. Without taps, "delivered" only means the speech synthesizer finished, not that it was heard.

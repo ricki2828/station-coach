@@ -18,6 +18,9 @@ final class MotionRecorder {
   /// What we ask the hardware for, for the manifest (batched: nominal 800 accel / 200 motion).
   var requestedHz: Double { api == "CMBatchedSensorManager" ? 800 : Self.legacyHz }
   var onEvent: ((String, String) -> Void)?
+  /// (epoch seconds, user-acceleration magnitude in g) for each stored device-motion sample. Called with the
+  /// recorder's lock held: keep it short and never call back in.
+  var onMagnitude: ((Double, Double) -> Void)?
 
   private let batched = CMBatchedSensorManager()
   private let legacy = CMMotionManager()
@@ -186,6 +189,8 @@ final class MotionRecorder {
       motionRaw.add(d.timestamp)
       guard motionDec.keep(d.timestamp) else { continue }
       motionStored.add(d.timestamp)
+      let a = d.userAcceleration
+      onMagnitude?(d.timestamp + bootOffset, (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot())
       lines.append(Lines.motion(
         epochUs: epochUs(d.timestamp),
         ua: (d.userAcceleration.x, d.userAcceleration.y, d.userAcceleration.z),

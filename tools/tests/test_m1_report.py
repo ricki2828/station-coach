@@ -145,6 +145,26 @@ class AthleteTests(unittest.TestCase):
         self.assertIn("?: 1 session(s)", "\n".join(m1_report.athlete_summary([f])))
 
 
+class CoachedSessionTests(unittest.TestCase):
+    def test_coached_session_does_not_print_a_fake_cue_expectation(self):
+        import json
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        f = tmp / "s"
+        shutil.copytree(FIXTURE, f)
+        m = json.loads((f / "manifest.json").read_text())
+        m["cueIntervalSec"] = 0
+        m["labelSource"] = "coach"
+        (f / "manifest.json").write_text(json.dumps(m))
+        out = run_cli(f)
+        self.assertIn("periodic cue check not applicable", out)
+        self.assertNotIn("expected (", out)
+        self.assertNotIn("~0 expected", out)
+
+    def test_interval_sessions_still_check_expected_cues(self):
+        self.assertIn("expected (", run_cli(FIXTURE))
+
+
 class DegradedSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

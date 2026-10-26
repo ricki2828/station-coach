@@ -4,7 +4,7 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 
 | File | Columns | Written |
 |---|---|---|
-| `manifest.json` | `formatVersion`, `sessionId`, `startedAtEpochMs`, `endedAtEpochMs`, `device`, `osVersion`, `appVersion`, `workoutActivityType`, `motionApi`, `requestedHz`, `storeHz`, `cueIntervalSec`, `audioMode`, `athlete` (code such as A1, never a name), `wrist` (`left`/`right`), `recovered` (true if closed after an unexpected stop), `files` | at start, rewritten at finish (`endedAtEpochMs` and `files` are absent from a session that never finished) |
+| `manifest.json` | `formatVersion`, `sessionId`, `startedAtEpochMs`, `endedAtEpochMs`, `device`, `osVersion`, `appVersion`, `workoutActivityType`, `motionApi`, `requestedHz`, `storeHz`, `cueIntervalSec`, `audioMode`, `athlete` (code such as A1, never a name), `wrist` (`left`/`right`), `recovered` (true if closed after an unexpected stop), `labelSource` (`athlete_taps` or `coach`), `transitionLabelSeconds` (coach sessions: a run after a station is labelled `transition` for its first this-many seconds, a time rule and not an observation), `files` | at start, rewritten at finish (`endedAtEpochMs` and `files` are absent from a session that never finished) |
 | `labels.csv` | `epoch_ms,event,activity` | on each tap / undo |
 | `cues.csv` | `epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode` | per cue event |
 | `battery.csv` | `epoch_ms,level,state` | every 60 s |
@@ -13,6 +13,12 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 | `motion.csv` | `epoch_us,ua_x,ua_y,ua_z,rr_x,rr_y,rr_z,g_x,g_y,g_z` (user acceleration g, rotation rate rad/s, gravity g) | decimated to at most `storeHz` |
 | `rates.csv` | `epoch_ms,stream,raw_samples,raw_hz,stored_samples,stored_hz` | every 60 s, one row per stream, for that window |
 | `events.csv` | `epoch_ms,kind,detail` | session start/end, motion API, workout state, audio route changes, errors |
+
+## Coached sessions
+A session started from the coach (plan from the phone) is the same folder plus `coach.json`, written at the end by the watch:
+`plan` (division, session type, race target, `steps` with per-step targets and wall-ball set structure, `transitionSeconds`), `splits` (`stepIndex`, `startMs`, `endMs`; a step never started has no split, a step not finished has no `endMs`), `early`, `repTimesMs` (heuristic wall-ball rep times, epoch ms), `repCorrection` (net manual +/-), `startedAtEpochMs`, `endedAtEpochMs`.
+In a coached session the cue timer is off, so `manifest.cueIntervalSec` is `0` and the report does not expect periodic cues; cues come from the coach and are logged in `cues.csv` as before. Coach phase changes write `labels.csv` automatically (and `rest` once the session is finished, until the files close): `run`, `transition` (the first `transitionSeconds` of a run that follows a station) and the station activities.
+The wall-ball rep count is a beta heuristic (peaks in wrist acceleration magnitude) and counts down on the watch; the athlete corrects it with +/-.
 
 ## Labels
 `activity` is one of `run, transition, skierg, sled_push, sled_pull, burpee_broad_jump, row, farmers_carry, sandbag_lunges, wall_balls, rest`.

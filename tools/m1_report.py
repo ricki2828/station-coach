@@ -232,8 +232,9 @@ def report(folder):
 
     cues = cue_delivery(read_rows(folder / "cues.csv"))
     expected = expected_cues(manifest, start, end)
+    coached = manifest.get("cueIntervalSec") == 0
     issued_share = cues["issued"] / expected if expected else 1.0
-    cues_ok = cues["issued"] > 0 and cues["percent"] >= CUE_MARK and issued_share >= CUE_ISSUED_MARK
+    cues_ok = cues["issued"] > 0 and cues["percent"] >= CUE_MARK and (coached or issued_share >= CUE_ISSUED_MARK)
     lines.append(f"1. Cue delivery: {cues['delivered']}/{cues['issued']} = {cues['percent']:.1f}% "
                  f"(route showed headphones {cues['route_headphones']}, haptic-only {cues['haptic_only']}, "
                  f"flagged missed {cues['missed']}, audio mode {'/'.join(cues['audio_modes']) or '?'})  "
@@ -243,8 +244,13 @@ def report(folder):
                  + ("; no taps, so 'delivered' means the synth finished, NOT confirmed heard" if not cues["missed"] else ""))
     lines.append(f"   finished and not flagged, any route: {cues['any_route']}/{cues['issued']} "
                  f"(a gap from the mark above means the route read is unreliable or speech ran on the speaker)")
-    lines.append(f"   cues issued {cues['issued']} of ~{expected} expected "
-                 f"({100 * issued_share:.0f}%, need {100 * CUE_ISSUED_MARK:.0f}%)")
+    if coached:
+        lines.append(f"   cues issued {cues['issued']}; periodic cue check not applicable (coached session: "
+                     f"cues follow the plan, so there is no interval to expect). Few cues make one miss cost "
+                     f"{100 / max(cues['issued'], 1):.1f} points.")
+    else:
+        lines.append(f"   cues issued {cues['issued']} of ~{expected} expected "
+                     f"({100 * issued_share:.0f}%, need {100 * CUE_ISSUED_MARK:.0f}%)")
 
     bat = battery_at(read_rows(folder / "battery.csv"), start, end)
     if not bat["known"]:

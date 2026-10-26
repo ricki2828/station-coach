@@ -1,4 +1,5 @@
 import CoachKit
+import CoachUI
 import Foundation
 import WatchConnectivity
 
@@ -9,6 +10,11 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   @Published private(set) var sessions: [SessionSummary] = []
   @Published private(set) var completeIds: Set<String> = []
+  @Published private(set) var sendState: SendState = .idle
+  /// The newest session that has a `coach.json`, and its folder name.
+  @Published private(set) var latestCoach: (id: String, result: CoachResult)?
+  /// Percent of the newest not-yet-complete transfer, if one is in flight.
+  @Published private(set) var syncPercent: Int?
 
   private let trackerKey = "transferTracker"
   private var tracker: TransferTracker
@@ -36,7 +42,38 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     guard let root = Self.root else { return }
     sessions = SessionFiles.summaries(in: root)
     completeIds = Set(sessions.map(\.id).filter { tracker.isComplete($0) })
+    syncPercent = sessions.map(\.id).first { !tracker.isComplete($0) && tracker.progress($0) != nil }.flatMap { tracker.progress($0) }
+    latestCoach = nil
+    for s in sessions where completeIds.contains(s.id) {
+      let url = root.appendingPathComponent(s.id).appendingPathComponent(CoachResult.fileName)
+      if let data = try? Data(contentsOf: url), let r = try? JSONDecoder().decode(CoachResult.self, from: data) {
+        latestCoach = (s.id, r)
+        break
+      }
+    }
   }
+
+  /// Sends the plan to the watch as application context (the latest one wins; delivered when the watch is next awake).
+  func sendPlan(_ plan: SessionPlan) {
+    guard WCSession.isSupported() else { sendState = .failed; return }
+    let s = WCSession.default
+    guard s.activationState == .activated else {
+      sendState = .failed
+      activate()
+      return
+    }
+    guard s.isPaired, s.isWatchAppInstalled else { sendState = .watchAppMissing; return }
+    sendState = .sending(watchName: "Apple Watch")
+    do {
+      let data = try JSONEncoder().encode(plan)
+      try s.updateApplicationContext(["plan": String(decoding: data, as: UTF8.self)])
+      sendState = .sent
+    } catch {
+      sendState = .failed
+    }
+  }
+
+  func resetSendState() { if sendState != .idle { sendState = .idle } }
 
   func delete(_ id: String) {
     guard let root = Self.root else { return }
