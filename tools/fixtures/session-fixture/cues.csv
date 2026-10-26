@@ -1,0 +1,25 @@
+epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode
+1790000005000,1,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000007500,1,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000015000,2,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000017500,2,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000025000,3,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000027500,3,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000035000,4,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000037500,4,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000045000,5,issued,haptic_only,0,BuiltInSpeaker/Watch Speaker,Keep your rhythm.,no headphones,A
+1790000055000,6,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000057500,6,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000065000,7,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000067500,7,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000075000,8,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000077500,8,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000085000,9,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000087500,9,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000091000,9,missed,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000095000,10,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000097500,10,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000105000,11,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000107500,11,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000115000,12,issued,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
+1790000117500,12,finished,speech,1,BluetoothA2DPOutput/AirPods,Keep your rhythm.,,A
