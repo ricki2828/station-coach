@@ -82,6 +82,48 @@ final class CoachHistoryTests: XCTestCase {
     XCTAssertEqual(two.legendTypes, [.halfSim, .fullSim])
   }
 
+  func testAlternatingHalfAndFullNeverCompareAcrossTypes() {
+    // Half sims read structurally lower than full sims. Full 27, half 12, full 28, half 13: no false "less fade".
+    let recs = [record("a", .fullSim, day: 0, fade: 27), record("b", .halfSim, day: 1, fade: 12),
+                record("c", .fullSim, day: 2, fade: 28), record("d", .halfSim, day: 3, fade: 13)]
+    let m = HomeModel(records: recs, now: now)
+    XCTAssertEqual(m.heroType, .halfSim)
+    XCTAssertEqual(m.hero, "13 s")
+    XCTAssertEqual(m.previousFade, 12)
+    XCTAssertEqual(m.state, .trend(.steady))
+    XCTAssertEqual(m.kicker, "HALF SIM FADE")
+    // The latest full sim (28) is compared with the earlier full sim (27), not with the half sim before it.
+    let full = HomeModel(records: Array(recs.prefix(3)), now: now)
+    XCTAssertEqual(full.heroType, .fullSim)
+    XCTAssertEqual(full.previousFade, 27)
+    XCTAssertEqual(full.state, .trend(.steady))
+  }
+
+  func testFirstOfATypeIsABaselineNotATrend() {
+    let m = HomeModel(records: [record("a", .fullSim, day: 0, fade: 27), record("b", .halfSim, day: 1, fade: 12)], now: now)
+    XCTAssertEqual(m.state, .baseline)
+    XCTAssertEqual(m.kicker, "HALF SIM FADE \u{00B7} BASELINE")
+    XCTAssertEqual(m.chip, "1 HALF SIM")
+  }
+
+  func testNoFalseLeastFadeAcrossTypes() {
+    let full = record("a", .fullSim, day: 0, fade: 27)
+    let half = record("b", .halfSim, day: 7, fade: 12)
+    XCTAssertEqual(MomentPicker.pick(previous: [full], new: half), .first(.halfSim))
+    // Within a type it still fires.
+    let half2 = record("c", .halfSim, day: 14, fade: 5)
+    XCTAssertEqual(MomentPicker.pick(previous: [full, half], new: half2), .leastFade(previous: 12))
+  }
+
+  func testPartialsNeverBecomeTheHeroOrTheTrend() {
+    let complete = record("a", .fullSim, day: 0, fade: 27)
+    let partial = record("p", .fullSim, day: 1, fade: 2, until: 11)
+    let m = HomeModel(records: [complete, partial], now: now)
+    XCTAssertEqual(m.state, .baseline)
+    XCTAssertEqual(m.hero, "27 s")
+    XCTAssertEqual(HomeModel(records: [partial], now: now).state, .none)
+  }
+
   func testRecentIsLastSixOldestFirst() {
     let recs = (0..<8).map { record("r\($0)", day: Int64($0), fade: 20 + $0) }
     XCTAssertEqual(HomeModel(records: recs, now: now).recent, [22, 23, 24, 25, 26, 27])

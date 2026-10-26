@@ -141,7 +141,9 @@ public struct HomeModel: Equatable {
   public let recent: [Int]
   public let recentTypes: [SessionType]
   public let latestFade: Int?
-  /// Fade of the session before the latest, and its date.
+  /// Session type of the latest complete fade; the hero and the trend are about this type only.
+  public let heroType: SessionType?
+  /// Fade of the previous complete session of the same type as the latest, and its date.
   public let previousFade: Int?
   public let previousDate: Date?
   /// Run that cost the most in the latest session, "Sled push".
@@ -150,7 +152,9 @@ public struct HomeModel: Equatable {
 
   public init(records: [SessionRecord], setup: RaceSetup = RaceSetup(), now: Date = Date()) {
     let recs = SessionRecord.sorted(records)
-    let withFade = recs.compactMap { r in r.fade.map { (r, $0) } }
+    // Fade is not comparable across types (a full sim averages 7 runs, a half sim 3) or with partials, so the hero,
+    // the trend and the baseline use complete sessions only, and the trend compares like with like.
+    let withFade = recs.filter(\.isComplete).compactMap { r in r.fade.map { (r, $0) } }
     self.setup = setup
     last = recs.first
     next = Recommendation.pick(records: recs, now: now)
@@ -159,8 +163,10 @@ public struct HomeModel: Equatable {
     recentTypes = recentPairs.map { $0.0.type }
     latestFade = withFade.first?.1
     latestDate = withFade.first?.0.date
-    previousFade = withFade.count > 1 ? withFade[1].1 : nil
-    previousDate = withFade.count > 1 ? withFade[1].0.date : nil
+    heroType = withFade.first?.0.type
+    let prior = withFade.dropFirst().first { $0.0.type == withFade.first?.0.type }
+    previousFade = prior?.1
+    previousDate = prior?.0.date
     biggestAfter = withFade.first.flatMap { RunFade.slowdowns($0.0.result).max { $0.seconds < $1.seconds }?.after }
     if let latest = latestFade {
       if let prev = previousFade {
@@ -184,7 +190,11 @@ public struct HomeModel: Equatable {
   /// A fade below zero reads "0 s": the line under it says "faster than run 1".
   public static func fadeText(_ s: Int) -> String { "\(max(0, s)) s" }
 
-  public var kicker: String { state == .baseline ? "YOUR RUN FADE \u{00B7} BASELINE" : "YOUR RUN FADE" }
+  /// "YOUR RUN FADE" until there is a number, then the type it belongs to: "HALF SIM FADE".
+  public var kicker: String {
+    guard let t = heroType else { return "YOUR RUN FADE" }
+    return state == .baseline ? "\(t.title.uppercased()) FADE \u{00B7} BASELINE" : "\(t.title.uppercased()) FADE"
+  }
 
   /// Hero text: the statement while there is no number, the fade once there is.
   public var hero: String {
@@ -211,7 +221,7 @@ public struct HomeModel: Equatable {
   public var chip: String? {
     switch state {
     case .none: return nil
-    case .baseline: return "1 SIM"
+    case .baseline: return "1 \((heroType ?? .fullSim).title.uppercased())"
     case .trend(let t):
       let since = previousDate.map { HistoryFormat.dayMonth($0) } ?? ""
       let diff = abs((latestFade ?? 0) - (previousFade ?? 0))
@@ -242,7 +252,8 @@ public enum MomentPicker {
         return .best(new.type, previousBest: best)
       }
       if let fade = new.fade {
-        let fades = earlier.filter(\.isComplete).compactMap(\.fade)
+        // Same type only: fade is not comparable between full, half and wall-ball focus sessions.
+        let fades = completeSame.compactMap(\.fade)
         if let low = fades.min(), fade <= low - leastFadeMargin { return .leastFade(previous: low) }
       }
       return completeSame.isEmpty ? .first(new.type) : nil

@@ -41,8 +41,8 @@ public enum HistorySamples {
 
   public static let baseline = [record("s1", type: .fullSim, startDay: 0, fade: 27, stationExtra: [.sledPush: 50, .skierg: 20])]
   public static let trend: [SessionRecord] = [
-    record("t1", type: .halfSim, startDay: -14, fade: 34, stationExtra: [.sledPush: 20]),
-    record("t2", type: .halfSim, startDay: -7, fade: 30, stationExtra: [.sledPush: 20]),
+    record("t1", type: .halfSim, startDay: -14, fade: 15, stationExtra: [.sledPush: 20]),
+    record("t2", type: .halfSim, startDay: -7, fade: 12, stationExtra: [.sledPush: 20]),
     record("t3", type: .fullSim, startDay: 0, fade: 27, stationExtra: [.sledPush: 50, .skierg: 20]),
   ]
   public static func trend(latestFade: Int) -> [SessionRecord] {
@@ -54,7 +54,7 @@ public enum HistorySamples {
 
   public static let list: [SessionRecord] = [
     record("h1", type: .fullSim, startDay: 1, fade: 19, stationExtra: [.sledPush: 20, .row: -15]),
-    record("h2", type: .halfSim, startDay: -3, fade: 22, stationExtra: [.skierg: -30, .row: -20]),
+    record("h2", type: .halfSim, startDay: -3, fade: 14, stationExtra: [.skierg: -30, .row: -20]),
     record("h3", type: .wallBallFocus, startDay: -6, fade: 12, stationExtra: [.wallBalls: 15]),
     record("h4", type: .fullSim, startDay: -9, fade: 31, stationExtra: [.sledPush: 40], until: 11),
   ]
