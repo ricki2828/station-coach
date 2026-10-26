@@ -137,7 +137,9 @@ public struct SessionLoad: Equatable {
     }
     var km = 0
     var metres = 0
-    for sp in result.splits where sp.endMs != nil && result.splitsLookValid {
+    // The watch closes the step in progress when a session ends early, so that step was quit, not completed.
+    let quit = result.early ? result.splits.max(by: { $0.startMs < $1.startMs })?.stepIndex : nil
+    for sp in result.splits where sp.endMs != nil && sp.stepIndex != quit && result.splitsLookValid {
       guard let step = result.plan.steps.first(where: { $0.index == sp.stepIndex }) else { continue }
       if step.isRun { km += 1 } else { metres += Self.metres(step.activity) }
     }
@@ -239,12 +241,15 @@ public struct LoadSession: Equatable, Identifiable {
   public let date: Date
   public let type: SessionType
   public let load: SessionLoad
+  /// False for a session ended early: it carries load and volume but is not counted as a full sim.
+  public let isComplete: Bool
 
-  public init(id: String, date: Date, type: SessionType, load: SessionLoad) {
+  public init(id: String, date: Date, type: SessionType, load: SessionLoad, isComplete: Bool = true) {
     self.id = id
     self.date = date
     self.type = type
     self.load = load
+    self.isComplete = isComplete
   }
 }
 
@@ -277,7 +282,8 @@ public enum TrainingLoad {
     for id in skipped { NSLog("TrainingLoad: skipped session %@, its splits look corrupt", id) }
     let sessions = valid.map { i in
       LoadSession(id: i.record.id, date: i.record.date, type: i.record.type,
-                  load: SessionLoad.of(i.record.result, hr: i.hr, maxHR: max.bpm, wallBallReps: wallBallReps(i.record), weights: weights))
+                  load: SessionLoad.of(i.record.result, hr: i.hr, maxHR: max.bpm, wallBallReps: wallBallReps(i.record), weights: weights),
+                  isComplete: i.record.isComplete)
     }
     return TrainingLoadSummary(sessions: sessions, weights: weights, maxHR: max, skippedSessionIds: skipped)
   }
@@ -312,8 +318,10 @@ public struct LoadPeriod: Equatable {
   public let sessionsWithHeartRate: Int
   /// Minutes that had a heart-rate sample behind them.
   public let heartRateMinutes: Double
+  /// The period `now` falls in: still running, so its numbers are so far.
+  public let isCurrent: Bool
 
-  public var loadRounded: Int { Int(load.rounded()) }
+  public var loadRounded: Int { LoadWords.int(load) }
   /// Share of the period's minutes with a heart-rate sample, 0...1.
   public var heartRateShare: Double { minutes > 0 ? heartRateMinutes / minutes : 0 }
   public var hours: Double { minutes / 60 }
@@ -321,19 +329,22 @@ public struct LoadPeriod: Equatable {
   public var mostlyAssumed: Bool { load > 0 && assumedLoad * 2 > load }
   /// The type carrying the most load (ties go to the larger session); nil when empty.
   public var dominantType: SessionType? {
-    loadByType.max { a, b in a.value == b.value ? a.key.rawValue > b.key.rawValue : a.value < b.value }?.key
+    func rank(_ t: SessionType) -> Int { SessionType.allCases.firstIndex(of: t) ?? 0 }
+    return loadByType.max { a, b in
+      a.value == b.value ? rank(a.key) > rank(b.key) : a.value < b.value
+    }?.key
   }
 
-  public static func make(start: Date, sessions list: [LoadSession]) -> LoadPeriod {
+  public static func make(start: Date, sessions list: [LoadSession], isCurrent: Bool = false) -> LoadPeriod {
     var byType: [SessionType: Double] = [:]
     for s in list { byType[s.type, default: 0] += s.load.load }
-    return LoadPeriod(start: start, sessions: list.count, fullSims: list.filter { $0.type == .fullSim }.count,
+    return LoadPeriod(start: start, sessions: list.count, fullSims: list.filter { $0.type == .fullSim && $0.isComplete }.count,
                       load: list.reduce(0) { $0 + $1.load.load }, minutes: list.reduce(0) { $0 + $1.load.minutes },
                       hardMinutes: list.reduce(0) { $0 + $1.load.hardMinutes }, simKm: list.reduce(0) { $0 + $1.load.simKm },
                       wallBallReps: list.reduce(0) { $0 + $1.load.wallBallReps }, stationMetres: list.reduce(0) { $0 + $1.load.stationMetres },
                       loadByType: byType, assumedLoad: list.filter { $0.load.basis == .assumed }.reduce(0) { $0 + $1.load.load },
                       sessionsWithHeartRate: list.filter { $0.load.usedHeartRate }.count,
-                      heartRateMinutes: list.reduce(0) { $0 + $1.load.minutes * $1.load.coverage })
+                      heartRateMinutes: list.reduce(0) { $0 + $1.load.minutes * $1.load.coverage }, isCurrent: isCurrent)
   }
 }
 
@@ -357,21 +368,21 @@ public enum LoadHistory {
   }
 
   /// `count` periods oldest to newest; the last holds `ending`. Empty periods are kept (a quiet week is a zero bar).
-  public static func periods(_ sessions: [LoadSession], unit: LoadUnit, ending: Date, count: Int, calendar: Calendar) -> [LoadPeriod] {
+  public static func periods(_ sessions: [LoadSession], unit: LoadUnit, ending: Date, count: Int, calendar: Calendar, currentAt: Date? = nil) -> [LoadPeriod] {
     let last = start(of: unit, containing: ending, calendar: calendar)
     return (0..<max(count, 0)).reversed().map { k in
       let a = calendar.date(byAdding: unit.component, value: -k, to: last) ?? last
       let b = calendar.date(byAdding: unit.component, value: 1, to: a) ?? a
-      return LoadPeriod.make(start: a, sessions: sessions.filter { $0.date >= a && $0.date < b })
+      return LoadPeriod.make(start: a, sessions: sessions.filter { $0.date >= a && $0.date < b }, isCurrent: currentAt.map { $0 >= a && $0 < b } ?? false)
     }
   }
 
   public static func weeks(_ sessions: [LoadSession], now: Date, count: Int = 6, calendar: Calendar) -> [LoadPeriod] {
-    periods(sessions, unit: .week, ending: now, count: count, calendar: calendar)
+    periods(sessions, unit: .week, ending: now, count: count, calendar: calendar, currentAt: now)
   }
 
   public static func months(_ sessions: [LoadSession], now: Date, count: Int = 6, calendar: Calendar) -> [LoadPeriod] {
-    periods(sessions, unit: .month, ending: now, count: count, calendar: calendar)
+    periods(sessions, unit: .month, ending: now, count: count, calendar: calendar, currentAt: now)
   }
 
   /// Twelve months, January to December of `year`; future months are empty.
@@ -441,33 +452,55 @@ public struct LoadCompare: Equatable {
   public let ratio: Double?
   public let usual: UsualPeriod?
 
-  public var usualRounded: Int? { usual.map { Int($0.load.rounded()) } }
+  public var usualRounded: Int? { usual.map { LoadWords.int($0.load) } }
   public var band: LoadBand? { if case .compared(let b) = state { return b }; return nil }
   /// Distance from usual in whole percent.
-  public var percent: Int? { ratio.map { Int((abs($0 - 1) * 100).rounded()) } }
+  public var percent: Int? { ratio.map { LoadWords.int(abs($0 - 1) * 100) } }
   public var isDouble: Bool { (ratio ?? 0) >= LoadBand.doubleFrom }
 
-  /// `periodStart` is any date in the period to judge. Weeks before the first session do not count toward usual; empty weeks do.
-  public static func compare(_ sessions: [LoadSession], periodStart: Date, unit: LoadUnit = .week, calendar: Calendar) -> LoadCompare {
-    let cur = LoadHistory.periods(sessions, unit: unit, ending: periodStart, count: 1, calendar: calendar)[0]
+  /// The last period that has finished at `now` (last Monday to Sunday, or last month): what the weekly summary and the
+  /// notification judge. The period `now` is in is only ever "so far".
+  public static func lastComplete(_ sessions: [LoadSession], unit: LoadUnit = .week, now: Date, calendar: Calendar) -> LoadCompare {
+    let thisStart = LoadHistory.start(of: unit, containing: now, calendar: calendar)
+    let prev = calendar.date(byAdding: unit.component, value: -1, to: thisStart) ?? thisStart
+    return compare(sessions, periodStart: prev, unit: unit, calendar: calendar, now: now)
+  }
+
+  /// `periodStart` is any date in the period to judge. Periods before the first session do not count toward usual; empty ones
+  /// do. A first month that began after its middle is left out of usual (a few days would drag it down). After a break of two
+  /// or more empty periods the comparison waits for two non-empty periods, then uses only those. `now` marks the period in progress.
+  public static func compare(_ sessions: [LoadSession], periodStart: Date, unit: LoadUnit = .week, calendar: Calendar, now: Date? = nil) -> LoadCompare {
+    let cur = LoadHistory.periods(sessions, unit: unit, ending: periodStart, count: 1, calendar: calendar, currentAt: now)[0]
     func result(_ state: LoadState, ratio: Double? = nil, usual: UsualPeriod? = nil) -> LoadCompare {
       LoadCompare(unit: unit, current: cur, state: state, ratio: ratio, usual: usual)
     }
     guard cur.sessions > 0 else { return result(.noSessions) }
     guard let first = sessions.filter({ $0.date < cur.start }).map(\.date).min() else { return result(.firstWeeks) }
+    // Nearest first.
     let priors = (1...unit.priorCount).map { k -> LoadPeriod in
       let a = calendar.date(byAdding: unit.component, value: -k, to: cur.start) ?? cur.start
       return LoadHistory.periods(sessions, unit: unit, ending: a, count: 1, calendar: calendar)[0]
     }
-    if priors[0].sessions == 0, priors[1].sessions == 0 { return result(.returning) }
-    let firstStart = LoadHistory.start(of: unit, containing: first, calendar: calendar)
-    let counted = priors.filter { $0.start >= firstStart }
+    var firstStart = LoadHistory.start(of: unit, containing: first, calendar: calendar)
+    if unit == .month, let end = calendar.date(byAdding: .month, value: 1, to: firstStart),
+       first.timeIntervalSince(firstStart) > end.timeIntervalSince(firstStart) / 2 {
+      firstStart = end
+    }
+    // A break: the nearest pair of empty periods that sits after the first session.
+    var window = priors
+    if let j = (0..<(priors.count - 1)).first(where: { priors[$0].sessions == 0 && priors[$0 + 1].sessions == 0 && priors[$0 + 1].start >= firstStart }) {
+      if priors[0..<j].filter({ $0.sessions > 0 }).count < 2 { return result(.returning) }
+      window = Array(priors[0..<j])
+    }
+    let counted = window.filter { $0.start >= firstStart }
     let total = counted.reduce(0) { $0 + $1.sessions }
     guard total >= 3, counted.filter({ $0.sessions > 0 }).count >= 2 else { return result(.firstWeeks) }
     func mean(_ f: (LoadPeriod) -> Double) -> Double { counted.reduce(0) { $0 + f($1) } / Double(counted.count) }
     let usual = UsualPeriod(load: mean { $0.load }, fullSims: mean { Double($0.fullSims) }, wallBallReps: mean { Double($0.wallBallReps) },
                             hardMinutes: mean { $0.hardMinutes }, minutes: mean { $0.minutes }, heartRateShare: mean { $0.heartRateShare })
     let ratio = cur.load / usual.load
+    // No usual to compare with (all load zero or not a number): say so rather than invent a band.
+    guard usual.load.isFinite, usual.load > 0, ratio.isFinite else { return result(.firstWeeks) }
     return result(.compared(LoadBand.of(ratio: ratio)), ratio: ratio, usual: usual)
   }
 }
@@ -478,6 +511,12 @@ public enum LoadWords {
   public static let scopeLabel = "Station Coach sessions only"
   public static let definition = "Work minutes x how hard. A 60-minute full sim is usually 220 to 280."
   public static let assumedFootnote = "Most of this week had no heart rate, so load is an estimate from the session plan."
+
+  /// A whole number from a Double that may be NaN or infinite: those read as 0, huge values clamp.
+  public static func int(_ d: Double) -> Int {
+    guard d.isFinite else { return 0 }
+    return Int(min(max(d.rounded(), -1e9), 1e9))
+  }
 
   /// 1,234.
   public static func number(_ n: Int) -> String {
@@ -536,13 +575,13 @@ public enum LoadWords {
     }
     let reps = Double(cur.wallBallReps)
     if abs(reps - u.wallBallReps) >= 50, u.wallBallReps == 0 || abs(reps - u.wallBallReps) / u.wallBallReps >= 0.5 {
-      return "\(number(cur.wallBallReps)) wall balls, usual \(number(Int(u.wallBallReps.rounded())))."
+      return "\(number(cur.wallBallReps)) wall balls, usual \(number(int(u.wallBallReps)))."
     }
     // Hard minutes are measured from heart rate only, so they are compared only when both sides mostly had it.
     if cur.heartRateShare >= 0.5, u.heartRateShare >= 0.5, abs(cur.hardMinutes - u.hardMinutes) >= 10, u.hardMinutes == 0 || abs(cur.hardMinutes - u.hardMinutes) / u.hardMinutes >= 0.5 {
-      return "\(Int(cur.hardMinutes.rounded())) hard minutes, usual \(Int(u.hardMinutes.rounded()))."
+      return "\(int(cur.hardMinutes)) hard minutes, usual \(int(u.hardMinutes))."
     }
-    return "\(Int(cur.minutes.rounded())) work minutes, usual \(Int(u.minutes.rounded()))."
+    return "\(int(cur.minutes)) work minutes, usual \(int(u.minutes))."
   }
 
   /// One suggestion. `usualLine` is the coach's own line (`Recommendation.pick(...).line`) for a usual week.
@@ -554,11 +593,11 @@ public enum LoadWords {
       let usual = c.usual?.load ?? 0
       switch band {
       case .bigJump:
-        let cap = Int((usual * 1.1 / 10).rounded()) * 10
+        let cap = int(usual * 1.1 / 10) * 10
         return "Big week. Keep next week near \(number(cap)) and make one session a half sim."
       case .stepUp: return "Good step. Hold here a week before adding a session."
       case .usual: return usualLine
-      case .lighter: return "Lighter week. Back to about \(number(Int(usual.rounded()))) next week is fine."
+      case .lighter: return "Lighter week. Back to about \(number(int(usual))) next week is fine."
       }
     }
   }
@@ -582,6 +621,11 @@ public enum LoadWords {
 
 /// The Monday notification. Pure strings; scheduling is the app's job.
 public enum WeeklyNotice {
+  /// The notice for the last complete week at `now`. The same skip rules as below.
+  public static func content(sessions: [LoadSession], now: Date, calendar: Calendar, watchHasUnsent: Bool = false) -> Content? {
+    content(for: LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar), watchHasUnsent: watchHasUnsent)
+  }
+
   public struct Content: Equatable {
     public let title: String
     public let body: String
@@ -611,15 +655,21 @@ public enum LoadSample: String, CaseIterable {
 
 public struct LoadSampleData {
   public let sessions: [LoadSession]
-  /// The Monday of the week to judge (the newest of the six).
+  /// The Monday of the last complete week, the one to judge.
   public let weekStart: Date
+  /// Wednesday 28 Oct 2026, noon UTC: the week after `weekStart` is in progress with one session so far.
+  public let now: Date
   public let calendar: Calendar
-  public var compare: LoadCompare { LoadCompare.compare(sessions, periodStart: weekStart, unit: .week, calendar: calendar) }
+  /// The last complete week against its usual, as the app judges it at `now`.
+  public var compare: LoadCompare { LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar) }
+  /// Six weeks ending with the last complete one (what the weekly summary charts).
   public var weeks: [LoadPeriod] { LoadHistory.weeks(sessions, now: weekStart, count: 6, calendar: calendar) }
+  /// Six weeks ending with the week in progress (`isCurrent`, so far), what the Home card and History show.
+  public var weeksSoFar: [LoadPeriod] { LoadHistory.weeks(sessions, now: now, count: 6, calendar: calendar) }
 }
 
 public extension TrainingLoad {
-  /// Monday 19 Oct 2026, 00:00 UTC.
+  /// Monday 19 Oct 2026, 00:00 UTC, the start of the week the samples judge.
   static let sampleWeekStartEpoch: TimeInterval = 1_792_368_000
 
   static var sampleCalendar: Calendar { LoadHistory.calendar(timeZone: TimeZone(identifier: "UTC")!) }
@@ -663,7 +713,11 @@ public extension TrainingLoad {
         out.append(LoadSession(id: "sample-\(w)-\(i)", date: date, type: type, load: sampleLoad(kind, hr)))
       }
     }
-    return LoadSampleData(sessions: out, weekStart: monday, calendar: cal)
+    // One session so far in the week in progress (Tue 27 Oct, 10:00 UTC), so the week card has something to show.
+    let soFar = cal.date(byAdding: .day, value: 8, to: monday)!.addingTimeInterval(10 * 3_600)
+    out.append(LoadSession(id: "sample-so-far", date: soFar, type: .fullSim, load: sampleLoad(.full, hr)))
+    let now = cal.date(byAdding: .day, value: 9, to: monday)!.addingTimeInterval(12 * 3_600)
+    return LoadSampleData(sessions: out, weekStart: monday, now: now, calendar: cal)
   }
 
   /// A finished session on plan, step after step, for a real load calculation in screens and tests.

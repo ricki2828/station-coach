@@ -313,7 +313,7 @@ final class TrainingLoadTests: XCTestCase {
 
   func testNoSessionsWeek() {
     let d = TrainingLoad.sample(.usual)
-    let next = cal.date(byAdding: .weekOfYear, value: 1, to: d.weekStart)!
+    let next = cal.date(byAdding: .weekOfYear, value: 2, to: d.weekStart)! // the sample has one session so far in the week after weekStart
     let c = LoadCompare.compare(d.sessions, periodStart: next, calendar: cal)
     XCTAssertEqual(c.state, .noSessions)
     XCTAssertEqual(LoadWords.headline(c), "No sessions this week.")
@@ -342,7 +342,7 @@ final class TrainingLoadTests: XCTestCase {
 
   func testWeekBoundaryIsMondayMidnightLocal() {
     let sydney = LoadHistory.calendar(timeZone: TimeZone(identifier: "Australia/Sydney")!)
-    // Sun 25 Oct 2026 is before the clocks change (4 Oct) so Sydney is UTC+11. Monday 26 Oct 00:00 local = Sun 13:00 UTC.
+    // Sydney's clocks went forward on 4 Oct, so on 25 Oct it is UTC+11. Monday 26 Oct 00:00 local = Sun 13:00 UTC.
     let mondayLocal = sydney.date(from: DateComponents(year: 2026, month: 10, day: 26))!
     let sundayLate = mondayLocal.addingTimeInterval(-60) // Sun 23:59 local
     let weeks = LoadHistory.weeks([load(100, at: sundayLate), load(200, at: mondayLocal)], now: mondayLocal, count: 2, calendar: sydney)
@@ -359,6 +359,9 @@ final class TrainingLoadTests: XCTestCase {
     let year = LoadHistory.year(s, year: 2026, calendar: cal)
     XCTAssertEqual(year.count, 12)
     XCTAssertEqual(year.map(\.sessions), [2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    XCTAssertEqual(year[0].hours, 2, accuracy: 1e-9)
+    XCTAssertEqual(year[0].simKm, 16)
+    XCTAssertEqual(year[0].fullSims, 2)
     let months = LoadHistory.months(s, now: mar, count: 3, calendar: cal)
     XCTAssertEqual(months.map(\.loadRounded), [250, 0, 300])
   }
@@ -454,5 +457,135 @@ final class TrainingLoadTests: XCTestCase {
     XCTAssertEqual(w.loadByType[.halfSim], 120)
     XCTAssertEqual(w.simKm, 20)
     XCTAssertEqual(TrainingLoad.sample(.stepUp).weeks.count, 6)
+  }
+
+  // MARK: periods, breaks, months, guards
+
+  private func at(_ weeks: Int, _ day: Int = 1) -> Date {
+    cal.date(byAdding: .day, value: weeks * 7 + day, to: Date(timeIntervalSince1970: 1_792_368_000))!
+  }
+
+  func testEarlyEndedSessionAsTheWatchWritesIt() {
+    let plan = PlanBuilder.build(division: .openMen, target: 3600, type: .fullSim)
+    var m = SessionMachine(plan: plan)
+    m.start(at: base)
+    m.advance(at: base + 300_000) // run 1 done
+    m.advance(at: base + 600_000) // SkiErg done, run 2 starts
+    m.end(at: base + 700_000) // quit in run 2: the machine closes that step
+    XCTAssertNotNil(m.splits.last?.endMs)
+    let r = CoachResult(plan: plan, splits: m.splits, early: true, repTimesMs: [], repCorrection: 0, startedAtEpochMs: base, endedAtEpochMs: m.endMs!)
+    let l = SessionLoad.of(r, hr: nil, maxHR: 185)
+    XCTAssertEqual(l.simKm, 1)
+    XCTAssertEqual(l.stationMetres, 1_000)
+    // An aborted full sim is not a full sim; the same plan finished is.
+    let now = Date(timeIntervalSince1970: 1_793_000_000)
+    let sum = TrainingLoad.summarise([LoadInput(record: SessionRecord(id: "q", result: r), hr: nil)], now: now)
+    XCTAssertFalse(sum.sessions[0].isComplete)
+    XCTAssertEqual(LoadPeriod.make(start: now, sessions: sum.sessions).fullSims, 0)
+    let done = TrainingLoad.summarise([LoadInput(record: SessionRecord(id: "d", result: TrainingLoad.sampleResult(.fullSim)), hr: nil)], now: now)
+    XCTAssertEqual(LoadPeriod.make(start: now, sessions: done.sessions).fullSims, 1)
+  }
+
+  func testLastCompleteWeekAtWednesday() {
+    let d = TrainingLoad.sample(.usual)
+    XCTAssertEqual(cal.component(.weekday, from: d.now), 4) // Wednesday
+    let c = LoadCompare.lastComplete(d.sessions, now: d.now, calendar: cal)
+    XCTAssertEqual(c.current.start, d.weekStart)
+    XCTAssertFalse(c.current.isCurrent)
+    XCTAssertEqual(c.state, .compared(.usual))
+    // The week in progress is its own bar, flagged, with only what has happened so far.
+    let bars = d.weeksSoFar
+    XCTAssertTrue(bars.last!.isCurrent)
+    XCTAssertEqual(bars.last!.sessions, 1)
+    XCTAssertEqual(bars.filter(\.isCurrent).count, 1)
+    XCTAssertFalse(d.weeks.last!.isCurrent)
+    // Judging the in-progress week directly would read as lighter, which is why the app never does.
+    XCTAssertEqual(LoadCompare.compare(d.sessions, periodStart: d.now, calendar: cal).state, .compared(.lighter))
+    // Months: at 28 Oct the last complete month is September.
+    let sept = LoadCompare.lastComplete(d.sessions, unit: .month, now: d.now, calendar: cal)
+    XCTAssertEqual(cal.component(.month, from: sept.current.start), 9)
+  }
+
+  func testNoticeJudgesTheLastCompleteWeek() {
+    let d = TrainingLoad.sample(.stepUp)
+    let n = WeeklyNotice.content(sessions: d.sessions, now: d.now, calendar: cal)
+    XCTAssertEqual(n?.body, "600 load, 25% more than your usual week. Tap for what changed.")
+  }
+
+  func testSecondWeekAfterABreakIsNotADoubleWeek() {
+    var s: [LoadSession] = []
+    func add(_ w: Int) { s += [load(200, at: at(w)), load(200, at: at(w, 3))] }
+    for w in [-4, -1, 0] { add(w) } // trained, a two-week break, back for week -1 and 0
+    XCTAssertEqual(LoadCompare.compare(s, periodStart: at(0), calendar: cal).state, .returning)
+    add(1)
+    let second = LoadCompare.compare(s, periodStart: at(1), calendar: cal)
+    XCTAssertEqual(second.state, .compared(.usual))
+    XCTAssertEqual(second.usualRounded, 400)
+    XCTAssertFalse(second.isDouble)
+  }
+
+  private func month(_ m: Int, _ day: Int) -> Date { cal.date(from: DateComponents(year: 2026, month: m, day: day, hour: 10))! }
+  private func oct() -> Date { month(10, 1) }
+
+  func testMonthComparisonBandsAndWords() {
+    var s: [LoadSession] = []
+    for m in 7...9 { s += [load(200, at: month(m, 3)), load(200, at: month(m, 10))] }
+    let usual = LoadCompare.compare(s + [load(200, at: month(10, 6)), load(200, at: month(10, 13))], periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(usual.state, .compared(.usual))
+    XCTAssertEqual(LoadWords.headline(usual), "400 load, about your usual month (400).")
+    let big = LoadCompare.compare(s + (0..<4).map { load(200, at: month(10, 2 + $0)) }, periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(big.state, .compared(.bigJump))
+    XCTAssertEqual(LoadWords.headline(big), "800 load, about double your usual month (400).")
+    let light = LoadCompare.compare(s + [load(200, at: month(10, 6))], periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(LoadWords.bandWords(light), "50% less than your usual month")
+  }
+
+  func testMonthFirstAndReturning() {
+    let first = (0..<3).map { load(200, at: month(9, 3 + $0)) } + [load(200, at: month(10, 4))]
+    let f = LoadCompare.compare(first, periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(f.state, .firstWeeks)
+    XCTAssertEqual(LoadWords.headline(f), "200 load. Your usual month takes shape after 3 sessions.")
+    let back = [load(200, at: month(5, 3)), load(200, at: month(6, 3)), load(200, at: month(10, 4))]
+    let r = LoadCompare.compare(back, periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(r.state, .returning)
+    XCTAssertEqual(LoadWords.headline(r), "200 load, your first month back. We compare from next month.")
+  }
+
+  func testLateStartingFirstMonthDoesNotDragUsualDown() {
+    // First session on 29 Jul, after that month's middle: July is left out of usual.
+    let s = [load(200, at: month(7, 29))] + [8, 9, 10].flatMap { m in [load(200, at: month(m, 3)), load(200, at: month(m, 10))] }
+    let c = LoadCompare.compare(s, periodStart: oct(), unit: .month, calendar: cal)
+    XCTAssertEqual(c.usualRounded, 400)
+    XCTAssertEqual(c.state, .compared(.usual))
+  }
+
+  func testNoUsualLoadAndNonFiniteNumbersDoNotTrap() {
+    let zero = (-4 ... -1).map { load(0, at: at($0)) } + [load(100, at: at(0))]
+    let c = LoadCompare.compare(zero, periodStart: at(0), calendar: cal)
+    XCTAssertEqual(c.state, .firstWeeks)
+    XCTAssertNil(c.percent)
+    XCTAssertEqual(LoadWords.int(.nan), 0)
+    XCTAssertEqual(LoadWords.int(.infinity), 0)
+    let bad = LoadSession(id: "n", date: at(0), type: .fullSim,
+                          load: SessionLoad(load: .nan, minutes: 60, hardMinutes: 0, simKm: 0, wallBallReps: 0, stationMetres: 0, coverage: 1))
+    XCTAssertEqual(LoadPeriod.make(start: at(0), sessions: [bad]).loadRounded, 0)
+    XCTAssertEqual(LoadWords.number(LoadWords.int(.nan)), "0")
+  }
+
+  func testWeekContainingADaylightSavingChange() {
+    func check(_ zone: String, _ y: Int, _ m1: Int, _ d1: Int, _ m2: Int, _ d2: Int) {
+      let c = LoadHistory.calendar(timeZone: TimeZone(identifier: zone)!)
+      func local(_ m: Int, _ d: Int, _ h: Int, _ min: Int) -> Date { c.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))! }
+      let s = [load(1, at: local(m1, d1, 0, 30)), load(1, at: local(m2, d2, 23, 30)), load(1, at: local(m2, d2 + 1, 0, 10))]
+      let weeks = LoadHistory.weeks(s, now: local(m2, d2 + 1, 12, 0), count: 2, calendar: c)
+      XCTAssertEqual(weeks.map(\.sessions), [2, 1], zone)
+    }
+    check("Australia/Sydney", 2026, 9, 28, 10, 4) // clocks forward Sun 4 Oct
+    check("Europe/London", 2026, 10, 19, 10, 25) // clocks back Sun 25 Oct
+  }
+
+  func testDominantTypeTieGoesToTheBiggerSession() {
+    let p = LoadPeriod.make(start: at(0), sessions: [load(100, type: .halfSim, at: at(0)), load(100, type: .fullSim, at: at(0))])
+    XCTAssertEqual(p.dominantType, .fullSim)
   }
 }
