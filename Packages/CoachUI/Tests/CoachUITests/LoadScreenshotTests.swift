@@ -47,6 +47,20 @@ final class LoadScreenshotTests: XCTestCase {
     XCTAssertEqual(bars[5].total, d.weeks[5].load, accuracy: 0.001)
   }
 
+  func testSoFarTagOnlyOnCurrentPeriod() {
+    let d = TrainingLoad.sample(.usual)
+    let bars = LoadBar.bars(d.weeksSoFar, calendar: d.calendar)
+    XCTAssertEqual(bars.map(\.soFar), [false, false, false, false, false, true])
+    XCTAssertTrue(LoadBar.bars(d.weeks, calendar: d.calendar).allSatisfy { !$0.soFar })
+  }
+
+  func testChipOnlyAboveUsual() {
+    XCTAssertEqual(WeeklySummaryScreen.chip(.bigJump), "Big jump")
+    XCTAssertEqual(WeeklySummaryScreen.chip(.stepUp), "Step up")
+    XCTAssertNil(WeeklySummaryScreen.chip(.usual))
+    XCTAssertNil(WeeklySummaryScreen.chip(.lighter))
+  }
+
   func testScopeLabelIsOnEverySummary() {
     XCTAssertEqual(LoadWords.scopeLabel, "Station Coach sessions only")
   }

@@ -52,12 +52,12 @@ public struct LoadBar: Equatable, Identifiable {
     return f.string(from: date).uppercased()
   }
 
-  /// Newest last. `currentSoFar` marks the newest bar unfinished; `flagCurrent` outlines it in amber.
-  public static func bars(_ periods: [LoadPeriod], calendar: Calendar, format: String = "d MMM", currentSoFar: Bool = false, flagCurrent: Bool = false) -> [LoadBar] {
+  /// Newest last. A period still in progress (`isCurrent`) is drawn dashed and tagged "So far".
+  public static func bars(_ periods: [LoadPeriod], calendar: Calendar, format: String = "d MMM", flagCurrent: Bool = false) -> [LoadBar] {
     periods.enumerated().map { i, p in
       let last = i == periods.count - 1
-      return LoadBar(id: i, label: label(p.start, calendar: calendar, format: format), segments: segments(p), isCurrent: last,
-                     soFar: last && currentSoFar, flagged: last && flagCurrent)
+      return LoadBar(id: i, label: label(p.start, calendar: calendar, format: format), segments: segments(p), isCurrent: p.isCurrent,
+                     soFar: p.isCurrent, flagged: last && flagCurrent && !p.isCurrent)
     }
   }
 }
@@ -83,11 +83,14 @@ public struct LoadBars: View {
     self.compactLabels = compactLabels
   }
 
+  private var showSoFarRow: Bool { bars.contains { $0.soFar } }
+  private var labelsBelow: CGFloat { showLabels ? 22 + (showSoFarRow ? 12 : 0) : 0 }
   private var top: Double { max(1, bars.map(\.total).max() ?? 1, Double(usual ?? 0)) }
   private func height(_ v: Double) -> CGFloat { barMax * CGFloat(v / top) }
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      if let usual { usualKey(usual) }
       ZStack(alignment: .bottomLeading) {
         HStack(alignment: .bottom, spacing: bars.count > 8 ? 4 : 8) {
           ForEach(bars) { bar in column(bar) }
@@ -97,7 +100,7 @@ public struct LoadBars: View {
           usualLine(usual)
         }
       }
-      .frame(height: barMax + (showValues ? 22 : 0) + (showLabels ? 22 : 0), alignment: .bottom)
+      .frame(height: barMax + (showValues ? 22 : 0) + labelsBelow, alignment: .bottom)
       if let caption {
         Text(caption).font(.system(size: 13, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
       }
@@ -121,11 +124,16 @@ public struct LoadBars: View {
       }
       barBody(bar)
       if showLabels {
-        Text(bar.label)
-          .font(.system(size: compactLabels ? 11 : 13, weight: bar.isCurrent ? .heavy : .semibold))
-          .foregroundStyle(bar.isCurrent ? PhoneTheme.inkText : PhoneTheme.muted)
-          .lineLimit(1).minimumScaleFactor(0.6)
-          .frame(height: 18)
+        VStack(spacing: 0) {
+          Text(bar.label)
+            .font(.system(size: compactLabels ? 11 : 13, weight: bar.isCurrent ? .heavy : .semibold))
+            .foregroundStyle(bar.isCurrent ? PhoneTheme.inkText : PhoneTheme.muted)
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .frame(height: 18)
+          Text(bar.soFar ? "SO FAR" : " ").font(.system(size: 10, weight: .heavy)).tracking(0.5)
+            .foregroundStyle(PhoneTheme.inkText).lineLimit(1).minimumScaleFactor(0.6)
+            .frame(height: showSoFarRow ? 12 : 0).opacity(showSoFarRow ? 1 : 0)
+        }
       }
     }
     .frame(maxWidth: .infinity)
@@ -156,18 +164,17 @@ public struct LoadBars: View {
   }
 
   private func usualLine(_ usual: Int) -> some View {
-    let labelsBelow: CGFloat = showLabels ? 22 : 0
-    return ZStack(alignment: .topLeading) {
-      DashedRule().stroke(PhoneTheme.muted, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-      Text("Usual \(LoadWords.number(usual))")
-        .font(.system(size: 13, weight: .bold)).foregroundStyle(PhoneTheme.muted)
-        .padding(.horizontal, 4)
-        .background(PhoneTheme.card.opacity(0.9))
-        .offset(x: 0, y: height(Double(usual)) > barMax - 24 ? 4 : -19)
+    DashedRule().stroke(PhoneTheme.muted, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+      .frame(height: 1)
+      .padding(.bottom, labelsBelow + height(Double(usual)))
+      .allowsHitTesting(false)
+  }
+
+  private func usualKey(_ usual: Int) -> some View {
+    HStack(spacing: 8) {
+      DashedRule().stroke(PhoneTheme.muted, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])).frame(width: 28, height: 1)
+      Text("Usual \(LoadWords.number(usual))").font(.system(size: 13, weight: .bold)).foregroundStyle(PhoneTheme.muted)
     }
-    .frame(height: 1, alignment: .topLeading)
-    .padding(.bottom, labelsBelow + height(Double(usual)))
-    .allowsHitTesting(false)
   }
 }
 
@@ -191,10 +198,10 @@ public struct WeekCard: View {
   let note: String?
   let onOpen: () -> Void
 
-  public init(period: LoadPeriod, bars: [LoadBar], soFar: Bool = true, bandWords: String? = nil, note: String? = nil, onOpen: @escaping () -> Void = {}) {
+  public init(period: LoadPeriod, bars: [LoadBar], soFar: Bool? = nil, bandWords: String? = nil, note: String? = nil, onOpen: @escaping () -> Void = {}) {
     self.period = period
     self.bars = bars
-    self.soFar = soFar
+    self.soFar = soFar ?? period.isCurrent
     self.bandWords = bandWords
     self.note = note
     self.onOpen = onOpen
@@ -276,7 +283,11 @@ public struct WeeklySummaryScreen: View {
       }
       HeroCard(type: heroType) {
         VStack(alignment: .leading, spacing: 8) {
-          Text("Load").scaledKicker(color: PhoneTheme.sessionText(heroType))
+          HStack(alignment: .center) {
+            Text("Load").scaledKicker(color: PhoneTheme.sessionText(heroType))
+            Spacer()
+            if let chip = Self.chip(compare.band) { BandChip(text: chip) }
+          }
           Text(LoadWords.number(current.loadRounded)).scaledHero()
           Text(LoadWords.headline(compare)).scaledFont(17, .semibold).fixedSize(horizontal: false, vertical: true)
         }
@@ -313,6 +324,15 @@ public struct WeeklySummaryScreen: View {
     .background(PhoneTheme.paper)
   }
 
+  /// Amber cue for the two bands above usual. Lighter and usual stay quiet.
+  static func chip(_ band: LoadBand?) -> String? {
+    switch band {
+    case .bigJump?: return "Big jump"
+    case .stepUp?: return "Step up"
+    default: return nil
+    }
+  }
+
   private var legend: some View {
     HStack(spacing: 12) {
       ForEach(SessionType.allCases) { t in
@@ -322,6 +342,18 @@ public struct WeeklySummaryScreen: View {
         }
       }
     }
+  }
+}
+
+/// Bone pill with amber text: readable on the violet hero, never red.
+struct BandChip: View {
+  let text: String
+  var body: some View {
+    Text(text).font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1)
+      .foregroundStyle(PhoneTheme.amberText)
+      .padding(.horizontal, 10).padding(.vertical, 5)
+      .background(PhoneTheme.paper, in: Capsule())
+      .overlay(Capsule().stroke(PhoneTheme.amberText, lineWidth: 1.5))
   }
 }
 
@@ -431,14 +463,13 @@ public struct TrainingTotalsCard: View {
   private var weekContent: some View {
     let weeks = LoadHistory.weeks(sessions, now: now, count: 8, calendar: calendar)
     let cur = weeks[weeks.count - 1]
-    let prevStart = calendar.date(byAdding: .weekOfYear, value: -1, to: cur.start) ?? cur.start
-    let last = LoadCompare.compare(sessions, periodStart: prevStart, unit: .week, calendar: calendar)
+    let last = LoadCompare.lastComplete(sessions, unit: .week, now: now, calendar: calendar)
     return VStack(alignment: .leading, spacing: 12) {
       tiles(("Load so far", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Wall balls", LoadWords.number(cur.wallBallReps)))
       if sessions.count <= 1 {
         Text("Your load builds week by week.").font(.system(size: 15, weight: .semibold)).foregroundStyle(PhoneTheme.muted)
       }
-      LoadBars(bars: LoadBar.bars(weeks, calendar: calendar, currentSoFar: true), usual: last.usualRounded, compactLabels: true)
+      LoadBars(bars: LoadBar.bars(weeks, calendar: calendar), usual: last.usualRounded, compactLabels: true)
       if let b = LoadWords.bandWords(last) {
         Text("Last week: \(b.prefix(1).lowercased() + b.dropFirst()).").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
@@ -449,13 +480,12 @@ public struct TrainingTotalsCard: View {
   private var monthContent: some View {
     let months = LoadHistory.months(sessions, now: now, count: 6, calendar: calendar)
     let cur = months[months.count - 1]
-    let prevStart = calendar.date(byAdding: .month, value: -1, to: cur.start) ?? cur.start
-    let last = LoadCompare.compare(sessions, periodStart: prevStart, unit: .month, calendar: calendar)
+    let last = LoadCompare.lastComplete(sessions, unit: .month, now: now, calendar: calendar)
     let prior = months.dropLast().suffix(3)
     let usual = prior.isEmpty ? nil : Int((prior.reduce(0) { $0 + $1.load } / Double(prior.count)).rounded())
     return VStack(alignment: .leading, spacing: 12) {
       tiles(("Load", LoadWords.number(cur.loadRounded)), ("Sessions", "\(cur.sessions)"), ("Best fade", bestFade.map { "\($0) s" } ?? "\u{2013}"))
-      LoadBars(bars: LoadBar.bars(months, calendar: calendar, format: "MMM", currentSoFar: true), usual: usual)
+      LoadBars(bars: LoadBar.bars(months, calendar: calendar, format: "MMM"), usual: usual)
       if let b = LoadWords.bandWords(last) {
         Text("\(b).").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
       }
@@ -473,7 +503,7 @@ public struct TrainingTotalsCard: View {
     let months = LoadHistory.year(sessions, year: year, calendar: calendar)
     let bars = months.enumerated().map { i, p in
       LoadBar(id: i, label: LoadBar.label(p.start, calendar: calendar, format: "MMMMM"), segments: LoadBar.segments(p),
-              isCurrent: calendar.isDate(p.start, equalTo: now, toGranularity: .month), future: p.start > now)
+              isCurrent: calendar.isDate(p.start, equalTo: now, toGranularity: .month), soFar: calendar.isDate(p.start, equalTo: now, toGranularity: .month), future: p.start > now)
     }
     let sims = months.reduce(0) { $0 + $1.fullSims }
     let ytd = LoadHistory.sessionsYearToDate(sessions, now: now, calendar: calendar)

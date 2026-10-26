@@ -6,44 +6,69 @@ extension ScreenCatalog {
     CatalogEntry(name: "phone-\(name)", size: nil, view: AnyView(view.frame(width: Theme.phone.width)))
   }
 
-  static let loadUsualLine = "Time for a full sim. It's the real test of the fade."
+  private static func onPaper(_ v: some View) -> some View { v.padding(20).background(PhoneTheme.paper) }
+
+  /// Describes, never orders (the coach's own wording arrives with the app wiring).
+  static let loadUsualLine = "About your usual week. The next full sim is the real test of the fade."
 
   static func loadSummary(_ s: LoadSample, onWhy: @escaping () -> Void = {}) -> WeeklySummaryScreen {
     let d = TrainingLoad.sample(s)
     return WeeklySummaryScreen(compare: d.compare, weeks: d.weeks, calendar: d.calendar, usualLine: loadUsualLine, onWhy: onWhy)
   }
 
-  /// The sample's final week with only its first session, as a week still in progress.
-  static func loadSoFar(_ s: LoadSample) -> (data: LoadSampleData, sessions: [LoadSession], period: LoadPeriod, bars: [LoadBar]) {
-    let d = TrainingLoad.sample(s)
-    let next = d.calendar.date(byAdding: .weekOfYear, value: 1, to: d.weekStart) ?? d.weekStart
-    let thisWeek = d.sessions.filter { $0.date >= d.weekStart && $0.date < next }.sorted { $0.date < $1.date }
-    let kept = d.sessions.filter { x in !(x.date >= d.weekStart) } + thisWeek.prefix(1)
-    let weeks = LoadHistory.weeks(kept, now: d.weekStart, count: 6, calendar: d.calendar)
-    return (d, kept, weeks[weeks.count - 1], LoadBar.bars(weeks, calendar: d.calendar, currentSoFar: true))
+  private static func demoLoad(_ t: SessionType, _ jitter: Int) -> SessionLoad {
+    let j = Double(jitter)
+    switch t {
+    case .fullSim: return SessionLoad(load: 230 + j * 6, minutes: 58 + j, hardMinutes: 26 + j / 2, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: 1)
+    case .halfSim: return SessionLoad(load: 115 + j * 3, minutes: 29 + j / 2, hardMinutes: 11 + j / 3, simKm: 4, wallBallReps: 0, stationMetres: 1_180, coverage: 1)
+    case .wallBallFocus: return SessionLoad(load: 96 + j * 3, minutes: 27, hardMinutes: 9, simKm: 3, wallBallReps: 150, stationMetres: 0, coverage: 1)
+    }
   }
 
-  /// Sample sessions plus a run of earlier-year sessions, for the year-versus-last-year line.
-  static func loadWithLastYear() -> (sessions: [LoadSession], data: LoadSampleData) {
-    let d = TrainingLoad.sample(.usual)
-    var out = d.sessions
-    let load = SessionLoad(load: 240, minutes: 60, hardMinutes: 28, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: 1)
-    var date = d.calendar.date(byAdding: .year, value: -1, to: d.weekStart.addingTimeInterval(-70 * 86_400)) ?? d.weekStart
-    for i in 0..<14 {
-      out.append(LoadSession(id: "last-\(i)", date: date, type: i % 3 == 0 ? .halfSim : .fullSim, load: load))
-      date = date.addingTimeInterval(7 * 86_400)
+  /// Synthetic history, Monday 3 Nov 2025 to now: a quieter year before, a steady build this year, a short break in January.
+  /// Last year (2025, Nov-Dec) only has the tail, so the year-vs-last line compares the same stretch honestly.
+  static func demoHistory(now: Date, calendar: Calendar) -> [LoadSession] {
+    let firstMonday = Date(timeIntervalSince1970: 1_762_128_000)  // Mon 3 Nov 2025
+    let perWeek = [1, 1, 2, 1, 0, 0, 1, 2, 2, 2, 1, 2, 2, 3, 2, 2, 2, 1, 2, 3, 2, 2, 2, 3, 2, 2, 1, 2, 3, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 3, 2, 2]
+    let types: [SessionType] = [.fullSim, .halfSim, .fullSim, .wallBallFocus, .fullSim, .halfSim]
+    let days = [1, 3, 5]
+    var out: [LoadSession] = []
+    for (w, n) in perWeek.enumerated() {
+      for i in 0..<n {
+        let date = calendar.date(byAdding: .day, value: w * 7 + days[i], to: firstMonday)!.addingTimeInterval(10 * 3_600)
+        guard date < now else { continue }
+        let type = types[(w + i) % types.count]
+        out.append(LoadSession(id: "demo-\(w)-\(i)", date: date, type: type, load: demoLoad(type, (w * 3 + i * 5) % 9)))
+      }
     }
-    return (out, d)
+    return out
+  }
+
+  /// Year view needs last year to compare against: add Jan-Oct 2025 as a lighter year.
+  static func demoHistoryWithLastYear(now: Date, calendar: Calendar) -> [LoadSession] {
+    let jan = Date(timeIntervalSince1970: 1_735_516_800)  // Mon 30 Dec 2024
+    let types: [SessionType] = [.halfSim, .fullSim, .halfSim, .wallBallFocus]
+    var out: [LoadSession] = []
+    for w in 0..<44 where w % 5 != 4 {
+      let date = calendar.date(byAdding: .day, value: w * 7 + 2, to: jan)!.addingTimeInterval(10 * 3_600)
+      let type = types[w % types.count]
+      out.append(LoadSession(id: "demo-ly-\(w)", date: date, type: type, load: demoLoad(type, w % 7)))
+    }
+    return out + demoHistory(now: now, calendar: calendar)
   }
 
   public static var loadScreens: [CatalogEntry] {
     let usual = TrainingLoad.sample(.usual)
-    let sofar = loadSoFar(.usual)
-    let firstSoFar = loadSoFar(.firstWeeks)
-    let last = loadWithLastYear()
-    let one = LoadSession(id: "one", date: usual.weekStart.addingTimeInterval(36_000), type: .fullSim,
-                          load: SessionLoad(load: 240, minutes: 60, hardMinutes: 28, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: 1))
+    let first = TrainingLoad.sample(.firstWeeks)
+    let cal = usual.calendar
+    let demo = demoHistory(now: usual.now, calendar: cal)
+    let demoLY = demoHistoryWithLastYear(now: usual.now, calendar: cal)
+    let oneNow = usual.weekStart.addingTimeInterval(36_000 + 3_600)
+    let one = LoadSession(id: "one", date: usual.weekStart.addingTimeInterval(36_000), type: .fullSim, load: demoLoad(.fullSim, 0))
     let why = TrainingLoad.sample(.mixedHeartRate)
+    func card(_ d: LoadSampleData, note: String? = nil) -> WeekCard {
+      WeekCard(period: d.weeksSoFar[d.weeksSoFar.count - 1], bars: LoadBar.bars(d.weeksSoFar, calendar: d.calendar), note: note)
+    }
     return [
       loadW("week-summary-usual", loadSummary(.usual)),
       loadW("week-summary-stepup", loadSummary(.stepUp)),
@@ -53,16 +78,15 @@ extension ScreenCatalog {
       loadW("week-summary-returning", loadSummary(.returning)),
       loadW("week-summary-nohr", loadSummary(.noHeartRate)),
       loadW("week-summary-xl", loadSummary(.bigJump).environment(\.dynamicTypeSize, .xxxLarge)),
-      loadW("week-why", WhyLoadSheet(period: why.compare.current, maxHR: MaxHeartRate.estimate([], now: why.weekStart))),
-      loadW("week-card-sofar", WeekCard(period: sofar.period, bars: sofar.bars, soFar: true).padding(20).background(PhoneTheme.paper)),
-      loadW("week-card-first", WeekCard(period: firstSoFar.period, bars: firstSoFar.bars, soFar: true,
-                                       note: "Your usual week takes shape after 3 sessions.").padding(20).background(PhoneTheme.paper)),
-      loadW("totals-week", TrainingTotalsCard(mode: .week, sessions: usual.sessions, now: usual.weekStart.addingTimeInterval(3 * 86_400), calendar: usual.calendar).padding(20).background(PhoneTheme.paper)),
-      loadW("totals-month", TrainingTotalsCard(mode: .month, sessions: usual.sessions, now: usual.weekStart.addingTimeInterval(3 * 86_400), calendar: usual.calendar, bestFade: 19).padding(20).background(PhoneTheme.paper)),
-      loadW("totals-year", TrainingTotalsCard(mode: .year, sessions: usual.sessions, now: usual.weekStart.addingTimeInterval(3 * 86_400), calendar: usual.calendar).padding(20).background(PhoneTheme.paper)),
-      loadW("totals-year-vs-last", TrainingTotalsCard(mode: .year, sessions: last.sessions, now: last.data.weekStart.addingTimeInterval(3 * 86_400), calendar: last.data.calendar).padding(20).background(PhoneTheme.paper)),
-      loadW("totals-one-session", TrainingTotalsCard(mode: .week, sessions: [one], now: usual.weekStart.addingTimeInterval(3 * 86_400), calendar: usual.calendar).padding(20).background(PhoneTheme.paper)),
-      loadW("notify-optin", NotifyOptInCard().padding(20).background(PhoneTheme.paper)),
+      loadW("week-why", WhyLoadSheet(period: why.compare.current, maxHR: MaxHeartRate.estimate([], now: why.now))),
+      loadW("week-card-sofar", onPaper(card(usual))),
+      loadW("week-card-first", onPaper(card(first, note: "Your usual week takes shape after 3 sessions."))),
+      loadW("totals-week", onPaper(TrainingTotalsCard(mode: .week, sessions: demo, now: usual.now, calendar: cal))),
+      loadW("totals-month", onPaper(TrainingTotalsCard(mode: .month, sessions: demo, now: usual.now, calendar: cal, bestFade: 19))),
+      loadW("totals-year", onPaper(TrainingTotalsCard(mode: .year, sessions: demo, now: usual.now, calendar: cal))),
+      loadW("totals-year-vs-last", onPaper(TrainingTotalsCard(mode: .year, sessions: demoLY, now: usual.now, calendar: cal))),
+      loadW("totals-one-session", onPaper(TrainingTotalsCard(mode: .week, sessions: [one], now: oneNow, calendar: cal))),
+      loadW("notify-optin", onPaper(NotifyOptInCard())),
     ]
   }
 }
