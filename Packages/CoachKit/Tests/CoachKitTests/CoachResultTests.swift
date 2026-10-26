@@ -247,17 +247,36 @@ final class CoachResultTests: XCTestCase {
     XCTAssertNotEqual(InsightPicker.pick(r2).rule, 4)
   }
 
-  func testSaveCorrectionPersistsToCoachJSON() throws {
+  func testCorrectionSurvivesResentCoachJSON() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    let r = withNoReps([1, 5, 5])
-    try JSONEncoder().encode(r).write(to: dir.appendingPathComponent(CoachResult.fileName))
-    try CoachResult.saveCorrection(WallBallCorrection(validReps: 95, noReps: 5), inSessionFolder: dir)
-    let back = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: dir.appendingPathComponent(CoachResult.fileName)))
+    let url = dir.appendingPathComponent(CoachResult.fileName)
+    let original = try JSONEncoder().encode(withNoReps([1, 5, 5]))
+    try original.write(to: url)
+    let saved = try CoachResult.saveCorrection(WallBallCorrection(validReps: 95, noReps: 5), inSessionFolder: dir)
+    XCTAssertEqual(saved.validReps, 95)
+    XCTAssertEqual(try Data(contentsOf: url), original, "saving must not touch the watch's file")
+    // The watch re-sends the original file over the top.
+    try original.write(to: url)
+    let back = try CoachResult.load(inSessionFolder: dir)
     XCTAssertEqual(back.validReps, 95)
     XCTAssertEqual(back.noRepCount, 5)
-    XCTAssertEqual(back.plan, r.plan)
-    XCTAssertEqual(back.repTimesMs, r.repTimesMs)
+    XCTAssertEqual(try Data(contentsOf: url), original)
+  }
+
+  func testCorrectionIsClamped() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try JSONEncoder().encode(withNoReps([1])).write(to: dir.appendingPathComponent(CoachResult.fileName))
+    let r = try CoachResult.saveCorrection(WallBallCorrection(validReps: 9_999, noReps: -4), inSessionFolder: dir)
+    XCTAssertEqual(r.validReps, 300)
+    XCTAssertEqual(r.noRepCount, 0)
+  }
+
+  func testSaveCorrectionFailsWithoutCoachJSON() {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    XCTAssertThrowsError(try CoachResult.saveCorrection(WallBallCorrection(validReps: 90, noReps: 1), inSessionFolder: dir))
   }
 }

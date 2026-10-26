@@ -52,6 +52,14 @@ public struct WallBallCorrection: Codable, Equatable {
     self.validReps = validReps
     self.noReps = noReps
   }
+
+  public static let maxValidReps = 300
+  public static let maxNoReps = 100
+
+  /// Within what the sheet can sensibly mean: 0...300 valid, 0...100 no-reps.
+  public var clamped: WallBallCorrection {
+    WallBallCorrection(validReps: min(max(0, validReps), Self.maxValidReps), noReps: min(max(0, noReps), Self.maxNoReps))
+  }
 }
 
 /// Where a running rep count sits in the plan's sets.
@@ -123,14 +131,25 @@ public struct CoachResult: Codable, Equatable {
 
   public static let fileName = "coach.json"
 
-  /// Writes the phone's correction into the session folder's `coach.json`, leaving every other field as the watch wrote it.
+  /// Phone-only file next to `coach.json`. The watch never sends it, so a re-sent `coach.json` cannot overwrite a correction.
+  public static let correctionFileName = "phone-correction.json"
+
+  /// The watch's `coach.json` with the phone's sidecar correction (if any) applied.
+  public static func load(inSessionFolder folder: URL) throws -> CoachResult {
+    var result = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: folder.appendingPathComponent(fileName)))
+    if let data = try? Data(contentsOf: folder.appendingPathComponent(correctionFileName)),
+       let c = try? JSONDecoder().decode(WallBallCorrection.self, from: data) {
+      result.wallBallCorrection = c.clamped
+    }
+    return result
+  }
+
+  /// Writes the phone's correction to the sidecar only; `coach.json` is never touched. Returns the result with it applied.
   @discardableResult
   public static func saveCorrection(_ correction: WallBallCorrection, inSessionFolder folder: URL) throws -> CoachResult {
-    let url = folder.appendingPathComponent(fileName)
-    var result = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: url))
-    result.wallBallCorrection = WallBallCorrection(validReps: max(0, correction.validReps), noReps: max(0, correction.noReps))
-    try JSONEncoder().encode(result).write(to: url, options: .atomic)
-    return result
+    _ = try JSONDecoder().decode(CoachResult.self, from: Data(contentsOf: folder.appendingPathComponent(fileName)))
+    try JSONEncoder().encode(correction.clamped).write(to: folder.appendingPathComponent(correctionFileName), options: .atomic)
+    return try load(inSessionFolder: folder)
   }
 
   /// No-reps: the phone's correction when set, else the taps logged on the watch.
