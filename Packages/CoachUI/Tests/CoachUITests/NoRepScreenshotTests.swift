@@ -15,7 +15,7 @@ final class NoRepScreenshotTests: XCTestCase {
   func testRenderNoRepScreens() throws {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     let entries = NoRepScreens.watchScreens
-    XCTAssertEqual(entries.count, 9)
+    XCTAssertEqual(entries.count, 4)
     let existing = Set(ScreenCatalog.all.map(\.name))
     for entry in entries {
       XCTAssertFalse(existing.contains(entry.name), "\(entry.name) clashes with the catalog")

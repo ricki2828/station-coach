@@ -30,3 +30,32 @@ public struct WatchChrome<Content: View>: View {
       .background(Color.black)
   }
 }
+
+/// The Always-On (wrist down) look. The system sets `isLuminanceReduced`; this key forces it for snapshots, where
+/// the iOS test host never reduces luminance.
+struct WatchDimmedKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
+extension EnvironmentValues {
+  var watchDimmed: Bool {
+    get { self[WatchDimmedKey.self] }
+    set { self[WatchDimmedKey.self] = newValue }
+  }
+}
+
+/// The five watch case sizes the screens are checked at, in points.
+public enum WatchSizes {
+  public struct Size: Equatable {
+    public let mm: Int
+    public let points: CGSize
+  }
+
+  public static let all: [Size] = [
+    Size(mm: 40, points: CGSize(width: 162, height: 197)),
+    Size(mm: 41, points: CGSize(width: 176, height: 215)),
+    Size(mm: 42, points: CGSize(width: 187, height: 223)),
+    Size(mm: 45, points: CGSize(width: 198, height: 242)),
+    Size(mm: 46, points: CGSize(width: 208, height: 248)),
+  ]
+}
