@@ -158,8 +158,13 @@ public struct SetupScreen: View {
           }
         }
       }
-      referenceCard
-      splitSummary
+      // Race day is always against the plan (no ghost), and shows its split targets instead of the training summary.
+      if model.type == .raceDay {
+        raceSplits
+      } else {
+        referenceCard
+        splitSummary
+      }
       sendArea
       if let notify { MondaySummaryCard(state: notify, onToggle: onNotifyToggle) }
     }
@@ -206,6 +211,31 @@ public struct SetupScreen: View {
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
+  /// Race day: every segment's target split, flagged as an estimate.
+  private var raceSplits: some View {
+    let plan = model.basePlan
+    return PhoneCard {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Text("Target splits").phoneKicker()
+          Text("ESTIMATE").font(.system(size: 11, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
+            .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
+        }
+        Text(RacePlan.estimateNote).font(.system(size: 13)).foregroundStyle(PhoneTheme.muted)
+        ForEach(RacePlan.segments(plan)) { seg in
+          HStack(spacing: 8) {
+            Circle().fill(PhoneTheme.stationColor(seg.activity)).frame(width: 10, height: 10)
+            Text(seg.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+            Spacer(minLength: 8)
+            Text(Fmt.clock(seg.targetSeconds)).font(.system(size: 17, weight: .semibold)).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
+          }
+          .accessibilityElement(children: .combine)
+        }
+        Text("Total \(Fmt.clock(plan.plannedSeconds)). \(RacePlan.footnote(plan))").font(.system(size: 13)).foregroundStyle(PhoneTheme.muted)
+      }
+    }
+  }
+
   private var splitSummary: some View {
     let plan = model.plan
     let run = plan.steps.first { $0.isRun }?.targetSeconds ?? 0
@@ -216,7 +246,7 @@ public struct SetupScreen: View {
           Text("ESTIMATE").font(.system(size: 11, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
             .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
         }
-        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) including transitions")
+        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) including changeovers")
           .font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
         ProportionalStrip(items: plan.steps.filter { !$0.isRun }.map { (PhoneTheme.stationColor($0.activity), Double($0.targetSeconds)) }, height: 14)
         Text("Total \(Fmt.clock(plan.plannedSeconds)). Default split: runs about half, stations by typical shares.")

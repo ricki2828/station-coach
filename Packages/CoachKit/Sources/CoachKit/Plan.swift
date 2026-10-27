@@ -15,21 +15,32 @@ public enum Division: String, CaseIterable, Codable, Identifiable {
 
 public enum SessionType: String, CaseIterable, Codable, Identifiable {
   case fullSim = "full_sim", halfSim = "half_sim", wallBallFocus = "wall_ball_focus"
+  case raceDay = "race_day"
   public var id: String { rawValue }
   public var title: String {
     switch self {
     case .fullSim: return "Full sim"
     case .halfSim: return "Half sim"
     case .wallBallFocus: return "Wall-ball focus"
+    case .raceDay: return "Race day"
     }
   }
   public var detail: String { detail(wallBallReps: PlanBuilder.defaultFocusReps) }
+
+  /// Race day is quiet: split calls only. No pace instruction halfway through a station and no jog-in cue.
+  public func silences(_ kind: CoachCueKind) -> Bool {
+    self == .raceDay && (kind == .midStation || kind == .jogIn)
+  }
+
+  /// "Do it later" is a training option; race order is fixed.
+  public var allowsDoItLater: Bool { self != .raceDay }
 
   public func detail(wallBallReps: Int) -> String {
     switch self {
     case .fullSim: return "8 runs, 8 stations"
     case .halfSim: return "Runs 1-4, stations 1-4"
     case .wallBallFocus: return "1 km run, \(wallBallReps) wall balls, x3"
+    case .raceDay: return "Split targets, quiet coach"
     }
   }
 }
@@ -41,7 +52,7 @@ public enum Stations {
   public static func name(_ a: Activity) -> String {
     switch a {
     case .run: return "Run"
-    case .transition: return "Transition"
+    case .transition: return "Changeover"
     case .skierg: return "SkiErg"
     case .sledPush: return "Sled push"
     case .sledPull: return "Sled pull"
@@ -162,8 +173,8 @@ public enum PlanBuilder {
     var steps: [PlanStep] = []
     func add(_ step: (Int) -> PlanStep) { steps.append(step(steps.count)) }
     switch type {
-    case .fullSim, .halfSim:
-      let n = type == .fullSim ? 8 : 4
+    case .fullSim, .halfSim, .raceDay:
+      let n = type == .halfSim ? 4 : 8
       for i in 0..<n {
         add { PlanStep(activity: .run, index: $0, runNumber: i + 1, targetSeconds: runTarget, reps: nil, sets: []) }
         let a = Stations.race[i]
@@ -177,7 +188,7 @@ public enum PlanBuilder {
       }
     }
     // Rounding leaves a few seconds; the last step of a full sim absorbs them so the plan adds up to the target.
-    if type == .fullSim, let last = steps.last {
+    if type == .fullSim || type == .raceDay, let last = steps.last {
       let diff = clamped(target) - steps.reduce(0) { $0 + $1.targetSeconds }
       steps[steps.count - 1] = PlanStep(activity: last.activity, index: last.index, runNumber: last.runNumber,
                                         targetSeconds: last.targetSeconds + diff, reps: last.reps, sets: last.sets)

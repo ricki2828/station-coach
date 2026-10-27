@@ -16,7 +16,7 @@ extension ScreenCatalog {
   private static func demoLoad(_ t: SessionType, _ jitter: Int) -> SessionLoad {
     let j = Double(jitter)
     switch t {
-    case .fullSim: return SessionLoad(load: 230 + j * 6, minutes: 58 + j, hardMinutes: 26 + j / 2, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: 1)
+    case .fullSim, .raceDay: return SessionLoad(load: 230 + j * 6, minutes: 58 + j, hardMinutes: 26 + j / 2, simKm: 8, wallBallReps: 100, stationMetres: 2_480, coverage: 1)
     case .halfSim: return SessionLoad(load: 115 + j * 3, minutes: 29 + j / 2, hardMinutes: 11 + j / 3, simKm: 4, wallBallReps: 0, stationMetres: 1_180, coverage: 1)
     case .wallBallFocus: return SessionLoad(load: 96 + j * 3, minutes: 27, hardMinutes: 9, simKm: 3, wallBallReps: 150, stationMetres: 0, coverage: 1)
     }

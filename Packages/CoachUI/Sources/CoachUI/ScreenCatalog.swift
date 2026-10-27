@@ -96,7 +96,7 @@ public enum ScreenCatalog {
     var sled = step(.time, .sledPull, "Sled pull", dominant: "1:48", dominantLabel: "Station time 1 minute 48", secondary: "/ 4:25",
                     secondaryLabel: "Target 4 minutes 25", next: "Next: Run 4", delta: 8)
     sled.hrBpm = 171
-    return [
+    let base: [CatalogEntry] = [
       watch("ready-loading", CoachReadyScreen(model: .loading)),
       watch("ready-no-plan", CoachReadyScreen(model: .noPlan)),
       watch("ready", CoachReadyScreen(model: .ready(ready))),
@@ -121,7 +121,7 @@ public enum ScreenCatalog {
         totalSeconds: 4778, stations: allStations), animate: false)),
       watch("run-changeover-wide", CoachStepScreen(model: { var m = run; m.badge = "Changeover"; m.dominant = "10:41"; m.deltaSeconds = 641; m.hrBpm = 171; m.ladder = ladder(6); m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("run-over-dimmed", CoachStepScreen(model: over, onMissed: {}), dimmed: true),
-      watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
+      watch("run-changeover", CoachStepScreen(model: { var m = run; m.badge = "Changeover"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("station-time", CoachStepScreen(model: station, onMissed: {})),
       watch("station-time-sled", CoachStepScreen(model: sled, onMissed: {})),
       watch("run-hr-off", CoachStepScreen(model: { var m = run; m.hrOff = true; m.hrBpm = nil; return m }(), onMissed: {})),
@@ -157,6 +157,7 @@ public enum ScreenCatalog {
         mode: .saveFailed(missing: 1), totalText: "1:18:42", line: "1:18 under target", early: false,
         totalSeconds: 4722, stations: allStations), animate: false)),
     ]
+    return base + RaceScreens.watchScreens
   }
 
   /// A last half sim to race: Sat 24 Oct, 41:12 (an even pace over the plan's steps).
@@ -173,6 +174,8 @@ public enum ScreenCatalog {
       phone("setup-wall-ball-focus", SetupScreen(model: SetupModel(type: .wallBallFocus, wallBallReps: 75)).frame(width: Theme.phone.width)),
       phone("setup-ghost-picker", SetupScreen(model: SetupModel(type: .halfSim, ghost: ghostOffer, useGhost: false)).frame(width: Theme.phone.width)),
       phone("setup-ghost-none", SetupScreen(model: SetupModel(type: .halfSim, ghost: Ghost.offer(for: PlanBuilder.build(division: .openMen, target: 5400, type: .halfSim), records: []))).frame(width: Theme.phone.width)),
+      phone("setup-race-day", SetupScreen(model: SetupModel(targetSeconds: 4800, type: .raceDay)).frame(width: Theme.phone.width)),
+      phone("setup-race-day-splits", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4200, type: .raceDay, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-sending", SetupScreen(model: SetupModel(send: .sending(watchName: "Apple Watch"))).frame(width: Theme.phone.width)),
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),

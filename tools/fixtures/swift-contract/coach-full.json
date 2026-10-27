@@ -47,11 +47,13 @@
   "splits": [
     {
       "endMs": 1790000300000,
+      "skipped": true,
       "startMs": 1790000000000,
       "stepIndex": 0
     },
     {
       "endMs": 1790000400000,
+      "skipped": false,
       "startMs": 1790000300000,
       "stepIndex": 1
     }

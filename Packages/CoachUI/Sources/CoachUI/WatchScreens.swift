@@ -594,6 +594,9 @@ public struct CoachReadyScreen: View {
               .background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
               .accessibilityLabel(line.full)
           }
+          if let line = info.line, Self.warningLine(info) == nil {
+            Text(line).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.bone.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.7)
+          }
           Spacer(minLength: 0)
           Button(action: onStart) {
             Text("START").font(.system(size: 22, weight: .heavy)).foregroundStyle(Theme.ink)
@@ -763,14 +766,21 @@ public struct CoachFinishScreen: View {
   }
 }
 
-/// The long-press menu: Undo, End. Shown over the session.
+/// The long-press menu: Undo, End (and Skip station on a station). Shown over the session. With the Skip row there are four
+/// rows: they scroll (Digital Crown, swipe), 44 pt each on a compact watch, and the first three show without scrolling.
 public struct CoachMenuScreen: View {
+  var canSkip = false
   var onUndo: () -> Void = {}
+  var onSkip: () -> Void = {}
   var onEnd: () -> Void = {}
   var onCancel: () -> Void = {}
+  @Environment(\.watchCompact) private var envCompact
 
-  public init(onUndo: @escaping () -> Void = {}, onEnd: @escaping () -> Void = {}, onCancel: @escaping () -> Void = {}) {
+  public init(canSkip: Bool = false, onUndo: @escaping () -> Void = {}, onSkip: @escaping () -> Void = {}, onEnd: @escaping () -> Void = {},
+              onCancel: @escaping () -> Void = {}) {
+    self.canSkip = canSkip
     self.onUndo = onUndo
+    self.onSkip = onSkip
     self.onEnd = onEnd
     self.onCancel = onCancel
   }
@@ -778,20 +788,132 @@ public struct CoachMenuScreen: View {
   public var body: some View {
     ZStack {
       Theme.ink.ignoresSafeArea()
-      VStack(spacing: 8) {
-        row("Undo last step", fill: Theme.bone, text: Theme.ink, action: onUndo)
-        row("End session", fill: Theme.amber, text: Theme.ink, action: onEnd)
-        row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, action: onCancel)
+      if canSkip {
+        let height: CGFloat = resolveWatchCompact(envCompact) ? 44 : 52
+        let rows = VStack(spacing: 6) {
+          row("Undo last step", fill: Theme.bone, text: Theme.ink, height: height, action: onUndo)
+          row("Skip station", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onSkip)
+          row("End session", fill: Theme.amber, text: Theme.ink, height: height, action: onEnd)
+          row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onCancel)
+        }
+        .padding(.horizontal, Theme.Space.watchEdge)
+        .padding(.top, 28) // clear of the clock; the first three rows still fit the 40 mm page
+        #if os(watchOS)
+        ScrollView { rows }
+        #else
+        // The test host cannot render a ScrollView (UIKit-backed): show the rows top-aligned, clipped like a scroll's first page.
+        rows.frame(maxHeight: .infinity, alignment: .top).clipped()
+        #endif
+      } else {
+        VStack(spacing: 8) {
+          row("Undo last step", fill: Theme.bone, text: Theme.ink, action: onUndo)
+          row("End session", fill: Theme.amber, text: Theme.ink, action: onEnd)
+          row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, action: onCancel)
+        }
+        .padding(.horizontal, Theme.Space.watchEdge)
       }
-      .padding(.horizontal, Theme.Space.watchEdge)
     }
   }
 
-  private func row(_ title: String, fill: Color, text: Color, action: @escaping () -> Void) -> some View {
+  private func row(_ title: String, fill: Color, text: Color, height: CGFloat = 52, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Text(title).font(.system(size: 20, weight: .heavy)).foregroundStyle(text)
-        .frame(maxWidth: .infinity, minHeight: 52)
+      Text(title).font(.system(size: 20, weight: .heavy)).foregroundStyle(text).lineLimit(1).minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, minHeight: height)
         .background(fill, in: RoundedRectangle(cornerRadius: 14))
     }.buttonStyle(.plain)
+  }
+}
+
+/// "Skip Row?" with Do it later (training only), Skip it, Back. Three deliberate taps guard a skip: hold, the menu row, this.
+public struct CoachSkipConfirmScreen: View {
+  let title: String
+  let activity: Activity
+  let canLater: Bool
+  var onLater: () -> Void = {}
+  var onSkip: () -> Void = {}
+  var onBack: () -> Void = {}
+  @Environment(\.watchCompact) private var envCompact
+
+  public init(title: String, activity: Activity, canLater: Bool, onLater: @escaping () -> Void = {}, onSkip: @escaping () -> Void = {},
+              onBack: @escaping () -> Void = {}) {
+    self.title = title
+    self.activity = activity
+    self.canLater = canLater
+    self.onLater = onLater
+    self.onSkip = onSkip
+    self.onBack = onBack
+  }
+
+  public var body: some View {
+    // 40-42 mm: 17 + 3 x 42 + 3 gaps of 4 = 155 pt, inside the ~173 pt budget under the clock.
+    let height: CGFloat = resolveWatchCompact(envCompact) ? 42 : 52
+    ZStack {
+      Theme.ink.ignoresSafeArea()
+      VStack(spacing: 4) {
+        HStack(spacing: 6) {
+          Circle().fill(Theme.background(activity)).frame(width: 12, height: 12)
+          Text(title).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(Theme.bone)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        if canLater { button("Do it later", fill: Theme.bone, text: Theme.ink, height: height, action: onLater) }
+        button("Skip it", fill: Theme.amber, text: Theme.ink, height: height, action: onSkip)
+        button("Back", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onBack)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, Theme.Space.watchEdge)
+      .padding(.top, 2)
+    }
+  }
+
+  private func button(_ title: String, fill: Color, text: Color, height: CGFloat, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title).font(.system(size: 18, weight: .heavy)).foregroundStyle(text)
+        .frame(maxWidth: .infinity, minHeight: height)
+        .background(fill, in: RoundedRectangle(cornerRadius: 14))
+    }.buttonStyle(.plain)
+  }
+}
+
+/// After the last step: a station that was moved to later is still undone. Do it now, or finish without it.
+public struct CoachLeftoverScreen: View {
+  let title: String
+  let activity: Activity
+  var onNow: () -> Void = {}
+  var onWithout: () -> Void = {}
+  @Environment(\.watchCompact) private var envCompact
+
+  public init(title: String, activity: Activity, onNow: @escaping () -> Void = {}, onWithout: @escaping () -> Void = {}) {
+    self.title = title
+    self.activity = activity
+    self.onNow = onNow
+    self.onWithout = onWithout
+  }
+
+  public var body: some View {
+    let height: CGFloat = resolveWatchCompact(envCompact) ? 42 : 52
+    ZStack {
+      Theme.ink.ignoresSafeArea()
+      VStack(spacing: 4) {
+        HStack(spacing: 6) {
+          Circle().fill(Theme.background(activity)).frame(width: 12, height: 12)
+          Text(title).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(Theme.bone)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Spacer(minLength: 0)
+        Button(action: onNow) {
+          Text("Do it now").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity, minHeight: height).background(Theme.finishFlood, in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+        Button(action: onWithout) {
+          Text("Finish without it").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.bone).lineLimit(1).minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, minHeight: height).background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+      }
+      .padding(.horizontal, Theme.Space.watchEdge)
+      .padding(.top, 2)
+      .padding(.bottom, 8) // clear of the rounded bottom corners
+    }
   }
 }

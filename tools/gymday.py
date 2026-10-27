@@ -98,9 +98,12 @@ def coached_checks(folder, manifest, truth):
 
     # Splits.
     steps = coach["plan"]["steps"]
-    done = {s["stepIndex"] for s in coach["splits"] if s.get("endMs") is not None}
+    done = {s["stepIndex"] for s in coach["splits"] if s.get("endMs") is not None and not s.get("skipped")}
     missing = [s["index"] for s in steps if s["index"] not in done]
-    if not missing:
+    skipped = sorted({s["stepIndex"] for s in coach["splits"] if s.get("skipped")} - done)
+    if skipped and not coach.get("early"):
+        checks.append(check("splits", FAIL, f"stations skipped (not a full session): {skipped}"))
+    elif not missing:
         checks.append(check("splits", PASS, f"all {len(steps)} steps have a split"))
     elif coach.get("early"):
         checks.append(check("splits", PASS, f"early: {len(steps) - len(missing)}/{len(steps)} steps finished"))

@@ -94,7 +94,7 @@ class SwiftEncodedTests(unittest.TestCase):
         self.assertEqual(set(full), set(coach))
         step = load(SCHEMAS / "plan.schema.json")["definitions"]["step"]["properties"]
         self.assertEqual(set().union(*(set(x) for x in full["plan"]["steps"])), set(step))
-        self.assertEqual(set(full["splits"][1]) | set(full["splits"][0]), {"stepIndex", "startMs", "endMs"})
+        self.assertEqual(set(full["splits"][1]) | set(full["splits"][0]), {"stepIndex", "startMs", "endMs", "skipped"})
         self.assertEqual(set(full["noReps"][0]), {"tMs", "setIndex", "stepIndex"})
 
     def test_min_variants_omit_nil_optionals(self):
