@@ -295,7 +295,7 @@ struct SessionDetailHost: View {
     f.dateFormat = "yyyy-MM-dd"
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("share-loop", isDirectory: true)
       .appendingPathComponent("station-coach-\(f.string(from: record.date)).mp4")
-    encodeTask = Task {
+    encodeTask = Task { @MainActor in
       do {
         let report = try await ShareLoopEncoder.encode(result: record.result, to: url) { flow = .rendering(percent: $0) }
         print("share loop: \(report.frames) frames, \(report.rendered) rendered, \(String(format: "%.2f", report.seconds)) s")
@@ -316,7 +316,7 @@ struct SessionDetailHost: View {
   private func shareImage() {
     guard let record else { return }
     flow = nil
-    Task {
+    Task { @MainActor in
       try? await Task.sleep(nanoseconds: 400_000_000)
       makeCard(record)
     }

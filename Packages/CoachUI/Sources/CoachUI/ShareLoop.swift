@@ -1,4 +1,5 @@
 import CoachKit
+import Foundation
 import SwiftUI
 
 /// The 5 second share loop (storyboard in docs: C3). Frames are pure functions of `t`, so the encoder and the key-frame tests
@@ -94,8 +95,13 @@ public struct ShareLoopFrame: View {
 
   /// The station segment that lifts once while the insight sets: the one furthest over its plan.
   private var liftIndex: Int? {
-    result.rows.enumerated().filter { !$0.element.step.isRun && $0.element.actualSeconds != nil }
-      .max { ($0.element.actualSeconds ?? 0) - $0.element.step.targetSeconds < ($1.element.actualSeconds ?? 0) - $1.element.step.targetSeconds }?.offset
+    var best: (index: Int, over: Int)?
+    for (i, row) in result.rows.enumerated() {
+      guard !row.step.isRun, let actual = row.actualSeconds else { continue }
+      let over: Int = actual - row.step.targetSeconds
+      if best == nil || over > best!.over { best = (i, over) }
+    }
+    return best?.index
   }
 
   public var body: some View {
@@ -182,7 +188,7 @@ public struct ShareLoopFrame: View {
       let w = max(2, avail * weights[index] / total)
       RoundedRectangle(cornerRadius: 2).fill(PhoneTheme.stationColor(result.rows[index].step.activity))
         .frame(width: w, height: ShareStrip.barHeight)
-        .offset(x: x, y: -6 * sin(.pi * lift))
+        .offset(x: x, y: CGFloat(-6.0 * sin(Double.pi * lift)))
     }
     .frame(height: ShareStrip.barHeight)
   }
