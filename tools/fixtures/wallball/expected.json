@@ -1,0 +1,223 @@
+{
+  "steady": {
+    "note": "10 reps every 3 s",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      20.19,
+      23.19,
+      26.19,
+      29.18,
+      32.19
+    ]
+  },
+  "jog_in": {
+    "note": "arm swing every 0.5 s for 8 s, then 6 reps",
+    "count": 6,
+    "confidence": "high",
+    "repTimes": [
+      13.19,
+      16.19,
+      19.19,
+      22.19,
+      25.19,
+      28.19
+    ]
+  },
+  "sets_with_rests": {
+    "note": "5 reps, 14 s rest, 5 reps",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      31.18,
+      34.19,
+      37.19,
+      40.19,
+      43.18
+    ]
+  },
+  "fast_reps": {
+    "note": "12 reps every 1.9 s",
+    "count": 12,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      7.09,
+      8.98,
+      10.88,
+      12.79,
+      14.68,
+      16.58,
+      18.49,
+      20.39,
+      22.29,
+      24.19,
+      26.08
+    ]
+  },
+  "catch_peaks": {
+    "note": "10 throws every 3 s, each with a catch 1.2 s later",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      20.19,
+      23.19,
+      26.19,
+      29.18,
+      32.19
+    ]
+  },
+  "pickup_bump": {
+    "note": "big ball-pickup bump at 2 s (inside the ignored first 4 s), then 8 reps",
+    "count": 8,
+    "confidence": "high",
+    "repTimes": [
+      7.19,
+      10.19,
+      13.19,
+      16.19,
+      19.19,
+      22.19,
+      25.19,
+      28.19
+    ]
+  },
+  "min_interval_edge": {
+    "note": "6 reps 1.6 s apart (blocked), then 6 reps 1.8 s apart (counted)",
+    "count": 9,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.38,
+      11.58,
+      20.19,
+      21.98,
+      23.78,
+      25.59,
+      27.39,
+      29.18
+    ]
+  },
+  "catch_late": {
+    "note": "catch 1.6 s after each throw, still inside minInterval",
+    "count": 8,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      20.19,
+      23.19,
+      26.19
+    ]
+  },
+  "ignore_edge": {
+    "note": "one burst just before the 4 s ignore mark, one just after, then 6 reps",
+    "count": 7,
+    "confidence": "high",
+    "repTimes": [
+      4.78,
+      7.19,
+      10.19,
+      13.19,
+      16.19,
+      19.19,
+      22.19
+    ]
+  },
+  "jog_hold_edge": {
+    "note": "10 arm swings, 2 bursts 1.1 s and 1.9 s after the last swing, then 4 reps",
+    "count": 5,
+    "confidence": "high",
+    "repTimes": [
+      7.59,
+      10.19,
+      13.19,
+      16.19,
+      19.19
+    ]
+  },
+  "low_amp": {
+    "note": "8 reps just over the 0.6 g floor",
+    "count": 8,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.2,
+      20.17,
+      23.19,
+      26.19
+    ]
+  },
+  "uneven": {
+    "note": "7 reps at uneven spacing: the only confidence=low case",
+    "count": 7,
+    "confidence": "low",
+    "repTimes": [
+      5.19,
+      7.19,
+      11.18,
+      12.99,
+      18.19,
+      20.09,
+      26.19
+    ]
+  },
+  "sub_floor": {
+    "note": "8 reps below the 0.6 g floor: nothing counts",
+    "count": 0,
+    "confidence": "low",
+    "repTimes": []
+  },
+  "after_big_bump": {
+    "note": "a 3.5 g bump raises the envelope, then 8 reps at 1.2 g; the relative threshold hides the first",
+    "count": 8,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      12.19,
+      15.18,
+      18.19,
+      21.18,
+      24.19,
+      27.19,
+      30.19
+    ]
+  },
+  "rest_edge": {
+    "note": "3 sets of 3 reps with 10 s between sets",
+    "count": 9,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      7.68,
+      10.19,
+      17.69,
+      20.19,
+      22.69,
+      34.19,
+      36.69,
+      39.19
+    ]
+  }
+}

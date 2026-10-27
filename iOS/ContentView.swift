@@ -104,7 +104,7 @@ struct HomeHost: View {
             InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
           }
           HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
-                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()),
+                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()), recoveredIds: phone.recoveredIds,
                      onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan },
                      onOpenWeek: { openSummary() })
         }
@@ -162,7 +162,7 @@ struct HistoryHost: View {
       ScrollView {
         VStack(spacing: 0) {
           if syncFailed { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20) }
-          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent, totals: totals,
+          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent, totals: totals, recoveredIds: phone.recoveredIds,
                         onOpen: { path.append(.detail($0.id)) }, onRawFiles: { path.append(.rawFiles) })
         }
       }
@@ -239,11 +239,12 @@ struct SessionDetailHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @State private var share: ShareItem?
   @State private var shareError = false
+  @State private var exportedZip: URL?
 
   var body: some View {
     ScrollView {
       if let record = phone.coachSessions.first(where: { $0.id == id }) {
-        SessionDetailScreen(record: record,
+        SessionDetailScreen(record: record, recovered: phone.recoveredIds.contains(id),
                             onSaveCount: { phone.saveCorrection(WallBallCorrection(validReps: $0.validReps, noReps: $0.noReps), for: id) },
                             onShare: { makeCard(record) }, onExport: { export() })
       } else {
@@ -253,7 +254,7 @@ struct SessionDetailHost: View {
     }
     .background(PhoneTheme.paper)
     .navigationBarTitleDisplayMode(.inline)
-    .sheet(item: $share) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
     .alert("Couldn't make the card", isPresented: $shareError) { Button("OK", role: .cancel) {} } message: { Text("Try again.") }
   }
 
@@ -262,8 +263,11 @@ struct SessionDetailHost: View {
   }
 
   private func export() {
-    guard let url = try? phone.zip(id) else { return }
-    share = ShareItem(url: url)
+    Task {
+      guard let url = try? await phone.exportZip(sessionId: id) else { return }
+      exportedZip = url
+      share = ShareItem(url: url)
+    }
   }
 }
 
@@ -291,38 +295,94 @@ struct RawFilesHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @State private var share: ShareItem?
   @State private var error: String?
+  @State private var toDelete: SessionSummary?
+  @State private var exportedZip: URL?
+
+  private var totalBytes: Int { phone.sessions.reduce(0) { $0 + $1.bytes } }
+
+  private func size(_ bytes: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
 
   var body: some View {
     List {
       if phone.sessions.isEmpty {
         Text("No sessions yet. Finish a recording on the watch and keep this app installed; files arrive in the background.")
           .font(.footnote).foregroundStyle(.secondary)
+      } else {
+        Section {
+          Button { exportAll() } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              HStack(spacing: 8) {
+                Text(phone.exporting ? "Preparing zip\u{2026}" : "Export all").font(.headline)
+                if phone.exporting { ProgressView() }
+              }
+              Text(phone.exporting ? "Files arriving from the watch wait until this is done." : "\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
+                .font(.footnote).foregroundStyle(.secondary)
+            }
+          }
+          .disabled(phone.exporting)
+        }
       }
-      ForEach(phone.sessions) { s in
-        Button { export(s.id) } label: {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(s.id).font(.subheadline.monospaced())
-            Text("\(s.fileCount) files, \(ByteCountFormatter.string(fromByteCount: Int64(s.bytes), countStyle: .file))"
-                 + (phone.completeIds.contains(s.id) ? "" : "  (incomplete)"))
-              .font(.footnote).foregroundStyle(.secondary)
+      let watchOnly = phone.watchOnlyIds
+      if !watchOnly.isEmpty {
+        Section("On watch only") {
+          ForEach(watchOnly, id: \.self) { id in
+            VStack(alignment: .leading, spacing: 2) {
+              Text(id).font(.subheadline.monospaced())
+              Text("Waiting for the watch. Not on this phone yet; keep both apps open.").font(.footnote).foregroundStyle(.secondary)
+            }
           }
         }
-        .swipeActions { Button("Delete", role: .destructive) { phone.delete(s.id) } }
+      }
+      Section {
+        ForEach(phone.sessions) { s in
+          Button { export(s.id) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(s.id).font(.subheadline.monospaced())
+              Text("\(s.fileCount) files, \(size(s.bytes))" + (phone.completeIds.contains(s.id) ? "" : "  (incomplete)"))
+                .font(.footnote).foregroundStyle(.secondary)
+            }
+          }
+          .disabled(phone.exporting)
+          .swipeActions { Button("Delete", role: .destructive) { toDelete = s } }
+        }
       }
       if let error { Text(error).foregroundStyle(.red).font(.footnote) }
     }
     .navigationTitle("Raw files")
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { phone.refresh() }
-    .sheet(item: $share) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
+    .confirmationDialog(deleteTitle, isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }), titleVisibility: .visible) {
+      Button("Delete", role: .destructive) { if let s = toDelete { phone.delete(s.id) }; toDelete = nil }
+      Button("Cancel", role: .cancel) { toDelete = nil }
+    } message: {
+      Text("This removes it from this phone for good. If you have not exported it, it is gone.")
+    }
   }
 
-  private func export(_ id: String) {
-    do {
-      share = ShareItem(url: try phone.zip(id))
-      error = nil
-    } catch {
-      self.error = "Export failed: \(error.localizedDescription)"
+  private var deleteTitle: String {
+    guard let s = toDelete else { return "Delete this session?" }
+    let d = phone.describe(s.id)
+    let when = d.date.map { HistoryFormat.shortDate($0) } ?? s.id
+    return "Delete \([d.athlete, when].compactMap { $0 }.joined(separator: ", ")), \(size(s.bytes))?"
+  }
+
+  private func export(_ id: String) { run { try await phone.exportZip(sessionId: id) } }
+
+  private func exportAll() { run { try await phone.exportZip() } }
+
+  private func run(_ make: @escaping () async throws -> URL) {
+    Task {
+      do {
+        let url = try await make()
+        exportedZip = url
+        share = ShareItem(url: url)
+        error = nil
+      } catch PhoneTransfer.ExportError.busy {
+        // One zip at a time: the button is disabled, so this is a double tap. Ignore it.
+      } catch {
+        self.error = "Export failed: \(error.localizedDescription)"
+      }
     }
   }
 }

@@ -11,11 +11,13 @@ public struct HomeScreen: View {
   let onOpenPlan: () -> Void
   let week: WeekCardModel?
   let onOpenWeek: () -> Void
+  let recoveredIds: Set<String>
 
-  public init(model: HomeModel, today: Date = Date(), week: WeekCardModel? = nil, onStart: @escaping (SessionType) -> Void = { _ in },
+  public init(model: HomeModel, today: Date = Date(), week: WeekCardModel? = nil, recoveredIds: Set<String> = [], onStart: @escaping (SessionType) -> Void = { _ in },
               onOpenLast: @escaping (SessionRecord) -> Void = { _ in }, onOpenPlan: @escaping () -> Void = {},
               onOpenWeek: @escaping () -> Void = {}) {
     self.week = week
+    self.recoveredIds = recoveredIds
     self.onOpenWeek = onOpenWeek
     self.model = model
     self.today = today
@@ -48,7 +50,7 @@ public struct HomeScreen: View {
           PhoneCard {
             VStack(alignment: .leading, spacing: 10) {
               Text("Last session").scaledKicker()
-              SessionRowContent(record: last)
+              SessionRowContent(record: last, recovered: recoveredIds.contains(last.id))
             }
           }
         }

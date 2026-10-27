@@ -16,6 +16,16 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   /// Training load for every complete session, from `coach.json` and `hr.csv`. Rebuilt whenever the sessions change.
   @Published private(set) var loadSummary = TrainingLoad.summarise([], now: Date())
   @Published private(set) var watchAppInstalled = false
+  /// Sessions resumed after the app stopped, or closed from a checkpoint (manifest `resumed` > 0 or `recovered`). Read defensively:
+  /// `resumed` may not exist in older folders or builds, in which case it counts as not resumed.
+  @Published private(set) var recoveredIds: Set<String> = []
+  /// True while a zip is being built. One zip at a time; incoming files wait (see `arrivals`) until it is done.
+  @Published private(set) var exporting = false
+  /// Incoming file renames queue here while a zip is built, so a zip never sees a file land mid-way.
+  private let arrivals = ArrivalGate()
+  /// Sessions the watch has announced and the phone has not completed. Unlike the watchdog, entries are not dropped after 24 h.
+  @Published private(set) var announcedIds: Set<String> = []
+  private let announcedKey = "announcedSessions"
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
 
@@ -48,8 +58,23 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     } else {
       watchdog = SyncWatchdog()
     }
+    announcedIds = Set(UserDefaults.standard.stringArray(forKey: "announcedSessions") ?? [])
     super.init()
     refresh()
+  }
+
+  private func announce(_ ids: [String]) {
+    let new = announcedIds.union(ids)
+    guard new != announcedIds else { return }
+    announcedIds = new
+    UserDefaults.standard.set(Array(new), forKey: announcedKey)
+  }
+
+  private func unannounce(_ ids: Set<String>) {
+    let new = announcedIds.subtracting(ids)
+    guard new != announcedIds else { return }
+    announcedIds = new
+    UserDefaults.standard.set(Array(new), forKey: announcedKey)
   }
 
   /// The app came to the front: time spent closed does not count towards the 3 minutes.
@@ -86,6 +111,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     completeIds = Set(sessions.map(\.id).filter { tracker.isComplete($0) })
     syncPercent = sessions.map(\.id).first { !tracker.isComplete($0) && tracker.progress($0) != nil }.flatMap { tracker.progress($0) }
     for id in watchdog.pending where completeIds.contains(id) { watchdog.complete(session: id) }
+    unannounce(completeIds)
     saveWatchdog()
     evaluateSync()
     var records: [SessionRecord] = []
@@ -95,6 +121,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       }
     }
     let sorted = SessionRecord.sorted(records)
+    let recovered = Set(sorted.map(\.id).filter { Self.wasRecovered(root.appendingPathComponent($0)) })
+    if recovered != recoveredIds { recoveredIds = recovered }
     if sorted != coachSessions {
       coachSessions = sorted
       rebuildLoad(sorted, root: root)
@@ -169,8 +197,34 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   func resetSendState() { if sendState != .idle { sendState = .idle } }
 
+  /// Sessions the watch has announced that have no folder on the phone yet: they exist on the watch only. Kept past the
+  /// watchdog's 24 h, until the session arrives or the watch says it deleted it.
+  var watchOnlyIds: [String] {
+    let here = Set(sessions.map(\.id))
+    return announcedIds.filter { !here.contains($0) }.sorted(by: >)
+  }
+
+  private static func manifestJSON(_ folder: URL) -> [String: Any]? {
+    guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+  }
+
+  private static func wasRecovered(_ folder: URL) -> Bool {
+    guard let m = manifestJSON(folder) else { return false }
+    if let n = m["resumed"] as? Int, n > 0 { return true }
+    if let b = m["resumed"] as? Bool, b { return true }
+    return m["recovered"] as? Bool == true
+  }
+
+  /// Athlete code and start time for the delete confirmation. Either can be missing.
+  func describe(_ id: String) -> (athlete: String?, date: Date?) {
+    guard let root = Self.root, let m = Self.manifestJSON(root.appendingPathComponent((id as NSString).lastPathComponent)) else { return (nil, nil) }
+    let date = (m["startedAtEpochMs"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+    return (m["athlete"] as? String, date)
+  }
+
   func delete(_ id: String) {
-    guard let root = Self.root else { return }
+    guard !exporting, let root = Self.root else { return }
     try? FileManager.default.removeItem(at: root.appendingPathComponent(id))
     hrCache[id] = nil
     watchdog.complete(session: id)
@@ -191,17 +245,56 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     return true
   }
 
-  /// A zip of the session folder in the temp directory, for the share sheet.
-  func zip(_ id: String) throws -> URL {
+  enum ExportError: Error { case busy }
+
+  /// A zip for the share sheet, built off the main thread. `sessionId` nil is every session (the whole Sessions folder: complete
+  /// sessions, partial folders and the phone's correction files), named `station-coach-<date>.zip`; otherwise `<id>.zip`.
+  /// One at a time: a second call while one runs throws `.busy`. Incoming files are held (not renamed into the folder) until the
+  /// zip is done, then applied in order, so a zip is a consistent snapshot. Nothing is sent anywhere but the share sheet.
+  @MainActor
+  func exportZip(sessionId: String? = nil, now: Date = Date()) async throws -> URL {
+    guard !exporting else { throw ExportError.busy }
     guard let root = Self.root else { throw CocoaError(.fileNoSuchFile) }
-    let folder = root.appendingPathComponent(id)
+    exporting = true
+    arrivals.close()
+    Self.removeStaleZips(sessionIds: Set(sessions.map(\.id)))
+    let source = sessionId.map { root.appendingPathComponent(($0 as NSString).lastPathComponent) } ?? root
+    let name = sessionId.map { ($0 as NSString).lastPathComponent + ".zip" } ?? "station-coach-\(Self.dayStamp(now)).zip"
+    let result = await Task.detached(priority: .userInitiated) { Result { try Self.buildZip(of: source, named: name) } }.value
+    exporting = false
+    arrivals.open()
+    return try result.get()
+  }
+
+  /// Removes a shared zip once the share sheet is dismissed.
+  func discardExport(_ url: URL) { try? FileManager.default.removeItem(at: url) }
+
+  private static func dayStamp(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd"
+    return f.string(from: date)
+  }
+
+  /// Zips left in the temp folder by an earlier export that was never dismissed cleanly (a crash, a killed share sheet).
+  private static func removeStaleZips(sessionIds: Set<String>) {
+    let fm = FileManager.default
+    let tmp = fm.temporaryDirectory
+    for name in (try? fm.contentsOfDirectory(atPath: tmp.path)) ?? [] where name.hasSuffix(".zip") {
+      let base = String(name.dropLast(4))
+      if base.hasPrefix("station-coach-") || sessionIds.contains(base) { try? fm.removeItem(at: tmp.appendingPathComponent(name)) }
+    }
+  }
+
+  private static func buildZip(of source: URL, named name: String) throws -> URL {
     var coordinationError: NSError?
     var result: Result<URL, Error> = .failure(CocoaError(.fileWriteUnknown))
-    NSFileCoordinator().coordinate(readingItemAt: folder, options: [.forUploading], error: &coordinationError) { zipped in
-      let dest = FileManager.default.temporaryDirectory.appendingPathComponent(id + ".zip")
+    NSFileCoordinator().coordinate(readingItemAt: source, options: [.forUploading], error: &coordinationError) { zipped in
+      let dest = FileManager.default.temporaryDirectory.appendingPathComponent(name)
       do {
         try? FileManager.default.removeItem(at: dest)
-        try FileManager.default.copyItem(at: zipped, to: dest)
+        // The coordinator's zip is ours to move; a copy would leave two zips on disk.
+        try FileManager.default.moveItem(at: zipped, to: dest)
         result = .success(dest)
       } catch {
         result = .failure(error)
@@ -235,6 +328,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     guard let ids = applicationContext["sending"] as? [String] else { return }
     DispatchQueue.main.async {
       let now = Date().timeIntervalSinceReferenceDate
+      self.announce(ids.map { ($0 as NSString).lastPathComponent })
       for id in ids.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.activity(session: id, at: now) }
       self.refresh()
     }
@@ -243,6 +337,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
     if let gone = userInfo["gone"] as? [String] { // sessions deleted on the watch
       DispatchQueue.main.async {
+        self.unannounce(Set(gone.map { ($0 as NSString).lastPathComponent }))
         for id in gone.map({ ($0 as NSString).lastPathComponent }) { self.watchdog.complete(session: id) }
         self.refresh()
       }
@@ -250,6 +345,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     }
     guard let id = (userInfo["finished"] as? String).map({ ($0 as NSString).lastPathComponent }), !id.isEmpty, id != ".." else { return }
     DispatchQueue.main.async {
+      if !self.tracker.isComplete(id) { self.announce([id]) }
       if !self.tracker.isComplete(id) {
         self.watchdog.finished(session: id, at: Date().timeIntervalSinceReferenceDate)
       }
@@ -269,30 +365,36 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     let staged = fm.temporaryDirectory.appendingPathComponent("incoming-\(UUID().uuidString)")
     do { try fm.moveItem(at: file.fileURL, to: staged) } catch { return }
     DispatchQueue.main.async {
-      // A session already complete on the phone is never overwritten (a watch re-send carries no new data): just re-ack.
-      if self.tracker.isComplete(sid) {
-        try? fm.removeItem(at: staged)
-        WCSession.default.transferUserInfo(["ack": sid])
-        return
-      }
-      guard let root = Self.root else { try? fm.removeItem(at: staged); return }
-      let folder = root.appendingPathComponent(sid, isDirectory: true)
-      let dest = folder.appendingPathComponent(name)
-      var actual = -1
-      do {
-        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? fm.removeItem(at: dest)
-        try fm.moveItem(at: staged, to: dest)
-        actual = ((try? fm.attributesOfItem(atPath: dest.path))?[.size] as? NSNumber)?.intValue ?? -1
-      } catch {
-        try? fm.removeItem(at: staged)
-        return
-      }
-      self.watchdog.fileArrived(session: sid, at: Date().timeIntervalSinceReferenceDate)
-      self.tracker.received(session: sid, name: name, expectedBytes: bytes, actualBytes: actual, total: total)
-      if let data = try? JSONEncoder().encode(self.tracker) { UserDefaults.standard.set(data, forKey: self.trackerKey) }
-      if self.tracker.isComplete(sid) { WCSession.default.transferUserInfo(["ack": sid]) }
-      self.refresh()
+      self.arrivals.submit { self.apply(staged: staged, sid: sid, name: name, bytes: bytes, total: total) }
     }
+  }
+
+  /// Moves a staged incoming file into its session folder. Runs on main, never while a zip is being built (see `arrivals`).
+  private func apply(staged: URL, sid: String, name: String, bytes: Int, total: Int) {
+    let fm = FileManager.default
+    // A session already complete on the phone is never overwritten (a watch re-send carries no new data): just re-ack.
+    if self.tracker.isComplete(sid) {
+      try? fm.removeItem(at: staged)
+      WCSession.default.transferUserInfo(["ack": sid])
+      return
+    }
+    guard let root = Self.root else { try? fm.removeItem(at: staged); return }
+    let folder = root.appendingPathComponent(sid, isDirectory: true)
+    let dest = folder.appendingPathComponent(name)
+    var actual = -1
+    do {
+      try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+      try? fm.removeItem(at: dest)
+      try fm.moveItem(at: staged, to: dest)
+      actual = ((try? fm.attributesOfItem(atPath: dest.path))?[.size] as? NSNumber)?.intValue ?? -1
+    } catch {
+      try? fm.removeItem(at: staged)
+      return
+    }
+    self.watchdog.fileArrived(session: sid, at: Date().timeIntervalSinceReferenceDate)
+    self.tracker.received(session: sid, name: name, expectedBytes: bytes, actualBytes: actual, total: total)
+    if let data = try? JSONEncoder().encode(self.tracker) { UserDefaults.standard.set(data, forKey: self.trackerKey) }
+    if self.tracker.isComplete(sid) { WCSession.default.transferUserInfo(["ack": sid]) }
+    self.refresh()
   }
 }
