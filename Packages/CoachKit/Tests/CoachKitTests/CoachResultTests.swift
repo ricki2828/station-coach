@@ -37,6 +37,19 @@ final class CoachResultTests: XCTestCase {
     XCTAssertEqual(i.headline, "Your run after the sled push was 27\u{00A0}s slower than run 1")
   }
 
+  func testInsightNamesTheStepItSpeaksAbout() {
+    // rule 1: the run after the sled push is step 4
+    XCTAssertEqual(InsightPicker.pick(result(extra: [4: 45])).stepIndex, 4)
+    // rule 2: the sled push itself (step 3) is 40 s over, and no run slowed
+    let station = InsightPicker.pick(result(extra: [3: 40]))
+    XCTAssertEqual(station.rule, 2)
+    XCTAssertEqual(station.stepIndex, 3)
+    // rule 0 names no step
+    let plain = InsightPicker.pick(result())
+    XCTAssertEqual(plain.rule, 0)
+    XCTAssertNil(plain.stepIndex)
+  }
+
   func testRule1PicksTheBiggestSlowdown() {
     let i = InsightPicker.pick(result(extra: [2: 25, 8: 60]))
     XCTAssertEqual(i.headline, "Your run after the burpee broad jumps was 42\u{00A0}s slower than run 1")

@@ -238,6 +238,15 @@ public struct CoachResult: Codable, Equatable {
 public struct Insight: Equatable {
   public let rule: Int
   public let headline: String
+  /// The step the headline names, as an index into `CoachResult.rows` / `plan.steps`: the run for rule 1, the station for rule 2,
+  /// the wall-ball step for rules 3 and 4. nil when the headline names no step (rule 0).
+  public let stepIndex: Int?
+
+  public init(rule: Int, headline: String, stepIndex: Int? = nil) {
+    self.rule = rule
+    self.headline = headline
+    self.stepIndex = stepIndex
+  }
 }
 
 /// The summary's one headline. The first rule that fires wins:
@@ -258,18 +267,18 @@ public enum InsightPicker {
     // 1. Run slowdown vs run 1, named by the station before it.
     var worst: RunFade.Slowdown?
     for s in RunFade.slowdowns(result) where s.seconds >= runSlowdownMin && s.seconds > (worst?.seconds ?? 0) { worst = s }
-    if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.after.lowercased()) was \(worst.seconds)\u{00A0}s slower than run 1") }
+    if let worst { return Insight(rule: 1, headline: "Your run after the \(worst.after.lowercased()) was \(worst.seconds)\u{00A0}s slower than run 1", stepIndex: worst.stepIndex) }
     // 2. Station furthest over plan.
-    let over = rows.filter { !$0.step.isRun }.compactMap { r in r.deltaSeconds.map { (r.step.name, $0) } }.max { $0.1 < $1.1 }
+    let over = rows.filter { !$0.step.isRun }.compactMap { r in r.deltaSeconds.map { (r.step.name, $0, r.step.index) } }.max { $0.1 < $1.1 }
     if let over, over.1 >= stationOverMin {
-      return Insight(rule: 2, headline: "\(over.0) was \(Fmt.gap(over.1)) over plan")
+      return Insight(rule: 2, headline: "\(over.0) was \(Fmt.gap(over.1)) over plan", stepIndex: over.2)
     }
     // 3. Wall-ball rest.
     if let wb = rows.first(where: { $0.step.activity == .wallBalls }), let dur = wb.actualSeconds, dur > 0 {
       let rest = WallBallAnalysis.totalRestSeconds(result.wallBallSets())
       let share = Double(rest) / Double(dur)
       if rest >= restSecondsMin, share >= restShareMin {
-        return Insight(rule: 3, headline: "You rested \(Fmt.gap(rest)) in wall balls, \(Int((share * 100).rounded()))% of the station")
+        return Insight(rule: 3, headline: "You rested \(Fmt.gap(rest)) in wall balls, \(Int((share * 100).rounded()))% of the station", stepIndex: wb.step.index)
       }
     }
     // 4. No-reps that clustered in the last third of one wall-ball step's sets. Only when the taps are the whole story:
@@ -280,7 +289,7 @@ public enum InsightPicker {
         let firstLate = (step.sets.count * 2 + 2) / 3 // ceil(2n/3): the first set of the last third
         let late = events.filter { $0.setIndex >= firstLate }
         if late.count >= lateNoRepsMin, late.count * 3 >= events.count * 2 {
-          return Insight(rule: 4, headline: "Your no-reps came late: \(late.count) after set \(firstLate). Depth fades when you tire.")
+          return Insight(rule: 4, headline: "Your no-reps came late: \(late.count) after set \(firstLate). Depth fades when you tire.", stepIndex: step.index)
         }
       }
     }
