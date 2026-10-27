@@ -256,13 +256,19 @@ struct SessionDetailHost: View {
   @State private var share: ShareItem?
   @State private var shareError = false
   @State private var exportedZip: URL?
+  /// The video flow: nil is closed. The chooser, the progress and the failure all show in one sheet.
+  @State private var flow: ShareFlowState?
+  @State private var encodeTask: Task<Void, Never>?
+  @State private var videoURL: URL?
+
+  private var record: SessionRecord? { phone.coachSessions.first(where: { $0.id == id }) }
 
   var body: some View {
     ScrollView {
-      if let record = phone.coachSessions.first(where: { $0.id == id }) {
+      if let record {
         SessionDetailScreen(record: record, recovered: phone.recoveredIds.contains(id),
                             onSaveCount: { phone.saveCorrection(WallBallCorrection(validReps: $0.validReps, noReps: $0.noReps), for: id) },
-                            onShare: { makeCard(record) }, onExport: { export() })
+                            onShare: { flow = .choosing }, onExport: { export() })
       } else {
         Text("This session is no longer on the phone.").font(.system(size: 17, weight: .semibold))
           .foregroundStyle(PhoneTheme.muted).padding(20)
@@ -270,14 +276,62 @@ struct SessionDetailHost: View {
     }
     .background(PhoneTheme.paper)
     .navigationBarTitleDisplayMode(.inline)
-    .sheet(item: $share, onDismiss: dropZip) { item in
-      ShareSheet(url: item.url, onDone: { if item.url == exportedZip { dropZip() } })
+    .sheet(item: $share, onDismiss: dropTemp) { item in
+      ShareSheet(url: item.url, onDone: { if item.url == exportedZip || item.url == videoURL { dropTemp() } })
+    }
+    .sheet(isPresented: Binding(get: { flow != nil }, set: { if !$0 { cancelFlow() } })) {
+      ShareFlowSheet(state: flow ?? .choosing, partial: record?.result.early ?? false,
+                     onVideo: { startVideo() }, onImage: { shareImage() }, onCancel: { cancelFlow() })
+        .presentationDetents([.height(360)])
     }
     .alert("Couldn't make the card", isPresented: $shareError) { Button("OK", role: .cancel) {} } message: { Text("Try again.") }
   }
 
-  private func dropZip() {
+  private func dropTemp() {
     if let url = exportedZip { phone.discardExport(url); exportedZip = nil }
+    if let url = videoURL { try? FileManager.default.removeItem(at: url); videoURL = nil }
+  }
+
+  private func cancelFlow() {
+    encodeTask?.cancel()
+    encodeTask = nil
+    flow = nil
+  }
+
+  /// Renders the 5 s loop on the phone. A failure offers the still card instead.
+  private func startVideo() {
+    guard let record else { return }
+    flow = .rendering(percent: 0)
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd"
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("share-loop", isDirectory: true)
+      .appendingPathComponent("station-coach-\(f.string(from: record.date)).mp4")
+    encodeTask = Task { @MainActor in
+      do {
+        let report = try await ShareLoopEncoder.encode(result: record.result, to: url) { flow = .rendering(percent: $0) }
+        print("share loop: \(report.frames) frames, \(report.rendered) rendered, \(String(format: "%.2f", report.seconds)) s")
+        guard !Task.isCancelled else { return }
+        videoURL = url
+        flow = nil
+        // Let the chooser sheet finish dismissing before the system share sheet comes up.
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        share = ShareItem(url: url)
+      } catch is CancellationError {
+      } catch ShareLoopEncoder.EncodeError.cancelled {
+      } catch {
+        flow = .failed
+      }
+    }
+  }
+
+  private func shareImage() {
+    guard let record else { return }
+    flow = nil
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 400_000_000)
+      makeCard(record)
+    }
   }
 
   private func makeCard(_ record: SessionRecord) {
