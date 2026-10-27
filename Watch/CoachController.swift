@@ -268,7 +268,8 @@ final class CoachController: ObservableObject {
     guard announce else { return }
     if step.isRun {
       let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
-      offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds, reference: m.plan.reference))
+      offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds, reference: m.plan.reference,
+                                                  referenceSeconds: m.plan.referenceSeconds(at: step.index)))
     } else {
       offer(.stationIntro, CoachCopy.stationIntro(step))
     }
@@ -351,8 +352,8 @@ final class CoachController: ObservableObject {
     let next = m.next.map { "Next: \($0.name)" } ?? "Next: Finish"
     let ladder = LadderTick.ladder(for: m.plan, currentIndex: step.index)
     let common = (hr: recorder.hrOff ? nil : recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
-    let target = "/ \(Fmt.clock(step.targetSeconds))"
-    let targetLabel = "Target \(Fmt.spoken(step.targetSeconds))"
+    // One reference on the watch: racing a ghost, the secondary is the ghost's time for this step, not the plan's target.
+    let (target, targetLabel) = Ghost.targetLine(plan: m.plan, stepIndex: step.index)
     if step.activity == .wallBalls {
       let total = step.reps ?? 100
       let done = repsDone(step)
@@ -408,7 +409,8 @@ final class CoachController: ObservableObject {
     let d = total - planned
     let reference = result.plan.reference
     let referenceTotal = result.plan.referenceTotalSeconds
-    let g = total - referenceTotal
+    let compared = Ghost.comparedSeconds(result) ?? total
+    let g = compared - referenceTotal
     let endName = m.splits.last.map { m.plan.steps[$0.stepIndex].name } ?? ""
     let line: String
     if early {
@@ -423,8 +425,9 @@ final class CoachController: ObservableObject {
     recorder.tap(.rest, haptic: false)
     lastLabel = .rest
     finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early,
-                                     reference: reference, referenceTotalSeconds: referenceTotal, sessionName: result.plan.type.title.lowercased())
-      + " " + CoachCopy.finishPersonality(totalSeconds: total, plannedSeconds: referenceTotal, isFirst: isFirstSession, early: early, saved: saved)
+                                     reference: reference, referenceTotalSeconds: referenceTotal, sessionName: result.plan.type.title.lowercased(),
+                                     comparedSeconds: compared)
+      + " " + CoachCopy.finishPersonality(totalSeconds: reference == .plan ? total : compared, plannedSeconds: referenceTotal, isFirst: isFirstSession, early: early, saved: saved)
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
       best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },
