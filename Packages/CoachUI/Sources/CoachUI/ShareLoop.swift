@@ -32,6 +32,53 @@ public enum ShareLoop {
     if hour || s >= 3600 { return String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60) }
     return String(format: "%d:%02d", s / 60, s % 60)
   }
+
+  /// Everything that moves in the loop, as a function of `t`. The frame view and the compositor both read it.
+  struct State {
+    var wordmark = 1.0   // wordmark and footer opacity
+    var rise = 1.0       // hero card: opacity and 60 pt rise
+    var clock = 1.0      // count-up and strip reveal, 0...1
+    var line = 1.0       // hero line fade-up
+    var pop = 1.0        // badge pop
+    var insight = 1.0
+    var lift = 0.0       // 0...1 while the named segment lifts; 0 and 1 mean at rest
+
+    static func at(_ t: Double) -> State {
+      State(wordmark: progress(t, 0, 0.4), rise: outQuart(progress(t, 0.4, 0.9)), clock: outQuart(progress(t, 0.9, 2.7)),
+            line: outCubic(progress(t, 2.7, 3.2)), pop: progress(t, 2.7, 2.95), insight: outCubic(progress(t, 3.2, 3.8)),
+            lift: progress(t, 3.2, 3.7))
+    }
+  }
+
+  /// The hero number at count-up position `clock`. A moment with no count (an em dash) shows its own text.
+  static func heroText(result: CoachResult, moment: MomentDisplay?, clock: Double) -> String {
+    guard let moment else { return Self.clock(Int((Double(result.totalSeconds) * clock).rounded(.down)), hour: result.totalSeconds >= 3600) }
+    if let secs = moment.heroSeconds {
+      let n = Int((Double(secs) * clock).rounded(.down))
+      return moment.heroIsClock ? Self.clock(n, hour: secs >= 3600) : (clock >= 1 ? moment.hero : "\(n)\u{00A0}s")
+    }
+    return moment.hero
+  }
+
+  /// The segment that lifts while the insight sets: the one the insight names. nil when it names none, and for a partial session,
+  /// whose card writes its own insight.
+  static func liftIndex(_ result: CoachResult) -> Int? { result.early ? nil : InsightPicker.pick(result).stepIndex }
+}
+
+/// A piece of the frame the compositor draws on its own. In layer mode `ShareLoopFrame` shows only that piece, at its final
+/// position on a transparent canvas, so a layer can be rendered once and composited with an alpha or an offset.
+enum ShareLoopLayer: Hashable {
+  case wordmark      // wordmark and footer
+  case cardBase      // hero card and kicker, no number or lines
+  case cardZero      // card base and the number at 0, for the rise (alpha on the group, as the full render does)
+  case heroText
+  case heroLine
+  case badge
+  case track
+  case bars
+  case labels
+  case lift
+  case insight
 }
 
 /// One frame of the loop at time `t` seconds. 360 x 450 pt, render at scale 3 for 1080 x 1350.
@@ -40,12 +87,26 @@ public struct ShareLoopFrame: View {
   let moment: MomentDisplay?
   let dateText: String
   let t: Double
+  /// Layer mode (internal): show only this piece on a transparent canvas, in its final state.
+  var layer: ShareLoopLayer?
+  var heroTextOverride: String?
+  var labelsRevealed: Double?
 
   public init(result: CoachResult, moment: MomentDisplay? = nil, dateText: String? = nil, t: Double) {
     self.result = result
     self.moment = moment
     self.dateText = dateText ?? ShareCardV2.date(result.startedAtEpochMs)
     self.t = t
+  }
+
+  init(layer: ShareLoopLayer, result: CoachResult, moment: MomentDisplay?, dateText: String, heroText: String? = nil, labelsRevealed: Double? = nil) {
+    self.result = result
+    self.moment = moment
+    self.dateText = dateText
+    self.t = ShareLoop.holdStart  // every piece in its final state
+    self.layer = layer
+    self.heroTextOverride = heroText
+    self.labelsRevealed = labelsRevealed
   }
 
   // The copy below mirrors ShareCardV2's private kicker / hero line / insight. ShareLoopTests renders the last animated frame
@@ -78,36 +139,13 @@ public struct ShareLoopFrame: View {
     return "\(Fmt.gap(d)) \(d < 0 ? "ahead of" : "behind") plan through \(n) stations."
   }
 
-  /// The clock count-up position, 0...1, over 0.9 to 2.7 s (out-quart). The strip is revealed in step with it.
-  private var clockProgress: Double { ShareLoop.outQuart(ShareLoop.progress(t, 0.9, 2.7)) }
-
-  private var heroText: String {
-    guard let moment else { return ShareLoop.clock(Int((Double(result.totalSeconds) * clockProgress).rounded(.down)), hour: result.totalSeconds >= 3600) }
-    if let secs = moment.heroSeconds {
-      let n = Int((Double(secs) * clockProgress).rounded(.down))
-      return moment.heroIsClock ? ShareLoop.clock(n, hour: secs >= 3600) : (clockProgress >= 1 ? moment.hero : "\(n)\u{00A0}s")
-    }
-    return moment.hero
-  }
-
   /// A moment hero with no count (an em dash) fades in with the card instead of counting.
-  private var heroOpacity: Double { moment?.heroSeconds == nil && moment != nil ? ShareLoop.progress(t, 0.9, 1.3) : 1 }
-
-  /// The station segment that lifts once while the insight sets: the one furthest over its plan.
-  private var liftIndex: Int? {
-    var best: (index: Int, over: Int)?
-    for (i, row) in result.rows.enumerated() {
-      guard !row.step.isRun, let actual = row.actualSeconds else { continue }
-      let over: Int = actual - row.step.targetSeconds
-      if best == nil || over > best!.over { best = (i, over) }
-    }
-    return best?.index
-  }
+  private func heroOpacity(_ st: ShareLoop.State) -> Double { moment?.heroSeconds == nil && moment != nil ? ShareLoop.progress(t, 0.9, 1.3) : 1 }
 
   public var body: some View {
-    if ShareLoop.isStill(t) {
+    if layer == nil && ShareLoop.isStill(t) {
       ShareCardV2(result: result, dateText: dateText, moment: moment)
-    } else if t > ShareLoop.holdEnd {
+    } else if layer == nil && t > ShareLoop.holdEnd {
       ShareCardV2(result: result, dateText: dateText, moment: moment)
         .opacity(1 - ShareLoop.progress(t, ShareLoop.holdEnd, ShareLoop.duration))
         .frame(width: ShareCardV2.size.width, height: ShareCardV2.size.height)
@@ -117,36 +155,39 @@ public struct ShareLoopFrame: View {
     }
   }
 
+  /// 1 when the piece is shown, 0 when layer mode hides it. Hidden pieces still take their space, so layout never moves.
+  private func vis(_ l: ShareLoopLayer...) -> Double { layer == nil || l.contains(layer!) ? 1 : 0 }
+
   private var animated: some View {
-    let wordmark = ShareLoop.progress(t, 0, 0.4)
-    let rise = ShareLoop.outQuart(ShareLoop.progress(t, 0.4, 0.9))
-    let line = ShareLoop.outCubic(ShareLoop.progress(t, 2.7, 3.2))
-    let ins = ShareLoop.outCubic(ShareLoop.progress(t, 3.2, 3.8))
-    let pop = ShareLoop.progress(t, 2.7, 2.95)
-    let lift = ShareLoop.progress(t, 3.2, 3.7)
+    let st = ShareLoop.State.at(t)
+    let inLayer = layer != nil
+    let heroString = heroTextOverride ?? ShareLoop.heroText(result: result, moment: moment, clock: st.clock)
+    let revealed = inLayer ? (labelsRevealed ?? 1) : st.clock
     return VStack(alignment: .leading, spacing: 0) {
-      Wordmark(size: 18).opacity(wordmark)
-      HeroCard(color: color, textColor: textColor) {
+      Wordmark(size: 18).opacity(st.wordmark * vis(.wordmark))
+      HeroCard(color: color.opacity(vis(.cardBase, .cardZero)), textColor: textColor) {
         VStack(alignment: .leading, spacing: 4) {
           if let badge = moment?.badge {
             Text(badge).font(.system(size: 11, weight: .heavy)).tracking(1).foregroundStyle(Theme.ink)
               .padding(.horizontal, 10).padding(.vertical, 4).background(Theme.bone, in: Capsule())
-              .scaleEffect(0.6 + 0.4 * ShareLoop.outBack(pop), anchor: .leading).opacity(pop > 0 ? 1 : 0)
+              .scaleEffect(0.6 + 0.4 * ShareLoop.outBack(st.pop), anchor: .leading).opacity((st.pop > 0 ? 1 : 0) * vis(.badge))
           }
           Text(kicker).font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1).lineLimit(1).minimumScaleFactor(0.7)
-          Text(heroText).phoneHero(size: 110).lineLimit(1).minimumScaleFactor(0.4).opacity(heroOpacity)
+            .opacity(vis(.cardBase, .cardZero))
+          Text(heroString).phoneHero(size: 110).lineLimit(1).minimumScaleFactor(0.4)
+            .opacity(heroOpacity(st) * vis(.heroText, .cardZero))
           if let heroLine {
             Text(heroLine).font(.system(size: 17, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-              .opacity(line).offset(y: 12 * (1 - line))
+              .opacity(st.line * vis(.heroLine)).offset(y: 12 * (1 - st.line))
           }
         }
       }
       .padding(.top, 16)
-      .offset(y: 60 * (1 - rise))
-      .opacity(rise)
-      loopStrip(lift: lift).padding(.top, 20)
+      .offset(y: 60 * (1 - st.rise))
+      .opacity(st.rise)
+      loopStrip(st, revealed: revealed).padding(.top, 20)
       Text(insight).font(.system(size: 18, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
-        .fixedSize(horizontal: false, vertical: true).padding(.top, 18).opacity(ins)
+        .fixedSize(horizontal: false, vertical: true).padding(.top, 18).opacity(st.insight * vis(.insight))
       Spacer(minLength: 8)
       HStack {
         Text(dateText).font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1)
@@ -154,30 +195,31 @@ public struct ShareLoopFrame: View {
         Text(Brand.name).font(.system(size: 13, weight: .heavy)).textCase(.uppercase).tracking(1)
       }
       .foregroundStyle(PhoneTheme.muted)
-      .opacity(wordmark)
+      .opacity(st.wordmark * vis(.wordmark))
     }
     .padding(20)
     .frame(width: ShareCardV2.size.width, height: ShareCardV2.size.height, alignment: .topLeading)
-    .background(PhoneTheme.paper)
+    .background(layer == nil ? PhoneTheme.paper : Color.clear)
   }
 
-  /// The real strip, revealed left to right at the clock's pace: the long stations visibly take longer. A faint track shows
-  /// where it will fill. The named station lifts once as the insight sets.
-  private func loopStrip(lift: Double) -> some View {
-    let rise = ShareLoop.progress(t, 0.4, 0.9)
+  /// The real strip, revealed left to right at the clock's pace: the long stations visibly take longer. Each station label shows
+  /// whole once its segment is complete. A faint track shows where it will fill, and fades as the strip does.
+  /// The segment the insight names lifts once as the insight sets.
+  private func loopStrip(_ st: ShareLoop.State, revealed: Double) -> some View {
+    let lifting = layer == nil ? (st.lift > 0 && st.lift < 1) : layer == .lift
+    let inLayer = layer != nil
     return ZStack(alignment: .top) {
-      RoundedRectangle(cornerRadius: 2).fill(PhoneTheme.hairline.opacity(0.6 * (1 - clockProgress))).frame(height: ShareStrip.barHeight)
-      GeometryReader { geo in
-        ShareStrip(result: result).frame(width: geo.size.width)
-          .mask(alignment: .leading) { Rectangle().frame(width: geo.size.width * clockProgress) }
-      }
-      if let i = liftIndex, lift > 0, lift < 1 { liftMark(index: i, lift: lift) }
+      RoundedRectangle(cornerRadius: 2).fill(PhoneTheme.hairline.opacity(0.6 * (inLayer ? 1 : (1 - st.clock))))
+        .frame(height: ShareStrip.barHeight).opacity(vis(.track))
+      ShareStrip(result: result, reveal: inLayer ? 1 : revealed, labelReveal: revealed, showBars: layer == nil || layer == .bars,
+                 showLabels: layer == nil || layer == .labels)
+      if let i = ShareLoop.liftIndex(result), lifting { liftMark(index: i, lift: inLayer ? 0 : st.lift) }
     }
     .frame(height: ShareStrip.barHeight + 5 + 28, alignment: .top)
-    .opacity(rise)
+    .opacity(st.rise)
   }
 
-  /// A small bar over the named segment that rises 6 pt and settles, drawn above the strip.
+  /// A copy of the named segment drawn over the strip that rises 6 pt and settles.
   private func liftMark(index: Int, lift: Double) -> some View {
     let weights = result.rows.map { Double(max(1, $0.actualSeconds ?? $0.step.targetSeconds)) }
     let total = weights.reduce(0, +)
@@ -224,11 +266,11 @@ public struct ShareFlowSheet: View {
       case .choosing:
         Text("Share").scaledStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
         if partial {
-          PrimaryButton("Image", action: onImage)
-          SecondaryChoice(title: "Video \u{00B7} 5 s", action: onVideo)
+          PrimaryButton("Image", action: onImage).accessibilityLabel("Share as image")
+          SecondaryChoice(title: "Video \u{00B7} 5 s", label: "Share as 5 second video", action: onVideo)
         } else {
-          PrimaryButton("Video \u{00B7} 5 s", action: onVideo)
-          SecondaryChoice(title: "Image", action: onImage)
+          PrimaryButton("Video \u{00B7} 5 s", action: onVideo).accessibilityLabel("Share as 5 second video")
+          SecondaryChoice(title: "Image", label: "Share as image", action: onImage)
         }
         TextLinkButton("Cancel", action: onCancel)
       case .rendering(let percent):
@@ -259,6 +301,7 @@ public struct ShareFlowSheet: View {
 
 private struct SecondaryChoice: View {
   let title: String
+  let label: String
   let action: () -> Void
   var body: some View {
     Button(action: action) {
@@ -267,5 +310,6 @@ private struct SecondaryChoice: View {
         .overlay(RoundedRectangle(cornerRadius: PhoneTheme.buttonRadius).stroke(PhoneTheme.inkText, lineWidth: 2))
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(label)
   }
 }

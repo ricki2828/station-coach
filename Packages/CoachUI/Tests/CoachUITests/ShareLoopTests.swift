@@ -102,12 +102,49 @@ final class ShareLoopTests: XCTestCase {
     XCTAssertEqual(ShareLoop.frameCount, 150)
   }
 
-  func testEncodeWritesAFiveSecondMp4() async throws {
+  /// The composited frame (layers drawn with an alpha or an offset) matches the reference render of the same view at the same `t`.
+  func testCompositedFramesMatchTheFullRender() throws {
+    let cases: [(String, CoachResult, MomentDisplay?)] = [("full", full, nil), ("partial", partial, nil), ("best", full, best)]
+    for (name, result, moment) in cases {
+      let comp = ShareLoopCompositor(result: result, moment: moment, dateText: date)
+      for t in [0.1, 0.3, 0.6, 0.85, 1.0, 1.4, 2.0, 2.6, 2.8, 3.0, 3.3, 3.6, 3.75, 4.9, 4.95] {
+        if comp.needsFullRender(t) { continue }
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: 1080, height: 1350, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue))
+        if ShareLoop.isStill(t) { comp.drawStill(into: ctx, alpha: 1) }
+        else if t > ShareLoop.holdEnd { comp.drawStill(into: ctx, alpha: 1 - ShareLoop.progress(t, ShareLoop.holdEnd, ShareLoop.duration)) }
+        else { comp.draw(t, into: ctx) }
+        let composed = UIImage(cgImage: try XCTUnwrap(ctx.makeImage()))
+        let d = try meanDiff(composed, image(frame(result, moment, t: t)))
+        if d >= 1.5 {
+          try write(composed, "fail-composite-\(name)-t\(t)")
+          try write(image(frame(result, moment, t: t)), "fail-reference-\(name)-t\(t)")
+        }
+        XCTAssertLessThan(d, 1.5, "\(name) t=\(t): composite drifts from the full render (mean diff \(d))")
+      }
+    }
+  }
+
+  func testLiftNamesTheInsightsStation() throws {
+    // Slow run after the sled push (rule 1): the run segment lifts. A slow station (rule 2): the station lifts.
+    XCTAssertEqual(InsightPicker.pick(full).stepIndex, ShareLoop.liftIndex(full))
+    XCTAssertNotNil(ShareLoop.liftIndex(full))
+    XCTAssertNil(ShareLoop.liftIndex(partial), "a partial card writes its own insight, so nothing lifts")
+  }
+
+  func testEncodeWritesAnExactFiveSecondMp4AndTimesBothPaths() async throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("shareloop-test-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: url) }
     var seen: [Int] = []
     let report = try await ShareLoopEncoder.encode(result: full, dateText: date, to: url) { seen.append($0) }
-    let msg = String(format: "share loop encode: %.2f s for %d frames (%d rendered), target 3 s on device", report.seconds, report.frames, report.rendered)
+
+    // The reference path, for the timing comparison only.
+    let whole = FileManager.default.temporaryDirectory.appendingPathComponent("shareloop-whole-\(UUID().uuidString).mp4")
+    defer { try? FileManager.default.removeItem(at: whole) }
+    let reference = try await ShareLoopEncoder.encode(result: full, dateText: date, to: whole, composite: false)
+    let msg = String(format: "share loop encode, 150 frames on the CI simulator: composited %.2f s (%d ImageRenderer passes) vs every frame rendered whole %.2f s (%d passes); target 3 s on device",
+                     report.seconds, report.renders, reference.seconds, reference.renders)
     print(msg)
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     try msg.write(to: outDir.appendingPathComponent("shareloop-encode-time.txt"), atomically: true, encoding: .utf8)
@@ -116,11 +153,12 @@ final class ShareLoopTests: XCTestCase {
     XCTAssertGreaterThan(size, 10_000)
     XCTAssertLessThan(size, 3_000_000, "file over the 3 MB target: \(size)")
     XCTAssertEqual(seen.last, 100)
-    XCTAssertLessThan(report.rendered, report.frames, "the still frames are rendered once and reused")
+    XCTAssertLessThan(report.renders, reference.renders, "compositing should render less than the whole-frame path")
+    XCTAssertLessThan(report.seconds, 600, "encode hung")
 
     let asset = AVURLAsset(url: url)
     let duration = try await asset.load(.duration).seconds
-    XCTAssertEqual(duration, 5.0, accuracy: 0.1)
+    XCTAssertEqual(duration, 5.0, accuracy: 0.01, "the loop is exactly 5 s")
     let tracks = try await asset.loadTracks(withMediaType: .video)
     let track = try XCTUnwrap(tracks.first)
     let natural = try await track.load(.naturalSize)
@@ -133,13 +171,36 @@ final class ShareLoopTests: XCTestCase {
     var frames = 0
     while out.copyNextSampleBuffer() != nil { frames += 1 }
     XCTAssertEqual(frames, 150)
-    // The 3 s target is for a device. The CI simulator renders in software on a VM and measured 125 s for 119 frames, so this
-    // only guards against a hang; the time is logged above and uploaded in shareloop-encode-time.txt.
-    XCTAssertLessThan(report.seconds, 600, "encode hung")
+
+    // A decoded frame from the file is the still card, the right way up (a flipped or mis-coloured encode would be far off).
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.requestedTimeToleranceBefore = .zero
+    generator.requestedTimeToleranceAfter = .zero
+    let decoded = try await generator.image(at: CMTime(seconds: 4.5, preferredTimescale: 600)).image
+    let still = try image(ShareCardV2(result: full, dateText: date))
+    let d = try meanDiff(UIImage(cgImage: decoded), still)
+    try write(UIImage(cgImage: decoded), "phone-shareloop-decoded-t4.5")
+    XCTAssertLessThan(d, 8, "decoded t=4.5 frame differs from the still card (mean diff \(d))")
   }
 
-  func testCancelledEncodeLeavesNoFile() async throws {
+  /// Cancelling part-way, wherever the loop happens to be (rendering, or waiting for the writer), cancels the writer and
+  /// removes the partial file.
+  func testCancellingMidEncodeLeavesNoFile() async throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("shareloop-cancel-\(UUID().uuidString).mp4")
+    var task: Task<ShareLoopEncoder.Report, Error>?
+    var cancelled = false
+    task = Task { @MainActor in
+      try await ShareLoopEncoder.encode(result: full, dateText: date, to: url) { pct in
+        if pct >= 10 && !cancelled { cancelled = true; task?.cancel() }
+      }
+    }
+    do { _ = try await XCTUnwrap(task).value; XCTFail("a cancelled encode should throw") } catch ShareLoopEncoder.EncodeError.cancelled {} catch { XCTFail("wrong error \(error)") }
+    XCTAssertTrue(cancelled, "cancel should have fired mid-encode")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+  }
+
+  func testCancelBeforeTheFirstFrameLeavesNoFile() async throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("shareloop-cancel0-\(UUID().uuidString).mp4")
     let task = Task { @MainActor in try await ShareLoopEncoder.encode(result: full, dateText: date, to: url) }
     task.cancel()
     do { _ = try await task.value; XCTFail("a cancelled encode should throw") } catch {}

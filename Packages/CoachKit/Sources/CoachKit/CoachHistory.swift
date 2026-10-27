@@ -55,6 +55,8 @@ public enum RunFade {
     public let after: String
     public let afterActivity: Activity
     public let seconds: Int
+    /// Index of the run's step in `CoachResult.rows` / `plan.steps`.
+    public let stepIndex: Int
   }
 
   /// One entry per completed run 2..N, in order. Empty when run 1 or the run is not done.
@@ -67,7 +69,7 @@ public enum RunFade {
     for (i, r) in rows.enumerated() where r.step.isRun && (r.step.runNumber ?? 0) > 1 {
       guard let a = r.actualSeconds, i > 0 else { continue }
       // Runs 2-8 start with a changeover that run 1 does not have: that is not fade.
-      out.append(Slowdown(runNumber: r.step.runNumber ?? 0, after: rows[i - 1].step.name, afterActivity: rows[i - 1].step.activity, seconds: (a - result.plan.transitionSeconds) - first))
+      out.append(Slowdown(runNumber: r.step.runNumber ?? 0, after: rows[i - 1].step.name, afterActivity: rows[i - 1].step.activity, seconds: (a - result.plan.transitionSeconds) - first, stepIndex: r.step.index))
     }
     return out
   }

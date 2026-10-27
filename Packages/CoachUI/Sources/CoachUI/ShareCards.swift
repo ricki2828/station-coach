@@ -91,10 +91,30 @@ public struct ShareCardV2: View {
 /// The card's labelled strip. Same geometry as `StationStrip`, but labels that would touch their neighbour drop to a second row.
 struct ShareStrip: View {
   let result: CoachResult
+  /// Bars are clipped to this fraction of the strip's width (the share loop fills the strip left to right).
+  var reveal: Double = 1
+  /// A station label shows once its segment has been revealed this far. nil follows `reveal`; at 1 every label shows.
+  var labelReveal: Double?
+  /// The loop composites bars and labels from separate layers.
+  var showBars = true
+  var showLabels = true
   static let barHeight: CGFloat = 14
   static let minLabelGap: CGFloat = 5
 
   private var rows: [CoachResult.Row] { result.rows }
+
+  /// For each row, where its segment ends as a fraction of the strip's width (gaps included).
+  static func segmentEnds(_ result: CoachResult, width: CGFloat) -> [Double] {
+    let rows = result.rows
+    let weights = rows.map { Double(max(1, $0.actualSeconds ?? $0.step.targetSeconds)) }
+    let total = weights.reduce(0, +)
+    let avail = Double(width) - Double(max(0, rows.count - 1)) * 2
+    var cum = 0.0
+    return weights.enumerated().map { i, w in
+      cum += w
+      return (avail * cum / total + Double(i) * 2) / Double(width)
+    }
+  }
 
   private func shortName(_ a: Activity) -> String {
     switch a {
@@ -129,17 +149,22 @@ struct ShareStrip: View {
             }
           }
         }
+        .mask(alignment: .leading) { Rectangle().frame(width: geo.size.width * min(1, max(0, reveal))) }
+        .opacity(showBars ? 1 : 0)
       }
       .frame(height: Self.barHeight)
       GeometryReader { geo in
         let avail = geo.size.width - CGFloat(max(0, rows.count - 1)) * 2
         let placed = labels(avail: avail, total: total, weights: weights, width: geo.size.width)
+        let ends = Self.segmentEnds(result, width: geo.size.width)
+        let shown = labelReveal ?? reveal
         ForEach(placed, id: \.index) { p in
           Text(p.name)
             .font(.system(size: 10, weight: .heavy)).textCase(.uppercase).tracking(0.5)
             .foregroundStyle(rows[p.index].actualSeconds != nil ? PhoneTheme.inkText : PhoneTheme.muted)
             .fixedSize()
             .position(x: p.x, y: p.row == 0 ? 7 : 21)
+            .opacity(showLabels && ends[p.index] <= shown + 1e-9 ? 1 : 0)
         }
       }
       .frame(height: 28)

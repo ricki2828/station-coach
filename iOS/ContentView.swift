@@ -310,7 +310,7 @@ struct SessionDetailHost: View {
     encodeTask = Task { @MainActor in
       do {
         let report = try await ShareLoopEncoder.encode(result: record.result, to: url) { flow = .rendering(percent: $0) }
-        print("share loop: \(report.frames) frames, \(report.rendered) rendered, \(String(format: "%.2f", report.seconds)) s")
+        print("share loop: \(report.frames) frames, \(report.renders) rendered, \(String(format: "%.2f", report.seconds)) s")
         guard !Task.isCancelled else { return }
         videoURL = url
         flow = nil
