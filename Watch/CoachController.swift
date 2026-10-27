@@ -5,48 +5,6 @@ import Foundation
 import SwiftUI
 import WatchKit
 
-/// Wall-ball rep counter shared with the motion thread.
-final class LockedCounter {
-  private let lock = NSLock()
-  private var counter = WallBallCounter()
-  private var enabled = false
-  /// Rep times (s) counted before a relaunch, which the detector itself no longer holds.
-  private var carried: [Double] = []
-  private var owner: Int?
-
-  /// Start counting `step`. `fresh` starts from zero. Otherwise the earlier count carries on: from the detector when it
-  /// still holds that step (undo back into it), else from `earlier` (after a relaunch, or an undo across steps).
-  func begin(step: Int, fresh: Bool, earlier: [Double]) {
-    lock.lock(); defer { lock.unlock() }
-    if fresh {
-      counter = WallBallCounter()
-      carried = []
-      owner = step
-    } else if owner != step {
-      counter = WallBallCounter()
-      carried = earlier
-      owner = step
-    }
-    enabled = true
-  }
-
-  func pause() {
-    lock.lock(); defer { lock.unlock() }
-    enabled = false
-  }
-
-  func feed(_ t: Double, _ magnitude: Double) {
-    lock.lock(); defer { lock.unlock() }
-    guard enabled else { return }
-    counter.add(t: t, magnitude: magnitude)
-  }
-
-  func snapshot() -> (count: Int, confidence: WallBallCounter.Confidence, times: [Double]) {
-    lock.lock(); defer { lock.unlock() }
-    return (carried.count + counter.count, counter.confidence, carried + counter.repTimes)
-  }
-}
-
 /// Runs a coached session on top of the M1 recorder: the plan drives the screens and the cues, and each
 /// phase change writes the M1 label, so the recorder's files and pass marks work as before.
 @MainActor
@@ -67,7 +25,7 @@ final class CoachController: ObservableObject {
     set { if let newValue { state?.machine = newValue } }
   }
   private var scheduler = CueScheduler()
-  private let counter = LockedCounter()
+  private let counter = WallBallTally()
   private var ticker: Timer?
   private var midCueDone: Set<Int> {
     get { state?.midCueDone ?? [] }
@@ -96,9 +54,10 @@ final class CoachController: ObservableObject {
     get { state?.noRepAnnounced ?? false }
     set { state?.noRepAnnounced = newValue }
   }
-  private var checkpointSeq = 0
-  private var checkpointedReps = -1
-  private var checkpointFailed = false
+  private var checkpointer = CoachCheckpointer()
+  /// Coached sessions finished on this watch: the first one gets the baseline lines.
+  private static let finishedKey = "coachedSessionsFinished"
+  private var isFirstSession: Bool { UserDefaults.standard.integer(forKey: Self.finishedKey) == 0 }
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
@@ -144,16 +103,19 @@ final class CoachController: ObservableObject {
     var fresh = CoachSessionState(plan: plan)
     fresh.machine.start(at: nowMs)
     state = fresh
-    checkpointSeq = 0
-    checkpointedReps = -1
-    checkpointFailed = false
+    checkpointer = CoachCheckpointer()
     scheduler = CueScheduler()
     noRepRest = NoRepRest()
     lastLabel = nil
     let c = counter
     recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
     active = true
-    beginStep()
+    beginStep(announce: false)
+    // One line at START: the target and what to do with run 1, then run 1's own target.
+    if let m = machine, let first = m.current {
+      offer(.planAndRun, CoachCopy.sessionStart(plan: plan, isFirst: isFirstSession) + " "
+        + CoachCopy.runStart(run: first, after: nil, deltaSeconds: 0, transitionSeconds: plan.transitionSeconds))
+    }
     checkpoint()
     startTicker()
     refresh()
@@ -174,9 +136,7 @@ final class CoachController: ObservableObject {
           let found = CoachCheckpoint.latestResumable(in: root, nowMs: nowMs) else { return false }
     guard await recorder.resume(folder: found.folder) else { return false }
     state = found.checkpoint.state
-    checkpointSeq = found.checkpoint.seq + 1
-    checkpointedReps = -1
-    checkpointFailed = false
+    checkpointer = CoachCheckpointer(startingSeq: found.checkpoint.seq + 1)
     scheduler = CueScheduler()
     noRepRest = NoRepRest()
     lastLabel = nil
@@ -281,7 +241,7 @@ final class CoachController: ObservableObject {
   /// Banks the wall-ball reps of the step just left and stops counting.
   private func leaveStep(_ step: PlanStep?) {
     guard let step, step.activity == .wallBalls else { return }
-    state?.bank(step: step, repTimesMs: Self.repTimesMs(counter.snapshot().times))
+    state?.bank(step: step, repTimesMs: WallBallTally.milliseconds(counter.snapshot().times))
     noRepRest.hide()
     scheduler.drop(.noRep)
     counter.pause()
@@ -337,7 +297,7 @@ final class CoachController: ObservableObject {
       }
       if step.activity == .wallBalls {
         announceSets(step)
-        if counter.snapshot().count != checkpointedReps { checkpoint() } // a rep was counted: at most one write per rep
+        if checkpointer.repCountChanged(counter.snapshot().count) { checkpoint() } // a rep was counted: at most one write per rep
       }
       refresh()
     }
@@ -348,22 +308,12 @@ final class CoachController: ObservableObject {
     state?.repsDone(step, counted: counter.snapshot().count) ?? 0
   }
 
-  private static func repTimesMs(_ seconds: [Double]) -> [Int64] { seconds.map { Int64(($0 * 1000).rounded()) } }
-
   /// Writes `coach-checkpoint.json` (atomic). Called on every change that matters, never on the 1 s tick itself.
   private func checkpoint() {
-    guard active, var s = state, let folder = recorder.sessionFolder, let step = s.machine.current else { return }
+    guard active, let s = state, let folder = recorder.sessionFolder else { return }
     let snap = counter.snapshot()
-    s.bank(step: step, repTimesMs: Self.repTimesMs(snap.times)) // provisional times of the step in progress
-    checkpointedReps = snap.count
-    let cp = CoachCheckpoint(sessionId: folder.lastPathComponent, savedAtEpochMs: nowMs, seq: checkpointSeq, state: s)
-    checkpointSeq += 1
-    do {
-      try CoachCheckpoint.write(cp, to: folder)
-    } catch {
-      guard !checkpointFailed else { return }
-      checkpointFailed = true
-      recorder.note("checkpoint_error", "\(error)")
+    if let failure = checkpointer.save(s, liveRepTimesMs: WallBallTally.milliseconds(snap.times), liveCount: snap.count, folder: folder, nowMs: nowMs) {
+      recorder.note("checkpoint_error", failure)
     }
   }
 
@@ -382,7 +332,7 @@ final class CoachController: ObservableObject {
 
   private func pump() {
     guard recorder.phase == .running, let cue = scheduler.next(at: clock, speaking: recorder.cues.isSpeaking) else { return }
-    recorder.cues.speak(cue.text)
+    recorder.cues.speak(cue.text, haptic: CueHaptic.for(cue.kind, deltaSeconds: machine?.deltaSeconds(at: nowMs) ?? 0))
   }
 
   // MARK: Screen
@@ -393,6 +343,7 @@ final class CoachController: ObservableObject {
     let delta = m.deltaSeconds(at: now)
     let elapsed = m.stepElapsedSeconds(at: now)
     let next = m.next.map { "Next: \($0.name)" } ?? "Next: Finish"
+    let ladder = LadderTick.ladder(for: m.plan, currentIndex: step.index)
     let common = (hr: recorder.hrOff ? nil : recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
     let target = "/ \(Fmt.clock(step.targetSeconds))"
     let targetLabel = "Target \(Fmt.spoken(step.targetSeconds))"
@@ -409,21 +360,25 @@ final class CoachController: ObservableObject {
         if done < cumulative { setNo = k + 1; setSize = size; break }
       }
       let approx = snap.count >= 3 && snap.confidence == .low
-      screen = StepScreenModel(
+      var model = StepScreenModel(
         kind: .reps, activity: .wallBalls, title: step.name, dominant: "\(left)",
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
         next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx, noRepVisible: noRepShown, noRepCount: noRepLog.count(inStep: step.index),
         noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)))
+      model.ladder = ladder
+      screen = model
       return
     }
     let transition = m.label(at: now) == .transition
-    screen = StepScreenModel(
+    var model = StepScreenModel(
       kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Transition" : nil,
       dominant: Fmt.clock(elapsed), dominantLabel: "\(step.isRun ? "Run" : "Station") time, \(Fmt.spoken(elapsed))",
       secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
       hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
+    model.ladder = ladder
+    screen = model
   }
 
   private func updateNoRepRest(_ step: PlanStep, count: Int, done: Int) {
@@ -454,6 +409,7 @@ final class CoachController: ObservableObject {
     recorder.tap(.rest, haptic: false)
     lastLabel = .rest
     finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early)
+      + " " + CoachCopy.finishPersonality(totalSeconds: total, plannedSeconds: planned, isFirst: isFirstSession, early: early, saved: saved)
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
       best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },
@@ -515,6 +471,7 @@ final class CoachController: ObservableObject {
     }
     try? await Task.sleep(nanoseconds: 300_000_000) // the delegate's finished event arrives on the main queue
     recorder.onMotionMagnitude = nil
+    UserDefaults.standard.set(UserDefaults.standard.integer(forKey: Self.finishedKey) + 1, forKey: Self.finishedKey)
     // Clean finish: coach.json is the record. The checkpoint must not travel to the phone in the file list.
     if let folder = recorder.sessionFolder { CoachCheckpoint.remove(from: folder) }
     await recorder.stop()

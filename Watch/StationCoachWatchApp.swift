@@ -1,3 +1,4 @@
+import CoachKit
 import CoachUI
 import SwiftUI
 import WatchKit
@@ -13,19 +14,13 @@ final class AppDelegate: NSObject, WKApplicationDelegate {
 @MainActor
 final class RecoveryCoordinator {
   static let shared = RecoveryCoordinator()
-  private var handler: (@MainActor () async -> Void)?
-  private var pending = false
+  private let trigger = RecoveryTrigger()
 
   func install(_ handler: @escaping @MainActor () async -> Void) {
-    self.handler = handler
-    if pending { recoverRequested() }
+    trigger.install { Task { @MainActor in await handler() } }
   }
 
-  func recoverRequested() {
-    guard let handler else { pending = true; return }
-    pending = false
-    Task { await handler() }
-  }
+  func recoverRequested() { trigger.request() }
 }
 
 @main

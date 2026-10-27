@@ -57,6 +57,8 @@ final class RecorderController: ObservableObject {
   static let hrMissedKey = "hrMissedLastSession"
   private var minuteTimer: Timer?
   private var alarmTimer: Timer?
+  /// Once the athlete taps OK, the same fault does not come back as a full-screen alarm (see AlarmGate).
+  private var alarmGate = AlarmGate()
   private var watchdogTimer: Timer?
   private var watchdogTotal = 0
   private var watchdogSince = Date()
@@ -154,6 +156,7 @@ final class RecorderController: ObservableObject {
 
   /// Everything after the workout session is up: heart rate, motion, cues, the timers. Shared by a fresh start and a resume.
   private func beginRuntime(writer: SessionWriter, motion: MotionRecorder, coach: Bool) async {
+    alarmGate.reset()
     hrWatch.start(at: clock)
     hrOff = false
     heartRate = nil
@@ -200,6 +203,8 @@ final class RecorderController: ObservableObject {
       WatchTransfer.shared.pauseForRecording()
       wire(writer: writer, motion: motion)
       try await workout.recover(expectedStartMs: writer.manifest.startedAtEpochMs)
+      // Counted only now that the workout session is really back; a failed resume leaves the manifest as it was.
+      do { try writer.markResumed() } catch { log("manifest_error", "\(error)") }
       unfinished.removeAll { $0 == writer.manifest.sessionId }
       await beginRuntime(writer: writer, motion: motion, coach: true)
       return true
@@ -325,6 +330,7 @@ final class RecorderController: ObservableObject {
   }
 
   func dismissAlarm() {
+    alarmGate.dismiss()
     alarm = nil
     alarmTimer?.invalidate()
     alarmTimer = nil
@@ -332,11 +338,19 @@ final class RecorderController: ObservableObject {
 
   private func raiseAlarm(_ message: String) {
     guard phase == .running else { return }
-    log("alarm", message)
-    guard alarm == nil else { return }
-    alarm = message
-    WKInterfaceDevice.current().play(.failure)
-    alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
+    switch alarmGate.raise(message, at: clock) {
+    case .alarm:
+      log("alarm", message)
+      alarm = message
+      WKInterfaceDevice.current().play(.failure)
+      alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
+    case .toast:
+      // Already acknowledged and still true: a short note in the band, never the full-screen alarm again.
+      log("alarm_repeat", message)
+      flash(message)
+    case .ignore:
+      break
+    }
   }
 
   func flagMissedCue() {
@@ -398,6 +412,7 @@ final class RecorderController: ObservableObject {
     if !sawFirstSample {
       if total > 0 {
         sawFirstSample = true
+        alarmGate.clear("Motion never started")
         watchdogTotal = total
         watchdogSince = Date()
         log("first_motion_sample", String(format: "delay=%.1fs", motion.firstSampleDelay ?? -1))
@@ -409,6 +424,7 @@ final class RecorderController: ObservableObject {
     if total != watchdogTotal {
       watchdogTotal = total
       watchdogSince = Date()
+      alarmGate.clear("No motion samples for \(Int(Self.stallSeconds)) s") // flowing again: a later stall alarms afresh
     } else if Date().timeIntervalSince(watchdogSince) >= Self.stallSeconds {
       raiseAlarm("No motion samples for \(Int(Self.stallSeconds)) s")
     }
