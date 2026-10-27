@@ -105,6 +105,8 @@ public enum ScreenCatalog {
         batteryLine: "Battery 54%. A full sim needs about 60%.")))),
       watch("run", CoachStepScreen(model: run, onMissed: {})),
       watch("run-over", CoachStepScreen(model: over, onMissed: {})),
+      watch("run-changeover-wide", CoachStepScreen(model: { var m = run; m.badge = "Changeover"; m.dominant = "10:41"; m.deltaSeconds = 641; m.hrBpm = 171; m.ladder = ladder(6); m.next = "Next: Sled push"; return m }(), onMissed: {})),
+      watch("run-over-dimmed", CoachStepScreen(model: over, onMissed: {}), dimmed: true),
       watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("station-time", CoachStepScreen(model: station, onMissed: {})),
       watch("station-time-sled", CoachStepScreen(model: sled, onMissed: {})),
