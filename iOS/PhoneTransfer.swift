@@ -23,6 +23,13 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var exporting = false
   /// Incoming file renames queue here while a zip is built, so a zip never sees a file land mid-way.
   private let arrivals = ArrivalGate()
+  private var stageSeq = 0
+  /// Durable staging for files that arrive while a zip is built. Outside Documents/Sessions, so zips and the session list never see it.
+  private static var incomingDir: URL? {
+    (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
+      .appendingPathComponent("incoming", isDirectory: true)
+  }
+  private static var exportsDir: URL { FileManager.default.temporaryDirectory.appendingPathComponent("exports", isDirectory: true) }
   /// Sessions the watch has announced and the phone has not completed. Unlike the watchdog, entries are not dropped after 24 h.
   @Published private(set) var announcedIds: Set<String> = []
   private let announcedKey = "announcedSessions"
@@ -60,6 +67,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     }
     announcedIds = Set(UserDefaults.standard.stringArray(forKey: "announcedSessions") ?? [])
     super.init()
+    // Nothing is receiving yet: a staged file left in tmp by an earlier run is an orphan, and old exports are dead.
+    IncomingStage.sweepOrphans(inTemp: FileManager.default.temporaryDirectory)
+    Self.removeStaleZips()
     refresh()
   }
 
@@ -79,6 +89,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   /// The app came to the front: time spent closed does not count towards the 3 minutes.
   func appBecameActive() {
+    reapplyStaged()
     openedAt = Date().timeIntervalSinceReferenceDate
     refresh()
     // The 180-day max-heart-rate and calibration windows move with the date, not only with new sessions.
@@ -257,7 +268,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     guard let root = Self.root else { throw CocoaError(.fileNoSuchFile) }
     exporting = true
     arrivals.close()
-    Self.removeStaleZips(sessionIds: Set(sessions.map(\.id)))
+    Self.removeStaleZips()
     let source = sessionId.map { root.appendingPathComponent(($0 as NSString).lastPathComponent) } ?? root
     let name = sessionId.map { ($0 as NSString).lastPathComponent + ".zip" } ?? "station-coach-\(Self.dayStamp(now)).zip"
     let result = await Task.detached(priority: .userInitiated) { Result { try Self.buildZip(of: source, named: name) } }.value
@@ -276,13 +287,14 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     return f.string(from: date)
   }
 
-  /// Zips left in the temp folder by an earlier export that was never dismissed cleanly (a crash, a killed share sheet).
-  private static func removeStaleZips(sessionIds: Set<String>) {
+  /// Every zip this app wrote lives in `tmp/exports`, so emptying it also catches zips of sessions since deleted.
+  /// Zips from before that folder existed sit directly in tmp, named `station-coach-*.zip` or `<session id>.zip`.
+  private static func removeStaleZips() {
     let fm = FileManager.default
+    try? fm.removeItem(at: exportsDir)
     let tmp = fm.temporaryDirectory
     for name in (try? fm.contentsOfDirectory(atPath: tmp.path)) ?? [] where name.hasSuffix(".zip") {
-      let base = String(name.dropLast(4))
-      if base.hasPrefix("station-coach-") || sessionIds.contains(base) { try? fm.removeItem(at: tmp.appendingPathComponent(name)) }
+      if name.hasPrefix("station-coach-") || name.contains("Z-") { try? fm.removeItem(at: tmp.appendingPathComponent(name)) }
     }
   }
 
@@ -290,8 +302,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     var coordinationError: NSError?
     var result: Result<URL, Error> = .failure(CocoaError(.fileWriteUnknown))
     NSFileCoordinator().coordinate(readingItemAt: source, options: [.forUploading], error: &coordinationError) { zipped in
-      let dest = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+      let dest = exportsDir.appendingPathComponent(name)
       do {
+        try FileManager.default.createDirectory(at: exportsDir, withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: dest)
         // The coordinator's zip is ours to move; a copy would leave two zips on disk.
         try FileManager.default.moveItem(at: zipped, to: dest)
@@ -314,7 +327,10 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   }
 
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-    DispatchQueue.main.async { self.updateWatchInstalled() }
+    DispatchQueue.main.async {
+      self.reapplyStaged() // acks need an activated session
+      self.updateWatchInstalled()
+    }
   }
 
   func sessionWatchStateDidChange(_ session: WCSession) {
@@ -365,9 +381,33 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     let staged = fm.temporaryDirectory.appendingPathComponent("incoming-\(UUID().uuidString)")
     do { try fm.moveItem(at: file.fileURL, to: staged) } catch { return }
     DispatchQueue.main.async {
-      self.arrivals.submit { self.apply(staged: staged, sid: sid, name: name, bytes: bytes, total: total) }
+      guard self.arrivals.isClosed else {
+        self.apply(staged: staged, sid: sid, name: name, bytes: bytes, total: total)
+        return
+      }
+      // A zip is being built. Park the file where a kill cannot lose it (the name carries what `apply` needs), and apply it
+      // when the gate opens. If the app dies first, `reapplyStaged` finds it on the next launch.
+      var url = staged
+      self.stageSeq = max(self.stageSeq + 1, Int(Date().timeIntervalSince1970 * 1000))
+      if let dir = Self.incomingDir,
+         let durable = try? IncomingStage.stage(staged, entry: IncomingEntry(sid: sid, name: name, bytes: bytes, total: total), seq: self.stageSeq, into: dir) {
+        url = durable
+      }
+      self.arrivals.submit { self.apply(staged: url, sid: sid, name: name, bytes: bytes, total: total) }
     }
   }
+
+  /// Applies files left in durable staging by a run that was killed during a zip, oldest first. Only when no zip is running:
+  /// while one runs, the files in staging belong to the in-memory queue.
+  private func reapplyStaged() {
+    guard !arrivals.isClosed, WCSession.isSupported(), WCSession.default.activationState == .activated, let dir = Self.incomingDir else { return }
+    for item in IncomingStage.pending(in: dir) {
+      apply(staged: item.url, sid: item.entry.sid, name: item.entry.name, bytes: item.entry.bytes, total: item.entry.total)
+    }
+  }
+
+  /// Drops a "On watch only" row the user knows is gone (the watch was wiped or reinstalled).
+  func forgetWatchOnly(_ id: String) { unannounce([id]) }
 
   /// Moves a staged incoming file into its session folder. Runs on main, never while a zip is being built (see `arrivals`).
   private func apply(staged: URL, sid: String, name: String, bytes: Int, total: Int) {
