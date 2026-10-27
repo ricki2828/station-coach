@@ -184,8 +184,8 @@ public struct ShareLoopFrame: View {
     let before = weights.prefix(index).reduce(0, +)
     return GeometryReader { geo in
       let avail = geo.size.width - CGFloat(max(0, weights.count - 1)) * 2
-      let x = avail * before / total + CGFloat(index) * 2
-      let w = max(2, avail * weights[index] / total)
+      let x: CGFloat = avail * CGFloat(before / total) + CGFloat(index) * 2
+      let w: CGFloat = max(2, avail * CGFloat(weights[index] / total))
       RoundedRectangle(cornerRadius: 2).fill(PhoneTheme.stationColor(result.rows[index].step.activity))
         .frame(width: w, height: ShareStrip.barHeight)
         .offset(x: x, y: CGFloat(-6.0 * sin(Double.pi * lift)))
