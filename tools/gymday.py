@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import m1_report as m1  # noqa: E402
 
-try:  # optional: tools/wallball_replay.py (host replay of the wall-ball counter)
+try:  # optional: tools/wallball_replay.py (PR #15): host replay of the wall-ball counter, and the app's corrected-count rule
     import wallball_replay
 except ImportError:
     wallball_replay = None
@@ -110,9 +110,13 @@ def coached_checks(folder, manifest, truth):
         checks.append(check("phantom reps", PASS if phantom == 0 else FAIL,
                             f"{phantom} rep(s) outside the wall-ball steps" if phantom else "none outside the wall-ball steps"))
     watch = len(reps)
-    corrected = coach.get("wallBallCorrection", {}).get("validReps") if isinstance(coach.get("wallBallCorrection"), dict) else None
-    if corrected is None:
-        corrected = watch + coach.get("repCorrection", 0) - len(coach.get("noReps", []))
+    if wallball_replay is not None:  # the app's rule, phone-correction.json included, shared with the replay tool
+        valid, no_rep = wallball_replay.corrected_counts(coach, folder)
+        corrected = f"{valid} valid + {no_rep} no-rep"
+    else:  # without #15: coach.json only (phone-correction.json is not read)
+        corr = coach.get("wallBallCorrection")
+        valid = corr["validReps"] if isinstance(corr, dict) else max(0, watch + coach.get("repCorrection", 0) - len(coach.get("noReps", [])))
+        corrected = f"{valid} valid"
     if truth is None:
         checks.append(check("wall-ball count", NOT_RUN, f"watch counted {watch} (corrected {corrected}); pass --wb-truth <session>=N"))
     else:
@@ -123,9 +127,13 @@ def coached_checks(folder, manifest, truth):
                             f"limit +-{100 * WB_TOLERANCE:.0f}%); corrected {corrected}"))
     if wallball_replay is not None and windows:
         try:
-            replayed = sum(len(wallball_replay.count_reps(Path(folder) / "motion.csv", a, b)) for a, b in windows)
-            checks.append(check("replay count", NOT_RUN, f"host replay counted {replayed}, watch counted {watch}"))
-        except Exception as e:  # a replay problem must not hide the verdict
+            _, steps = wallball_replay.replay(folder)
+            replayed = sum(len(st["replayed"]) for st in steps)
+            watch_steps = sum(len(st["watch"]) for st in steps)
+            notes = [w for st in steps for w in st["warnings"]]
+            checks.append(check("replay count", NOT_RUN, f"host replay counted {replayed}, watch counted {watch_steps}"
+                                + (f" (warnings: {'; '.join(notes)})" if notes else "")))
+        except Exception as e:  # a replay problem (e.g. no motion.csv) must not hide the verdict
             checks.append(check("replay count", NOT_RUN, f"replay failed: {e}"))
     return checks
 

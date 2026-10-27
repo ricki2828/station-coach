@@ -32,7 +32,7 @@ Coached sessions (`coach.json`) also get these checks, printed in a separate "Co
 - phantom reps: counted reps outside the wall-ball steps.
 - wall-ball count: the watch's uncorrected count against `--wb-truth <sessionId or unique prefix>=N`, +-5%. Without the flag it prints the count and is NOT RUN. A key that matches no session, or more than one, is an error (exit 2).
 - A `coach.json` without `endedAtEpochMs` gives NOT RUN with that reason for the session.
-- If `tools/wallball_replay.py` exists, its replayed count is printed beside the watch's (information only).
+- If `tools/wallball_replay.py` (PR #15) is present, `gymday.py` uses it: the replayed count and its warnings print beside the watch's (information only, NOT RUN if the replay fails), and the "corrected" figure uses its `corrected_counts` rule, `phone-correction.json` included, so both tools agree. Without it, "corrected" comes from `coach.json` alone.
 
 The worst `thermal` state from `events.csv` is printed per session (the watch logs it once the recovery work lands; older sessions show none).
 

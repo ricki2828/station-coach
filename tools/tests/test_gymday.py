@@ -246,12 +246,30 @@ class VerdictTests(Base):
         code, _ = self.run_gymday(self.tmp)
         self.assertEqual(code, 2)
 
-    def test_replay_count_is_printed_when_the_module_exists(self):
+    def test_replay_count_and_warnings_are_printed_when_the_module_exists(self):
         fake = mock.Mock()
-        fake.count_reps.return_value = [1, 2, 3]
+        fake.replay.return_value = ({}, [{"replayed": [1, 2, 3], "watch": list(range(20)), "warnings": ["no labels.csv"]}])
+        fake.corrected_counts.return_value = (18, 2)
         with mock.patch.object(gymday, "wallball_replay", fake):
             _, out = self.run_gymday(self.data_dir())
-        self.assertIn("host replay counted 3, watch counted 20", out)
+        self.assertIn("host replay counted 3, watch counted 20 (warnings: no labels.csv)", out)
+        self.assertIn("corrected 18 valid + 2 no-rep", out)
+
+    def test_replay_failure_is_not_run_not_a_crash(self):
+        fake = mock.Mock()
+        fake.replay.side_effect = RuntimeError("no motion.csv")
+        fake.corrected_counts.return_value = (20, 0)
+        with mock.patch.object(gymday, "wallball_replay", fake):
+            code, out = self.run_gymday(self.data_dir())
+        self.assertEqual(code, 0, out)
+        self.assertIn("replay count NOT RUN: replay failed: no motion.csv", out)
+
+    def test_corrected_figure_without_the_replay_module(self):
+        root = self.data_dir()
+        self.edit_json(root / "A1" / "a1-session" / "coach.json", lambda d: d.update(repCorrection=-2))
+        with mock.patch.object(gymday, "wallball_replay", None):
+            _, out = self.run_gymday(root)
+        self.assertIn("watch counted 20 (corrected 18 valid)", out)
 
 
 class TornRowTests(Base):
