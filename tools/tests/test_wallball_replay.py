@@ -25,7 +25,7 @@ class GoldenTests(unittest.TestCase):
     """Same expected.json as Packages/CoachKit/Tests/CoachKitTests/WallBallGoldenTests.swift. Synthetic signals."""
 
     def test_golden(self):
-        self.assertGreaterEqual(len(EXPECTED), 6)
+        self.assertGreaterEqual(len(EXPECTED), 15)
         for name, want in EXPECTED.items():
             with self.subTest(name):
                 c = wb.WallBallCounter()
@@ -45,6 +45,49 @@ class GoldenTests(unittest.TestCase):
         self.assertEqual(EXPECTED["fast_reps"]["count"], 12)
         self.assertEqual(EXPECTED["catch_peaks"]["count"], 10)
         self.assertEqual(EXPECTED["pickup_bump"]["count"], 8)
+        # Boundary scenarios.
+        self.assertEqual(EXPECTED["min_interval_edge"]["count"], 9)
+        self.assertEqual(EXPECTED["catch_late"]["count"], 8)
+        self.assertEqual(EXPECTED["ignore_edge"]["count"], 7)
+        self.assertEqual(EXPECTED["jog_hold_edge"]["count"], 5)
+        self.assertEqual(EXPECTED["low_amp"]["count"], 8)
+        self.assertEqual(EXPECTED["uneven"]["count"], 7)
+        self.assertEqual(EXPECTED["rest_edge"]["count"], 9)
+        self.assertEqual(EXPECTED["sub_floor"]["count"], 0)
+        self.assertEqual(EXPECTED["after_big_bump"]["count"], 8)
+        self.assertEqual({n for n, w in EXPECTED.items() if w["confidence"] == "low"}, {"uneven", "sub_floor"})  # sub_floor: no reps is low by definition
+
+    def test_mutants_are_caught(self):
+        """Each parameter nudged must change at least one golden, so the fixtures cannot go soft."""
+        C = wb.WallBallCounter
+        mutants = [("DEFAULT_MIN_INTERVAL", v) for v in (1.5, 1.85)] + [("DEFAULT_IGNORE_FIRST", v) for v in (3.0, 5.0)] \
+            + [("MIN_THRESHOLD", v) for v in (0.4, 0.8)] + [("ENVELOPE_FRACTION", v) for v in (0.4, 0.6)] \
+            + [("JOGGING_HOLD", v) for v in (0.5, 3.0)] + [("JOGGING_PEAKS", v) for v in (3, 5)] \
+            + [("JOGGING_WINDOW", v) for v in (1.5, 2.5)] + [("REST_GAP", v) for v in (2.0, 12.0)] \
+            + [("CONF_MAX_CV", v) for v in (0.01, 0.8)] + [("SMOOTH_KEEP", v) for v in (0.6, 0.9)]
+        data = {n: read_samples(n) for n in EXPECTED}
+
+        def outputs():
+            res = {}
+            for n, rows in data.items():
+                c = wb.WallBallCounter()
+                for t, m in rows:
+                    c.add(t, m)
+                res[n] = (c.count, c.confidence, [round(x, 2) for x in c.rep_times])
+            return res
+
+        want = {n: (w["count"], w["confidence"], w["repTimes"]) for n, w in EXPECTED.items()}
+        self.assertEqual(outputs(), want)
+        survivors = []
+        for attr, val in mutants:
+            old = getattr(C, attr)
+            setattr(C, attr, val)
+            try:
+                if outputs() == want:
+                    survivors.append((attr, val))
+            finally:
+                setattr(C, attr, old)
+        self.assertEqual(survivors, [])
 
     def test_csvs_current(self):
         out = subprocess.run([sys.executable, str(GOLDEN / "generate.py"), "--check"], capture_output=True, text=True)
@@ -86,7 +129,7 @@ class ReplayTests(unittest.TestCase):
             out = subprocess.run([sys.executable, str(TOOLS / "wallball_replay.py"), d],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("step 1: replayed 10 reps, watch counted 9 (plan 10)", out)
-            self.assertIn("total: replayed 10, watch 9, corrected 10 (repCorrection +1)", out)
+            self.assertIn("total: replayed 10, watch 9, corrected 10 valid + 0 no-rep (repCorrection +1)", out)
 
     def test_no_wall_ball_step(self):
         with tempfile.TemporaryDirectory() as d:
@@ -95,6 +138,96 @@ class ReplayTests(unittest.TestCase):
             (Path(d) / "coach.json").write_text(json.dumps(c))
             r = subprocess.run([sys.executable, str(TOOLS / "wallball_replay.py"), d], capture_output=True, text=True)
             self.assertEqual(r.returncode, 1)
+
+    def write_labels(self, tmp, rows):
+        (tmp / "labels.csv").write_text("epoch_ms,event,activity\n" + "".join(f"{a},{b},{c}\n" for a, b, c in rows))
+
+    def test_paused_gap_is_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self.make_session(tmp)
+            # Advanced off wall balls at +12 s by mistake, undone at +21 s: reps at 14.18..20.19 were not counted live.
+            self.write_labels(tmp, [(T0 - 60_000, "set", "run"), (T0, "set", "wall_balls"),
+                                    (T0 + 12_000, "set", "rest"), (T0 + 21_000, "set", "wall_balls")])
+            coach, steps = wb.replay(tmp)
+            self.assertEqual(steps[0]["paused"], [(T0 + 12_000, T0 + 21_000)])
+            # 5.19 8.19 11.18 before the gap, 23.19 26.19 29.18 32.19 after it; 14.18 17.19 20.19 were not counted live
+            self.assertEqual(len(steps[0]["replayed"]), 7)
+            self.assertEqual(steps[0]["warnings"], [])
+
+    def test_undo_event_pops_label(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self.make_session(tmp)
+            self.write_labels(tmp, [(T0, "set", "wall_balls"), (T0 + 12_000, "set", "rest"), (T0 + 21_000, "undo", "")])
+            _, steps = wb.replay(tmp)
+            self.assertEqual(steps[0]["paused"], [(T0 + 12_000, T0 + 21_000)])
+
+    def test_no_labels_flags_the_step(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_session(Path(d))
+            _, steps = wb.replay(d)
+            self.assertEqual(steps[0]["paused"], [])
+            self.assertIn("no labels.csv", steps[0]["warnings"][0])
+            out = subprocess.run([sys.executable, str(TOOLS / "wallball_replay.py"), d], capture_output=True, text=True).stdout
+            self.assertIn("warning: no labels.csv", out)
+
+    def test_corrected_matches_app_rule(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            base = {"repTimesMs": [1] * 10, "repCorrection": 2, "noReps": [{"tMs": 1, "setIndex": 0}] * 2}
+            self.assertEqual(wb.corrected_counts(base, tmp), (10, 2))  # 10 + 2 - 2
+            self.assertEqual(wb.corrected_counts({"repTimesMs": [1], "repCorrection": -5}, tmp), (0, 0))
+            self.assertEqual(wb.corrected_counts({**base, "wallBallCorrection": {"validReps": 7, "noReps": 1}}, tmp), (7, 1))
+            # Legacy bare Int = total throws, the logged taps are the no-reps.
+            self.assertEqual(wb.corrected_counts({**base, "wallBallCorrection": 12}, tmp), (10, 2))
+            # The phone's sidecar wins over coach.json, clamped like the app.
+            (tmp / "phone-correction.json").write_text('{"validReps": 999, "noReps": 3}')
+            self.assertEqual(wb.corrected_counts({**base, "wallBallCorrection": {"validReps": 7, "noReps": 1}}, tmp), (300, 3))
+
+    def test_cli_prints_no_reps(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            c = self.make_session(tmp)
+            c["noReps"] = [{"tMs": T0 + 9000, "setIndex": 0}, {"tMs": T0 + 12000, "setIndex": 0}]
+            (tmp / "coach.json").write_text(json.dumps(c))
+            out = subprocess.run([sys.executable, str(TOOLS / "wallball_replay.py"), d], capture_output=True, text=True).stdout
+            self.assertIn("corrected 8 valid + 2 no-rep", out)
+
+    def cli(self, d):
+        return subprocess.run([sys.executable, str(TOOLS / "wallball_replay.py"), str(d)], capture_output=True, text=True)
+
+    def test_missing_files_are_errors_not_tracebacks(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            r = self.cli(tmp)
+            self.assertEqual((r.returncode, "Traceback" in r.stderr), (1, False))
+            self.assertIn("no coach.json", r.stdout)
+            self.make_session(tmp)
+            (tmp / "motion.csv").unlink()
+            r = self.cli(tmp)
+            self.assertEqual((r.returncode, "Traceback" in r.stderr), (1, False))
+            self.assertIn("no motion.csv", r.stdout)
+            (tmp / "coach.json").write_text("{not json")
+            r = self.cli(tmp)
+            self.assertEqual((r.returncode, "Traceback" in r.stderr), (1, False))
+            self.assertIn("unreadable", r.stdout)
+
+    def test_count_reps_never_raises_on_data(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            warn = []
+            self.assertEqual(wb.count_reps(tmp / "nope.csv", 0, 1, warnings=warn), [])
+            self.assertIn("cannot read", warn[0])
+            self.make_session(tmp)
+            text = (tmp / "motion.csv").read_text()
+            # Torn last row, a short row and a garbage row.
+            (tmp / "motion.csv").write_text(text + "1790000040000000,0.5\n1790000040010000,x,0,0,0,0,0,0,0,-1\n17900000400200")
+            warn = []
+            reps = wb.count_reps(tmp / "motion.csv", T0, T0 + 50_000, warnings=warn)
+            self.assertEqual(len(reps), 10)
+            self.assertIn("skipped 3", warn[0])
+            self.assertEqual(wb.count_reps(tmp / "motion.csv", T0, T0 + 50_000), reps)  # no warnings list: still fine
 
     def test_rep_ms_rounds_half_away_from_zero(self):
         self.assertEqual(wb.rep_ms(2.5e-3), 3)

@@ -7,6 +7,9 @@ implementations cannot drift apart; they say nothing about how real wall balls l
   generate.py          rewrite the CSVs (expected.json is only rewritten with --expected)
   generate.py --check  fail if the committed CSVs differ from what this script produces
 
+Not pinned even so (low value, see the PR review): the >= / > tie in the peak test, the 0.25 s peak dedupe, the
+envelope decay, the samples<2 guard and the 6-rep confidence window. Do not read the goldens as full coverage.
+
 expected.json is the counter's output at the time of writing, reviewed by hand against the intent in `note`.
 """
 import json
@@ -54,6 +57,22 @@ SCENARIOS = {
                     signal(every(3, 10), 1.5, 36, catch_delay=1.2)),
     "pickup_bump": ("big ball-pickup bump at 2 s (inside the ignored first 4 s), then 8 reps",
                     signal([(2.0, 3.5)] + every(3, 8, 7.0), 1.5, 36)),
+    # Boundary scenarios: each sits next to a constant's edge, so changing the constant changes the count.
+    "min_interval_edge": ("6 reps 1.6 s apart (blocked), then 6 reps 1.8 s apart (counted)",
+                          signal(every(1.6, 6) + every(1.8, 6, 20.0), 1.5, 34)),
+    "catch_late": ("catch 1.6 s after each throw, still inside minInterval", signal(every(3, 8), 1.5, 30, catch_delay=1.6)),
+    "ignore_edge": ("one burst just before the 4 s ignore mark, one just after, then 6 reps",
+                    signal([3.2, 4.6] + every(3, 6, 7.0), 1.5, 28)),
+    "jog_hold_edge": ("10 arm swings, 2 bursts 1.1 s and 1.9 s after the last swing, then 4 reps",
+                      signal(every(0.5, 10, 1.0) + [6.6, 7.4] + every(3, 4, 10.0), 1.5, 24)),
+    "low_amp": ("8 reps just over the 0.6 g floor", signal(every(3, 8), 0.62, 30)),
+    "uneven": ("7 reps at uneven spacing: the only confidence=low case",
+               signal([5, 7, 11, 12.8, 18, 19.9, 26], 1.5, 30)),
+    "sub_floor": ("8 reps below the 0.6 g floor: nothing counts", signal(every(3, 8), 0.5, 30)),
+    "after_big_bump": ("a 3.5 g bump raises the envelope, then 8 reps at 1.2 g; the relative threshold hides the first",
+                       signal([(5.0, 3.5)] + every(3, 8, 9.0), 1.2, 36)),
+    "rest_edge": ("3 sets of 3 reps with 10 s between sets",
+                  signal(every(2.5, 3) + every(2.5, 3, 17.5) + every(2.5, 3, 34.0), 1.5, 44)),
 }
 
 

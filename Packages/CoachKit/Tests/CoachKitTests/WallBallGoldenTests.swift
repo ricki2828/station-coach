@@ -24,7 +24,7 @@ final class WallBallGoldenTests: XCTestCase {
   func testGoldenFixturesMatchExpected() throws {
     let data = try Data(contentsOf: dir.appendingPathComponent("expected.json"))
     let expected = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: [String: Any]])
-    XCTAssertGreaterThanOrEqual(expected.count, 6)
+    XCTAssertGreaterThanOrEqual(expected.count, 15)
     for (name, want) in expected.sorted(by: { $0.key < $1.key }) {
       var c = WallBallCounter()
       for (t, m) in try samples(name) { c.add(t: t, magnitude: m) }
