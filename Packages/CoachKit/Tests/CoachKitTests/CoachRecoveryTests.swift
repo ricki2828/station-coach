@@ -384,7 +384,8 @@ final class CoachRecoveryTests: XCTestCase {
     w.append(.hr, "1,100")
     w.append(.events, "2,start,x")
     w.flushAll()
-    let manifestBefore = try Data(contentsOf: w.folder.appendingPathComponent("manifest.json"))
+    let manifestBefore = try XCTUnwrap(SessionFiles.readManifest(w.folder))
+    XCTAssertNil(manifestBefore.resumed)
     let r = try SessionWriter(resuming: w.folder)
     r.append(.hr, "3,101")
     r.append(.events, "4,recovered_resume,ok")
@@ -395,8 +396,14 @@ final class CoachRecoveryTests: XCTestCase {
       let body = try text(w.folder.appendingPathComponent(stream.fileName))
       XCTAssertEqual(body.components(separatedBy: stream.header).count, 2, "\(stream) header appears once")
     }
-    XCTAssertEqual(try Data(contentsOf: w.folder.appendingPathComponent("manifest.json")), manifestBefore)
+    var expected = manifestBefore
+    expected.resumed = 1 // the only change: one resume is counted
+    XCTAssertEqual(SessionFiles.readManifest(w.folder), expected)
     XCTAssertEqual(r.manifest.sessionId, "ap1")
+    let again = try SessionWriter(resuming: w.folder)
+    XCTAssertEqual(again.manifest.resumed, 2)
+    try again.finish(endedAtEpochMs: 9_000)
+    XCTAssertEqual(SessionFiles.readManifest(w.folder)?.resumed, 2, "survives the finish rewrite")
   }
 
   func testResumingAfterAHalfWrittenLineStartsANewLine() throws {
@@ -423,24 +430,44 @@ final class CoachRecoveryTests: XCTestCase {
 
   // MARK: Finding the session to resume
 
+  func testLatestResumableOnlyEverConsidersTheNewestUnfinishedFolder() throws {
+    let nowMs: Int64 = 100_000_000
+    let fresh = nowMs - 60_000
+    let older = "20260101T000000Z-aaaaaa", newer = "20260102T000000Z-bbbbbb"
+    let olderFolder = try unfinishedFolder(older)
+    try CoachCheckpoint.write(checkpoint(older, state(atStep: 2), savedAt: fresh), to: olderFolder)
+    // Alone, the older folder is resumable.
+    XCTAssertEqual(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs)?.folder.lastPathComponent, older)
+    // A newer unfinished folder with no checkpoint (an uncoached recording, say): nothing resumes, never the older one.
+    let newerFolder = try unfinishedFolder(newer)
+    XCTAssertNil(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
+    // A newer folder with an unreadable checkpoint: same.
+    try Data("{ half".utf8).write(to: newerFolder.appendingPathComponent(CoachCheckpoint.fileName))
+    XCTAssertNil(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
+    // A newer folder with a good checkpoint wins.
+    try CoachCheckpoint.write(checkpoint(newer, state(atStep: 3), savedAt: fresh), to: newerFolder)
+    XCTAssertEqual(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs)?.folder.lastPathComponent, newer)
+    XCTAssertEqual(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs)?.checkpoint.state.machine.currentIndex, 3)
+  }
+
   func testLatestResumableSkipsFinishedStaleAndAlreadySavedSessions() throws {
     let nowMs: Int64 = 100_000_000
     let fresh = nowMs - 60_000
-    // Newest id first: z is picked only if valid.
-    let good = try unfinishedFolder("20260101T000000Z-aaaaaa")
-    try CoachCheckpoint.write(checkpoint("20260101T000000Z-aaaaaa", state(atStep: 2), savedAt: fresh), to: good)
+    // Stale checkpoint.
     let stale = try unfinishedFolder("20260102T000000Z-bbbbbb")
     try CoachCheckpoint.write(checkpoint("20260102T000000Z-bbbbbb", state(atStep: 2), savedAt: nowMs - CoachCheckpoint.maxResumeAgeMs - 1), to: stale)
+    XCTAssertNil(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
+    try FileManager.default.removeItem(at: stale)
+    // Already has coach.json (crash inside the finish-undo window).
     let saved = try unfinishedFolder("20260103T000000Z-cccccc")
     try CoachCheckpoint.write(checkpoint("20260103T000000Z-cccccc", state(atStep: 2), savedAt: fresh), to: saved)
     try JSONEncoder().encode(try XCTUnwrap(state(atStep: 2).makeResult(early: true, endedAtEpochMs: 1))).write(to: saved.appendingPathComponent(CoachResult.fileName))
+    XCTAssertNil(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
+    try FileManager.default.removeItem(at: saved)
+    // Finished sessions are not unfinished.
     let done = try SessionWriter(root: root, manifest: manifest("20260104T000000Z-dddddd"))
     try CoachCheckpoint.write(checkpoint("20260104T000000Z-dddddd", state(atStep: 2), savedAt: fresh), to: done.folder)
     try done.finish(endedAtEpochMs: 9_000)
-    let found = try XCTUnwrap(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
-    XCTAssertEqual(found.folder.lastPathComponent, "20260101T000000Z-aaaaaa")
-    XCTAssertEqual(found.checkpoint.state.machine.currentIndex, 2)
-    try FileManager.default.removeItem(at: good)
     XCTAssertNil(CoachCheckpoint.latestResumable(in: root, nowMs: nowMs))
   }
 

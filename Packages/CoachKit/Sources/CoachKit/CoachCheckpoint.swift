@@ -47,7 +47,25 @@ public struct CoachCheckpoint: Codable, Equatable {
       try? fm.removeItem(at: prev)
       try? fm.copyItem(at: primary, to: prev)
     }
-    try data.write(to: primary, options: .atomic)
+    // Write and fsync a temporary file, then rename it over the primary: a power loss keeps the old or the new, whole.
+    let tmp = folder.appendingPathComponent(".coach-checkpoint.tmp")
+    try? fm.removeItem(at: tmp)
+    guard fm.createFile(atPath: tmp.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+    let h = try FileHandle(forWritingTo: tmp)
+    do {
+      try h.write(contentsOf: data)
+      try h.synchronize()
+      try h.close()
+    } catch {
+      try? h.close()
+      try? fm.removeItem(at: tmp)
+      throw error
+    }
+    if fm.fileExists(atPath: primary.path) {
+      _ = try fm.replaceItemAt(primary, withItemAt: tmp)
+    } else {
+      try fm.moveItem(at: tmp, to: primary)
+    }
   }
 
   /// Removes both copies (the session finished cleanly, or was turned into `coach.json`).
@@ -91,16 +109,15 @@ public struct CoachCheckpoint: Codable, Equatable {
     public let usedBackup: Bool
   }
 
-  /// The newest resumable unfinished session under `root`.
+  /// The resumable session under `root`: only the NEWEST unfinished folder is ever considered. If it has no usable
+  /// checkpoint the answer is nil, never an older folder: the live workout belongs to the newest session, and resuming
+  /// into an older one would append one recording's data to another.
   public static func latestResumable(in root: URL, nowMs: Int64) -> Resumable? {
-    let fm = FileManager.default
-    for id in SessionFiles.unfinished(in: root) { // newest first
-      let folder = root.appendingPathComponent(id)
-      guard !fm.fileExists(atPath: folder.appendingPathComponent(CoachResult.fileName).path) else { continue }
-      guard case let .valid(cp, usedBackup) = load(from: folder), nowMs - cp.savedAtEpochMs <= maxResumeAgeMs else { continue }
-      return Resumable(folder: folder, checkpoint: cp, usedBackup: usedBackup)
-    }
-    return nil
+    guard let id = SessionFiles.unfinished(in: root).first else { return nil } // newest first
+    let folder = root.appendingPathComponent(id)
+    guard !FileManager.default.fileExists(atPath: folder.appendingPathComponent(CoachResult.fileName).path),
+          case let .valid(cp, usedBackup) = load(from: folder), nowMs - cp.savedAtEpochMs <= maxResumeAgeMs else { return nil }
+    return Resumable(folder: folder, checkpoint: cp, usedBackup: usedBackup)
   }
 
   // MARK: Giving up on a resume

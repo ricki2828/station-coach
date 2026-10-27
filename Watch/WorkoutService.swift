@@ -1,4 +1,5 @@
 import Foundation
+import CoachKit
 import HealthKit
 
 /// Owns the `HKWorkoutSession`. Activity type is `.crossTraining` (indoor): a race alternates running
@@ -42,13 +43,16 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
 
   /// Reattaches to the workout session the system kept alive across a relaunch (called from `handleActiveWorkoutRecovery`).
   /// The builder keeps collecting; only the delegates need setting again. Not verifiable without a watch.
-  func recover() async throws {
+  /// `expectedStartMs` is the session folder's start: the recovered workout must have started within a minute of it, or it
+  /// belongs to a different session and is left alone (not adopted).
+  func recover(expectedStartMs: Int64) async throws {
     guard let recovered = try await store.recoverActiveWorkoutSession() else { throw RecoveryError(description: "no active workout session") }
     guard recovered.state != .ended, recovered.state != .stopped else { throw RecoveryError(description: "recovered session already ended") }
+    let startedMs = Clock.epochMs(recovered.startDate ?? Date.distantPast)
+    guard abs(startedMs - expectedStartMs) <= 60_000 else { throw RecoveryError(description: "recovered workout started at a different time than the session folder") }
     let builder = recovered.associatedWorkoutBuilder()
-    if builder.dataSource == nil {
-      builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: recovered.workoutConfiguration)
-    }
+    // Apple: on recovery the data source and delegates must be set up again.
+    builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: recovered.workoutConfiguration)
     recovered.delegate = self
     builder.delegate = self
     session = recovered

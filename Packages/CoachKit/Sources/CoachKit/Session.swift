@@ -48,6 +48,8 @@ public struct SessionManifest: Codable, Equatable {
   public var labelSource: String?
   /// For `labelSource` "coach": a run after a station is labelled `transition` for its first this-many seconds.
   public var transitionLabelSeconds: Int?
+  /// How many times the app was killed and the session carried on (absent = never). Motion and heart-rate files have a gap at each.
+  public var resumed: Int?
 
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
@@ -139,7 +141,7 @@ public enum SessionFiles {
     try enc.encode(m).write(to: folder.appendingPathComponent("manifest.json"), options: .atomic)
   }
 
-  static func readManifest(_ folder: URL) -> SessionManifest? {
+  public static func readManifest(_ folder: URL) -> SessionManifest? {
     guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")) else { return nil }
     return try? JSONDecoder().decode(SessionManifest.self, from: data)
   }
@@ -250,11 +252,13 @@ public final class SessionWriter {
   }
 
   /// Reopens an unfinished session after a relaunch: every stream is appended to, headers are not repeated, and the
-  /// manifest is left as it was. Throws if the folder has no manifest or the session already finished.
+  /// manifest only gains `resumed` (+1). Throws if the folder has no manifest or the session already finished.
   public init(resuming folder: URL) throws {
-    guard let m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
+    guard var m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
+    m.resumed = (m.resumed ?? 0) + 1
     self.manifest = m
     self.folder = folder
+    try writeManifest()
     for stream in SessionStream.allCases {
       writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
     }

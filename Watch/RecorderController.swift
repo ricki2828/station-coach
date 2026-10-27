@@ -199,7 +199,7 @@ final class RecorderController: ObservableObject {
       WatchTransfer.shared.activeSessionId = writer.manifest.sessionId
       WatchTransfer.shared.pauseForRecording()
       wire(writer: writer, motion: motion)
-      try await workout.recover()
+      try await workout.recover(expectedStartMs: writer.manifest.startedAtEpochMs)
       unfinished.removeAll { $0 == writer.manifest.sessionId }
       await beginRuntime(writer: writer, motion: motion, coach: true)
       return true
@@ -215,6 +215,7 @@ final class RecorderController: ObservableObject {
 
   /// A resume was not possible: end the system workout session the relaunch found and keep what was recorded.
   func abandonRecovered() async {
+    guard phase == .idle else { return } // never end a live workout or close the folder being written
     await workout.endOrphanedSession()
     keepUnfinished()
   }
