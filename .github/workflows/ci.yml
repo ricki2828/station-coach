@@ -45,13 +45,17 @@ jobs:
           set -o pipefail
           xcodebuild -project StationCoach.xcodeproj -scheme StationCoachWatch \
             -destination 'generic/platform=watchOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | tail -n 60
+            CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/build-StationCoachWatch.log" 2>&1 \
+            || { grep -E "error:" "$RUNNER_TEMP/build-StationCoachWatch.log" | sort -u | head -40; tail -n 30 "$RUNNER_TEMP/build-StationCoachWatch.log"; exit 1; }
+          tail -n 5 "$RUNNER_TEMP/build-StationCoachWatch.log"
       - name: Build iOS app with embedded watch app (simulator)
         run: |
           set -o pipefail
           xcodebuild -project StationCoach.xcodeproj -scheme StationCoach \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | tail -n 60
+            CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/build-StationCoach.log" 2>&1 \
+            || { grep -E "error:" "$RUNNER_TEMP/build-StationCoach.log" | sort -u | head -40; tail -n 30 "$RUNNER_TEMP/build-StationCoach.log"; exit 1; }
+          tail -n 5 "$RUNNER_TEMP/build-StationCoach.log"
       - name: Build iOS app with embedded watch app (Release, simulator)
         run: |
           set -o pipefail
