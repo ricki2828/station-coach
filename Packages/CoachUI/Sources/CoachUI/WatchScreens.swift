@@ -149,7 +149,8 @@ struct NextButton: View {
 
   var body: some View {
     let label = Text(isLast ? "HOLD TO FINISH" : "NEXT")
-      .font(.system(size: isLast ? 17 : 22, weight: .heavy))
+      .font(.system(size: isLast ? (height < 44 ? 15 : 17) : 22, weight: .heavy))
+      .lineLimit(2).minimumScaleFactor(0.8)
       .foregroundStyle(Theme.background(activity))
       .frame(maxWidth: .infinity, minHeight: height)
       .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
@@ -357,6 +358,8 @@ public struct CoachStepScreen: View {
 
   public var body: some View {
     let fg = dimmed ? Theme.background(model.activity) : Theme.text(model.activity)
+    // Wrist down, the station colour is only safe for the big numbers: small text goes bone to stay readable on ink.
+    let small = dimmed ? Theme.bone.opacity(0.85) : fg
     let c = compact
     // The Next line is regular-layout only: the compact step screen has no spare row.
     let showNext = !c && model.kind != .reps && !model.next.isEmpty && !model.noRepVisible && !model.noRepUndo
@@ -367,17 +370,18 @@ public struct CoachStepScreen: View {
       DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24))
       HStack(spacing: 4) {
         // The title scales down (never "WALL BA\u{2026}"); the LEFT badge and heart chip keep their full width.
-        Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.5)
+        Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.4)
         if model.kind == .reps {
           // A low-confidence count is flagged in this badge ("LEFT ~"), not inside the number: the digits keep their room.
-          Text(model.approximate ? "LEFT ~" : "LEFT").font(.system(size: c ? 11 : 12, weight: .heavy)).lineLimit(1).fixedSize()
-            .padding(.horizontal, 5).padding(.vertical, 1)
+          Text(model.approximate ? (c ? "LEFT~" : "LEFT ~") : "LEFT").font(.system(size: c ? 10 : 12, weight: .heavy)).lineLimit(1).fixedSize()
+            .padding(.horizontal, c ? 4 : 5).padding(.vertical, 1)
             .background(fg.opacity(0.18), in: Capsule())
             .accessibilityLabel(model.approximate ? "Reps left, estimated" : "Reps left")
         }
         if let badge = model.badge {
-          Text(badge.uppercased()).font(.system(size: 12, weight: .heavy))
-            .padding(.horizontal, 5).padding(.vertical, 1)
+          // Scales down rather than "TRANS\u{2026}" on a small case.
+          Text(badge.uppercased()).font(.system(size: c ? 10 : 12, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
+            .padding(.horizontal, c ? 4 : 5).padding(.vertical, 1)
             .background(fg.opacity(0.18), in: Capsule())
         }
         Spacer(minLength: 0)
@@ -387,7 +391,7 @@ public struct CoachStepScreen: View {
           HeartChip(bpm: bpm).fixedSize().layoutPriority(2)
         }
       }
-      .foregroundStyle(fg)
+      .foregroundStyle(small)
       .frame(height: tight ? 16 : (c ? 18 : 20))
       dominantRow(fg, compact: c)
       if model.noRepVisible {
@@ -415,7 +419,7 @@ public struct CoachStepScreen: View {
       if showNext {
         Text(model.next)
           .font(.system(size: 17, weight: .bold))
-          .foregroundStyle(fg.opacity(0.85))
+          .foregroundStyle(dimmed ? small : fg.opacity(0.85))
           .lineLimit(1).minimumScaleFactor(0.7)
           .frame(height: 20)
       }
