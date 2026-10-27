@@ -178,13 +178,17 @@ public final class AppendWriter {
     if !fm.fileExists(atPath: url.path) {
       guard fm.createFile(atPath: url.path, contents: Data((header + "\n").utf8)) else { throw CocoaError(.fileWriteUnknown) }
     }
-    let h = try FileHandle(forWritingTo: url)
-    let end = try h.seekToEnd()
     // A crash can leave a half-written last line. End it, so the first new line starts on its own line.
-    if end > 0 {
-      try h.seek(toOffset: end - 1)
-      if try h.read(upToCount: 1) != Data([0x0A]) { try h.write(contentsOf: Data([0x0A])) }
+    var needsNewline = false
+    if let r = try? FileHandle(forReadingFrom: url) {
+      defer { try? r.close() }
+      if let size = try? r.seekToEnd(), size > 0, (try? r.seek(toOffset: size - 1)) != nil {
+        needsNewline = (try? r.read(upToCount: 1)) != Data([0x0A])
+      }
     }
+    let h = try FileHandle(forWritingTo: url)
+    try h.seekToEnd()
+    if needsNewline { try h.write(contentsOf: Data([0x0A])) }
     self.handle = h
   }
 
