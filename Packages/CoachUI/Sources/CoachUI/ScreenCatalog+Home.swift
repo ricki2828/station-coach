@@ -88,6 +88,13 @@ extension ScreenCatalog {
     ]
   }
 
+  /// `record` as if it had raced a ghost that was 6 s slower on every step.
+  private static func ghostRaced(_ record: SessionRecord) -> SessionRecord {
+    var r = record.result
+    r.plan.ghostSplits = Ghost.stepSeconds(r)?.map { $0 + 6 }
+    return SessionRecord(id: record.id, result: r)
+  }
+
   public static var homeScreens: [CatalogEntry] {
     let list = HistorySamples.list
     let detailFull = list[0]
@@ -100,6 +107,7 @@ extension ScreenCatalog {
       phoneW("history-list", HistoryScreen(records: list)),
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),
       phoneW("detail-full", SessionDetailScreen(record: detailFull)),
+      phoneW("detail-ghost", SessionDetailScreen(record: ghostRaced(detailFull))),
       phoneW("detail-partial", SessionDetailScreen(record: detailPartial)),
       phoneW("detail-no-reps", SessionDetailScreen(record: detailNoReps, onSaveCount: { _ in true })),
       phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps))),

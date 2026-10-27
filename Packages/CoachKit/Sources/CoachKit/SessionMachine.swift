@@ -151,7 +151,7 @@ public enum DeltaMath {
   public static func delta(plan: SessionPlan, splits: [StepSplit], nowMs: Int64) -> Int {
     var total = 0
     for s in splits {
-      let target = plan.steps[s.stepIndex].targetSeconds
+      let target = plan.referenceSeconds(at: s.stepIndex)
       if let end = s.endMs {
         total += Int((end - s.startMs) / 1000) - target
       } else {

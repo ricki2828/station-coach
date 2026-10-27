@@ -90,8 +90,10 @@ final class CoachController: ObservableObject {
     if plan.type == .fullSim, level >= 0, level < 0.6 {
       battery = "Battery \(Int((level * 100).rounded()))%. A full sim needs about 60%."
     }
+    // Racing a ghost: the target line is its finish time and the title says so.
+    let racing = plan.validGhostSplits != nil
     return .ready(ReadyInfo(
-      sessionName: plan.title, targetText: Fmt.clock(plan.plannedSeconds),
+      sessionName: racing ? "\(plan.title) \u{00B7} vs last" : plan.title, targetText: Fmt.clock(plan.referenceTotalSeconds),
       chips: chips, batteryLine: battery))
   }
 
@@ -266,7 +268,7 @@ final class CoachController: ObservableObject {
     guard announce else { return }
     if step.isRun {
       let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
-      offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds))
+      offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds, reference: m.plan.reference))
     } else {
       offer(.stationIntro, CoachCopy.stationIntro(step))
     }
@@ -370,7 +372,7 @@ final class CoachController: ObservableObject {
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
         next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx, noRepVisible: noRepShown, noRepCount: noRepLog.count(inStep: step.index),
-        noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)))
+        noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)), reference: m.plan.reference)
       model.ladder = ladder
       screen = model
       return
@@ -380,7 +382,7 @@ final class CoachController: ObservableObject {
       kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Transition" : nil,
       dominant: Fmt.clock(elapsed), dominantLabel: "\(step.isRun ? "Run" : "Station") time, \(Fmt.spoken(elapsed))",
       secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
-      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
+      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm, reference: m.plan.reference)
     model.ladder = ladder
     screen = model
   }
@@ -404,16 +406,25 @@ final class CoachController: ObservableObject {
     let total = result.totalSeconds
     let planned = result.plan.plannedSeconds
     let d = total - planned
+    let reference = result.plan.reference
+    let referenceTotal = result.plan.referenceTotalSeconds
+    let g = total - referenceTotal
     let endName = m.splits.last.map { m.plan.steps[$0.stepIndex].name } ?? ""
-    let line = early
-      ? "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
-      : (d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target")
+    let line: String
+    if early {
+      line = "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
+    } else if case .last(let name) = reference {
+      line = DeltaWords.isLevel(g) ? "Level with last \(name)" : "\(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than last \(name)"
+    } else {
+      line = d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target"
+    }
     let missing = m.plan.stationCount - result.completedStationCount
     // The cooldown is not the last station: label it rest until the files close (undo re-labels the step).
     recorder.tap(.rest, haptic: false)
     lastLabel = .rest
-    finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early)
-      + " " + CoachCopy.finishPersonality(totalSeconds: total, plannedSeconds: planned, isFirst: isFirstSession, early: early, saved: saved)
+    finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early,
+                                     reference: reference, referenceTotalSeconds: referenceTotal, sessionName: result.plan.type.title.lowercased())
+      + " " + CoachCopy.finishPersonality(totalSeconds: total, plannedSeconds: referenceTotal, isFirst: isFirstSession, early: early, saved: saved)
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
       best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },

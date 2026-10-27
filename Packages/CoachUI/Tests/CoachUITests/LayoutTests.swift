@@ -197,11 +197,17 @@ final class LayoutTests: XCTestCase {
     XCTAssertNil(CoachReadyScreen.warningLine(ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")))
   }
 
+  func testBandSaysTheDeltaInWords() {
+    XCTAssertEqual(DeltaBand(seconds: 32).bandText, "0:32 DOWN")
+    XCTAssertEqual(DeltaBand(seconds: -12, reference: .last(name: "sim")).bandText, "0:12 UP")
+    XCTAssertEqual(DeltaBand(seconds: 1).bandText, "LEVEL")
+    XCTAssertEqual(DeltaBand(seconds: 641).bandText, "10:41 DOWN")
+  }
+
   func testDimmedDeltaDropsItsSeconds() {
-    XCTAssertEqual(DeltaBand(seconds: 32, dimmed: true).bandText, "+1 min")
-    XCTAssertEqual(DeltaBand(seconds: -20, dimmed: true).bandText, "\u{2212}0 min".replacingOccurrences(of: "\u{2212}0", with: "0"))
-    XCTAssertEqual(DeltaBand(seconds: -125, dimmed: true).bandText, "\u{2212}2 min")
-    XCTAssertEqual(DeltaBand(seconds: 32).bandText, "+0:32")
+    XCTAssertEqual(DeltaBand(seconds: 32, dimmed: true).bandText, "1 MIN DOWN")
+    XCTAssertEqual(DeltaBand(seconds: -20, dimmed: true).bandText, "LEVEL")
+    XCTAssertEqual(DeltaBand(seconds: -125, dimmed: true).bandText, "2 MIN UP")
   }
 
   func testNextLineShowsOnRegularStationScreensOnly() {

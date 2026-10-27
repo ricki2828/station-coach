@@ -4,38 +4,34 @@ import SwiftUI
 import WatchKit
 #endif
 
-/// Slim band across the top for the session delta: bone when level or ahead, amber when behind. Never red.
+/// Slim band across the top for the session delta, in words: "PLAN 0:32 DOWN", "LAST 0:12 UP" or "LEVEL". The tag says what the
+/// delta is measured against; bone when level or ahead, amber when behind. Never red.
 /// Deliberately small (24 pt numbers in a 28 pt band) so the step's own number stays the loudest thing.
 struct DeltaBand: View {
   let seconds: Int
+  var reference: DeltaReference = .plan
   var height: CGFloat = 26
-  /// A phase word ("Transition", later "Changeover") shown small beside the delta; it scales down, never truncates.
-  var tag: String?
-  /// Wrist down: the display refreshes once a minute, so the delta drops its seconds ("+1 min").
+  /// Wrist down: the display refreshes once a minute, so the delta drops its seconds ("1 MIN DOWN").
   var dimmed = false
+  var numberSize: CGFloat = Theme.Size.band
 
-  var bandText: String {
-    guard dimmed else { return Fmt.delta(seconds) }
-    let m = Int((Double(abs(seconds)) / 60).rounded())
-    return m == 0 ? "0 min" : (seconds > 0 ? "+" : "\u{2212}") + "\(m) min"
-  }
+  var bandText: String { dimmed ? DeltaWords.bandDimmed(seconds) : DeltaWords.band(seconds) }
 
   var body: some View {
     HStack(spacing: 6) {
-      if let tag {
-        Text(tag.uppercased()).font(.system(size: 11, weight: .heavy)).foregroundStyle(Theme.bone.opacity(0.8))
-          .lineLimit(1).minimumScaleFactor(0.5)
-      }
-      Text(bandText)
-        .font(Theme.number(Theme.Size.band)).condensed()
-        .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
+      Text(reference.tag).font(.system(size: 11, weight: .heavy)).tracking(0.5).foregroundStyle(Theme.bone.opacity(0.7))
         .lineLimit(1).fixedSize()
+      Text(bandText)
+        .font(Theme.number(numberSize)).condensed()
+        .foregroundStyle(seconds > 0 && !DeltaWords.isLevel(seconds) ? Theme.amber : Theme.bone)
+        .lineLimit(1).minimumScaleFactor(0.6)
     }
       .padding(.horizontal, 6)
       .frame(maxWidth: .infinity)
       .frame(height: height)
       .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
-      .accessibilityLabel(seconds == 0 ? "On plan" : "\(Fmt.gap(seconds)) \(seconds > 0 ? "behind" : "ahead of") plan")
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(DeltaWords.accessibility(seconds, reference: reference))
   }
 }
 
@@ -425,7 +421,8 @@ public struct CoachStepScreen: View {
         let rowH: CGFloat = tight ? 20 : (c ? 22 : 24)
         Toast(text: toast).frame(maxWidth: .infinity).frame(height: rowH + (tight ? 16 : (c ? 18 : 20)) + (tight ? 1 : 2))
       } else {
-        DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24), tag: c ? nil : model.badge, dimmed: dimmed)
+        DeltaBand(seconds: model.deltaSeconds, reference: model.reference, height: tight ? 20 : (c ? 22 : 24), dimmed: dimmed,
+                  numberSize: c ? 20 : Theme.Size.band)
       }
       if model.toast == nil {
       HStack(spacing: 4) {
@@ -435,6 +432,12 @@ public struct CoachStepScreen: View {
           Text(badge.uppercased()).font(Theme.label(15)).lineLimit(1).minimumScaleFactor(0.8)
         } else {
           Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.4)
+          // Regular layout: the phase word sits beside the title (the band's tag slot now names the reference).
+          if let badge = model.badge {
+            Text(badge.uppercased()).font(.system(size: 11, weight: .heavy)).lineLimit(1).fixedSize()
+              .padding(.horizontal, 5).padding(.vertical, 1)
+              .background(fg.opacity(0.18), in: Capsule())
+          }
         }
         if model.kind == .reps {
           // A low-confidence count is flagged in this badge ("LEFT ~"), not inside the number: the digits keep their room.
@@ -509,7 +512,8 @@ public struct CoachStepScreen: View {
     .padding(.bottom, c ? 3 : 4)
     .background((dimmed ? Theme.ink : Theme.background(model.activity)).ignoresSafeArea())
     .overlay(alignment: .trailing) {
-      if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg) }
+      // Compact: start below the title row, so the ticks never run alongside the heart-rate chip.
+      if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg).padding(.top, c ? 44 : 0) }
     }
     .transaction { if dimmed { $0.animation = nil } }
   }

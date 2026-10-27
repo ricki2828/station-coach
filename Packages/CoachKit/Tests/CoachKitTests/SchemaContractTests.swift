@@ -57,7 +57,7 @@ final class SchemaContractTests: XCTestCase {
     SessionPlan(division: .openMen, type: .wallBallFocus, raceTargetSeconds: 5400, steps: [
       PlanStep(activity: .run, index: 0, runNumber: 1, targetSeconds: 300, reps: 1, sets: []),
       PlanStep(activity: .wallBalls, index: 1, runNumber: 2, targetSeconds: 240, reps: 50, sets: [25, 25]),
-    ], transitionSeconds: 10)
+    ], transitionSeconds: 10, ghostSplits: [290, 250])
   }
 
   private var plan: SessionPlan {

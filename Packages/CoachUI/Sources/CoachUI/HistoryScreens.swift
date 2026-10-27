@@ -142,6 +142,8 @@ public struct SessionDetailScreen: View {
           } else {
             Text(Fmt.clock(r.totalSeconds)).scaledHero()
             if let words = record.targetWords { Text(words.text).scaledFont(17, .semibold) }
+            // Only a session that raced a ghost: how it did against that session.
+            if let versus = Ghost.comparisonLine(r) { Text(versus).scaledFont(17, .semibold) }
           }
         }
       }

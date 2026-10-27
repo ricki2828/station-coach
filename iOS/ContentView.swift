@@ -136,16 +136,26 @@ struct PlanHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @EnvironmentObject var app: AppModel
 
+  /// The Plan tab's model: the stored choices, the send state and the ghost on offer from History.
+  private var model: SetupModel {
+    var m = app.setup
+    m.send = phone.sendState
+    m.ghost = Ghost.offer(for: m.basePlan, records: phone.coachSessions)
+    return m
+  }
+
   var body: some View {
     ScrollView {
       SetupScreen(
-        model: { var m = app.setup; m.send = phone.sendState; return m }(),
+        model: model,
         notify: app.notifyState, onNotifyToggle: { app.setNotify($0) },
         onDivision: { app.setup.division = $0; changed() },
         onTargetStep: { app.setup.targetSeconds = PlanBuilder.clamped(app.setup.targetSeconds + $0); changed() },
-        onType: { app.setup.type = $0; changed() },
-        onWallBallReps: { app.setup.wallBallReps = $0; changed() },
-        onSend: { phone.sendPlan(app.setup.plan) })
+        // The ghost depends on the session type and the wall-ball reps: a change goes back to racing the plan.
+        onType: { app.setup.type = $0; app.setup.useGhost = false; changed() },
+        onWallBallReps: { app.setup.wallBallReps = $0; app.setup.useGhost = false; changed() },
+        onReference: { app.setup.useGhost = $0; changed() },
+        onSend: { phone.sendPlan(model.plan) })
     }
     .background(PhoneTheme.paper)
   }

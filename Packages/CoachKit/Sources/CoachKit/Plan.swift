@@ -100,6 +100,26 @@ public struct SessionPlan: Codable, Equatable {
   public let steps: [PlanStep]
   /// Seconds at the start of a run after a station that count as transition, not running.
   public let transitionSeconds: Int
+  /// Per-step seconds of the session being raced ("ghost"), one per step; nil = race the plan. Absent in older files.
+  public var ghostSplits: [Int]? = nil
+
+  /// The ghost splits, only when there is one per step (a stale or foreign array is ignored, never indexed).
+  public var validGhostSplits: [Int]? {
+    guard let g = ghostSplits, g.count == steps.count else { return nil }
+    return g
+  }
+
+  /// The seconds the live delta measures a step against: the ghost's, else the plan's target.
+  public func referenceSeconds(at index: Int) -> Int {
+    guard steps.indices.contains(index) else { return 0 }
+    return validGhostSplits?[index] ?? steps[index].targetSeconds
+  }
+
+  /// What the band, the voice and the finish line compare against.
+  public var reference: DeltaReference { validGhostSplits == nil ? .plan : .last(name: Ghost.name(type)) }
+
+  /// Total of the reference: the ghost's finish time, else the plan's.
+  public var referenceTotalSeconds: Int { validGhostSplits?.reduce(0, +) ?? plannedSeconds }
 
   public var plannedSeconds: Int { steps.reduce(0) { $0 + $1.targetSeconds } }
   public var stationCount: Int { steps.filter { !$0.isRun }.count }
