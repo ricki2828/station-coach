@@ -69,7 +69,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CoachReply' }
         '401':
-          description: Missing or unknown device token.
+          description: |
+            Missing or unknown device token. A device idle for 30 days is purged with its sessions, so a 401 after a long gap
+            means the coach data expired. Register again with a new installId and show "AI coach was reset after 30 days without use".
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

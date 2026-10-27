@@ -43,7 +43,7 @@ def test_register_matches():
 def test_paths_are_the_ones_the_app_serves():
     from coach_service.app import create_app
     from coach_service.config import Settings
-    app = create_app(Settings())
+    app = create_app(Settings(dev_mode=True))
     served = {(m, r.path) for r in app.routes if hasattr(r, "methods") for m in r.methods}
     declared = {(m.upper(), p) for p, ops in SPEC["paths"].items() for m in ops}
     assert declared <= served

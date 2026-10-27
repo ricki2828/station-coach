@@ -59,7 +59,7 @@ class Env:
     def __init__(self, llm, **settings):
         self.llm = llm
         self.clock = Clock()
-        base = dict(monthly_cap_usd=5.0, daily_ceiling_usd=5.0, daily_limit=3, dev_mode=True)
+        base = dict(ip_secret="test-secret", monthly_cap_usd=5.0, daily_ceiling_usd=5.0, daily_limit=3, dev_mode=True)
         base.update(settings)
         self.app = create_app(Settings(**base), llm, self.clock)
         self.client = TestClient(self.app)

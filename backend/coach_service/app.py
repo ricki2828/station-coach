@@ -25,7 +25,9 @@ def create_app(settings: Settings | None = None, provider: LlmProvider | None = 
     llm = provider or StubProvider()
     now = clock or (lambda: datetime.now(timezone.utc))
     verifier = attestor or FailClosedAttestor(s.dev_mode)
-    store = Store(s.db_path)
+    if not s.dev_mode and not s.ip_secret:
+        raise RuntimeError("COACH_IP_SECRET is required outside dev mode")
+    store = Store(s.db_path, s.ip_secret.encode())
     app = FastAPI(title="Station Coach coach service", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
 
