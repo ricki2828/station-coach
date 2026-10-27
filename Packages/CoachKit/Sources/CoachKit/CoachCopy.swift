@@ -92,7 +92,7 @@ public enum CoachCopy {
     if !early {
       if case .last = reference, let ghostTotal = referenceTotalSeconds {
         let g = totalSeconds - ghostTotal
-        s += DeltaWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."
+        s += DeltaBandWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."
       } else {
         s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target."
       }

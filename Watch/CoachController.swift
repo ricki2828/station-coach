@@ -414,7 +414,7 @@ final class CoachController: ObservableObject {
     if early {
       line = "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
     } else if case .last(let name) = reference {
-      line = DeltaWords.isLevel(g) ? "Level with last \(name)" : "\(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than last \(name)"
+      line = DeltaBandWords.isLevel(g) ? "Level with last \(name)" : "\(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than last \(name)"
     } else {
       line = d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target"
     }

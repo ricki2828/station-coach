@@ -24,7 +24,7 @@ public enum DeltaReference: Equatable {
 }
 
 /// The delta in words ("0:32 DOWN"), so a sign never has to be learned. Down = behind (amber), up = ahead.
-public enum DeltaWords {
+public enum DeltaBandWords {
   /// Inside this many seconds the band says LEVEL.
   public static let levelSeconds = 3
 
@@ -132,7 +132,7 @@ public enum Ghost {
   public static func comparisonLine(_ r: CoachResult) -> String? {
     guard !r.early, let ghostTotal = r.plan.validGhostSplits?.reduce(0, +) else { return nil }
     let d = r.totalSeconds - ghostTotal
-    let tail = DeltaWords.isLevel(d) ? "level" : "\(Fmt.gap(d)) \(d < 0 ? "faster" : "slower")"
+    let tail = DeltaBandWords.isLevel(d) ? "level" : "\(Fmt.gap(d)) \(d < 0 ? "faster" : "slower")"
     return "vs your last \(r.plan.type.title.lowercased()): \(tail)"
   }
 }

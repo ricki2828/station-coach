@@ -176,17 +176,17 @@ final class GhostTests: XCTestCase {
   // MARK: Words and voice
 
   func testBandWords() {
-    XCTAssertEqual(DeltaWords.band(32), "0:32 DOWN")
-    XCTAssertEqual(DeltaWords.band(-12), "0:12 UP")
-    XCTAssertEqual(DeltaWords.band(641), "10:41 DOWN")
-    for level in [0, 2, -2] { XCTAssertEqual(DeltaWords.band(level), "LEVEL") }
-    XCTAssertEqual(DeltaWords.band(3), "0:03 DOWN")
-    XCTAssertEqual(DeltaWords.bandDimmed(32), "1 MIN DOWN")
-    XCTAssertEqual(DeltaWords.bandDimmed(-125), "2 MIN UP")
-    XCTAssertEqual(DeltaWords.bandDimmed(20), "LEVEL")
-    XCTAssertEqual(DeltaWords.accessibility(32, reference: .plan), "32 seconds behind plan")
-    XCTAssertEqual(DeltaWords.accessibility(-12, reference: .last(name: "sim")), "12 seconds ahead of your last sim")
-    XCTAssertEqual(DeltaWords.accessibility(1, reference: .plan), "Level with plan")
+    XCTAssertEqual(DeltaBandWords.band(32), "0:32 DOWN")
+    XCTAssertEqual(DeltaBandWords.band(-12), "0:12 UP")
+    XCTAssertEqual(DeltaBandWords.band(641), "10:41 DOWN")
+    for level in [0, 2, -2] { XCTAssertEqual(DeltaBandWords.band(level), "LEVEL") }
+    XCTAssertEqual(DeltaBandWords.band(3), "0:03 DOWN")
+    XCTAssertEqual(DeltaBandWords.bandDimmed(32), "1 MIN DOWN")
+    XCTAssertEqual(DeltaBandWords.bandDimmed(-125), "2 MIN UP")
+    XCTAssertEqual(DeltaBandWords.bandDimmed(20), "LEVEL")
+    XCTAssertEqual(DeltaBandWords.accessibility(32, reference: .plan), "32 seconds behind plan")
+    XCTAssertEqual(DeltaBandWords.accessibility(-12, reference: .last(name: "sim")), "12 seconds ahead of your last sim")
+    XCTAssertEqual(DeltaBandWords.accessibility(1, reference: .plan), "Level with plan")
     XCTAssertEqual(DeltaReference.plan.tag, "PLAN")
     XCTAssertEqual(DeltaReference.last(name: "sim").tag, "LAST")
   }

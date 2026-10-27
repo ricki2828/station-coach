@@ -15,7 +15,7 @@ struct DeltaBand: View {
   var dimmed = false
   var numberSize: CGFloat = Theme.Size.band
 
-  var bandText: String { dimmed ? DeltaWords.bandDimmed(seconds) : DeltaWords.band(seconds) }
+  var bandText: String { dimmed ? DeltaBandWords.bandDimmed(seconds) : DeltaBandWords.band(seconds) }
 
   var body: some View {
     HStack(spacing: 6) {
@@ -23,7 +23,7 @@ struct DeltaBand: View {
         .lineLimit(1).fixedSize()
       Text(bandText)
         .font(Theme.number(numberSize)).condensed()
-        .foregroundStyle(seconds > 0 && !DeltaWords.isLevel(seconds) ? Theme.amber : Theme.bone)
+        .foregroundStyle(seconds > 0 && !DeltaBandWords.isLevel(seconds) ? Theme.amber : Theme.bone)
         .lineLimit(1).minimumScaleFactor(0.6)
     }
       .padding(.horizontal, 6)
@@ -31,7 +31,7 @@ struct DeltaBand: View {
       .frame(height: height)
       .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel(DeltaWords.accessibility(seconds, reference: reference))
+      .accessibilityLabel(DeltaBandWords.accessibility(seconds, reference: reference))
   }
 }
 
