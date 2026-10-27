@@ -1,0 +1,183 @@
+openapi: 3.1.0
+info:
+  title: Station Coach coach service
+  version: 1.0.0
+  description: |
+    Optional AI debrief. The phone sends session facts and gets back one short reply.
+    Nothing here is live: no deployment, no provider key, and the phone feature flag is off.
+
+    Rules the phone can rely on:
+    - The facts schema below is the whole payload. Any extra field, at any depth, is a 422.
+    - There is no free text (no notes, no messages, no names).
+    - `consentVersion` must equal the server's current version or the request is a 403,
+      checked before anything else is read.
+    - Dates are day precision ("2026-10-27"). Sessions are kept for 30 days, and
+      `DELETE /v1/data` removes them at once.
+    - `installId` is a random UUID the phone makes at consent. It is not a name, email or Apple ID.
+servers:
+  - url: https://coach.invalid
+    description: Placeholder. The real host is a Ricki decision.
+paths:
+  /v1/register:
+    post:
+      operationId: register
+      summary: Record consent for an install and issue a device token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200':
+          description: Consent recorded. Send the token as a Bearer token on the other calls.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterResponse' }
+        '403':
+          description: consentVersion missing or not the current version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Unknown or malformed field.
+  /v1/coach:
+    post:
+      operationId: coach
+      summary: Facts in, one debrief out
+      security: [ { deviceToken: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CoachFacts' }
+      responses:
+        '200':
+          description: One reply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoachReply' }
+        '401':
+          description: Missing or unknown device token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: consentVersion missing or not current, or no consent on record for this install.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: A field outside the facts schema, or a value out of range.
+        '429':
+          description: Per-device daily cap or monthly spend cap reached (`daily_cap` or `month_cap`). The phone shows "That's today's debriefs. More tomorrow."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: The reply failed the reply rules twice (`reply_rejected`). The phone shows its error state and tries again later. Nothing is returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: No model provider configured (`not_configured`) or the provider failed (`provider_error`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/data:
+    delete:
+      operationId: deleteData
+      summary: Turn the coach off and delete everything held for this install
+      security: [ { deviceToken: [] } ]
+      responses:
+        '200':
+          description: Deleted. Consent and the token are gone too.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deletedSessions]
+                properties:
+                  deletedSessions: { type: integer, minimum: 0 }
+        '401':
+          description: Missing or unknown device token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        currentConsentVersion: { type: integer }
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [installId, consentVersion]
+      properties:
+        installId: { type: string, format: uuid }
+        consentVersion: { type: integer, minimum: 1 }
+    RegisterResponse:
+      type: object
+      required: [deviceToken]
+      properties:
+        deviceToken: { type: string }
+    Activity:
+      type: string
+      enum: [run, transition, skierg, sled_push, sled_pull, burpee_broad_jump, row, farmers_carry, sandbag_lunges, wall_balls, rest]
+    Step:
+      type: object
+      additionalProperties: false
+      required: [activity, targetSeconds, actualSeconds, skipped]
+      properties:
+        activity: { $ref: '#/components/schemas/Activity' }
+        targetSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        actualSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        skipped: { type: boolean }
+    WallBalls:
+      type: object
+      additionalProperties: false
+      required: [reps, noReps, setSizes, restSeconds]
+      properties:
+        reps: { type: integer, minimum: 0, maximum: 500 }
+        noReps: { type: integer, minimum: 0, maximum: 500 }
+        setSizes: { type: array, maxItems: 60, items: { type: integer, minimum: 0, maximum: 500 } }
+        restSeconds: { type: array, maxItems: 60, items: { type: integer, minimum: 0, maximum: 3600 } }
+    CoachFacts:
+      type: object
+      description: The whole payload. Nothing else is accepted.
+      additionalProperties: false
+      required: [consentVersion, installId, date, sessionType, division, raceTargetSeconds, totalSeconds, plannedSeconds, early, steps]
+      properties:
+        consentVersion: { type: integer, minimum: 1 }
+        installId: { type: string, format: uuid }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: Day only, no time of day. }
+        sessionType: { type: string, enum: [full_sim, half_sim, wall_ball_focus] }
+        division: { type: string, enum: [open_men, open_women, pro_men, pro_women] }
+        raceTargetSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        totalSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        plannedSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        early: { type: boolean, description: Session ended before the plan finished. }
+        steps:
+          type: array
+          maxItems: 40
+          items: { $ref: '#/components/schemas/Step' }
+        wallBalls: { $ref: '#/components/schemas/WallBalls' }
+        fadeSeconds: { type: integer, minimum: -3600, maximum: 3600 }
+        reference: { type: string, enum: [plan, ghost] }
+        referenceDeltaSeconds: { type: integer, minimum: -36000, maximum: 36000 }
+    CoachReply:
+      type: object
+      required: [reply, kind, remainingToday]
+      properties:
+        reply: { type: string, description: Plain text, at most 90 words. }
+        kind:
+          type: string
+          enum: [debrief, safety]
+          description: '`safety` is fixed server copy used when the model reply touched a red-flag topic.'
+        remainingToday: { type: integer, minimum: 0 }
