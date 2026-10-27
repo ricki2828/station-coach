@@ -44,9 +44,10 @@ public enum ShareLoop {
     var lift = 0.0       // 0...1 while the named segment lifts; 0 and 1 mean at rest
 
     static func at(_ t: Double) -> State {
-      State(wordmark: progress(t, 0, 0.4), rise: outQuart(progress(t, 0.4, 0.9)), clock: outQuart(progress(t, 0.9, 2.7)),
-            line: outCubic(progress(t, 2.7, 3.2)), pop: progress(t, 2.7, 2.95), insight: outCubic(progress(t, 3.2, 3.8)),
-            lift: progress(t, 3.2, 3.7))
+      State(wordmark: ShareLoop.progress(t, 0, 0.4), rise: ShareLoop.outQuart(ShareLoop.progress(t, 0.4, 0.9)),
+            clock: ShareLoop.outQuart(ShareLoop.progress(t, 0.9, 2.7)), line: ShareLoop.outCubic(ShareLoop.progress(t, 2.7, 3.2)),
+            pop: ShareLoop.progress(t, 2.7, 2.95), insight: ShareLoop.outCubic(ShareLoop.progress(t, 3.2, 3.8)),
+            lift: ShareLoop.progress(t, 3.2, 3.7))
     }
   }
 
