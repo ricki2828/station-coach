@@ -280,6 +280,41 @@ def label_minutes(rows, start_ms, end_ms):
     return minutes
 
 
+def skipped_windows(folder):
+    """(start_ms, end_ms) of every skipped split in the folder's coach.json (a skipped or moved station). [] when there is none."""
+    try:
+        coach = json.loads((Path(folder) / "coach.json").read_text())
+        ended = coach.get("endedAtEpochMs")
+        return [(sp["startMs"], sp.get("endMs") or ended) for sp in coach["splits"] if sp.get("skipped") and (sp.get("endMs") or ended)]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def label_minutes_net_of_skips(folder, rows, start_ms, end_ms):
+    """`label_minutes`, minus the time labelled inside skipped splits: the coach writes a station's label when the station
+    starts, so a station stood at for 20 s and then skipped must not count as a recorded activity (mark 4)."""
+    minutes = label_minutes(rows, start_ms, end_ms)
+    windows = skipped_windows(folder)
+    if not windows:
+        return minutes
+    stack = []
+    for r in sorted(rows, key=lambda r: int(r["epoch_ms"])):
+        t = int(r["epoch_ms"])
+        if r["event"] == "set":
+            if not stack or stack[-1][0] != r["activity"]:
+                stack.append((r["activity"], t))
+        elif r["event"] == "undo" and stack:
+            stack.pop()
+    for i, (act, t) in enumerate(stack):
+        nxt = stack[i + 1][1] if i + 1 < len(stack) else end_ms
+        for a, b in windows:
+            overlap = max(0, min(nxt, b) - max(t, a))
+            if overlap:
+                minutes[act] = max(0.0, minutes.get(act, 0.0) - overlap / 60_000)
+                minutes["_unlabelled"] = minutes.get("_unlabelled", 0.0) + overlap / 60_000
+    return minutes
+
+
 def athlete_minutes(folders):
     """Per athlete code (sessions with no code are '?'): session count, wrists, labelled minutes per activity."""
     groups = {}
@@ -291,7 +326,7 @@ def athlete_minutes(folders):
         g = groups.setdefault(manifest.get("athlete") or "?", {"sessions": 0, "wrists": set(), "minutes": {}})
         g["sessions"] += 1
         g["wrists"].add(manifest.get("wrist") or "?")
-        for act, mins in label_minutes(read_rows(Path(folder) / "labels.csv"), start, end).items():
+        for act, mins in label_minutes_net_of_skips(folder, read_rows(Path(folder) / "labels.csv"), start, end).items():
             if act in ACTIVITIES:
                 g["minutes"][act] = g["minutes"].get(act, 0.0) + mins
     return groups
@@ -398,7 +433,7 @@ def report(folder):
         hz_parts.append(f"raw peak {best:.0f} Hz")
     lines.append(f"3. Motion rate (stored): {'; '.join(hz_parts)}  {flag(hz_ok)} (mark {HZ_MARK:.0f} Hz)")
 
-    mins = label_minutes(read_rows(folder / "labels.csv"), start, end)
+    mins = label_minutes_net_of_skips(folder, read_rows(folder / "labels.csv"), start, end)
     missing = missing_activities(mins)
     lines.append("4. Labelled minutes:")
     for a in ACTIVITIES + ["rest"]:

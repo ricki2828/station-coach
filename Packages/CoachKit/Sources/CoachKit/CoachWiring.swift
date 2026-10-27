@@ -65,10 +65,11 @@ public final class CoachCheckpointer {
   /// Returns nil on success or when it already reported a failure; otherwise the first failure's description.
   @discardableResult
   public func save(_ state: CoachSessionState, liveRepTimesMs: [Int64], liveCount: Int, folder: URL, nowMs: Int64) -> String? {
-    // Only a running session is worth resuming: a finished one has coach.json.
-    guard let step = state.machine.current else { return nil }
+    // Only a session still going is worth resuming (running, or waiting on the leftover prompt): a finished one has coach.json.
+    let phase = state.machine.phase
+    guard phase == .running || phase == .awaitingLeftover else { return nil }
     var s = state
-    s.bank(step: step, repTimesMs: liveRepTimesMs) // provisional times of the step in progress
+    if let step = s.machine.current { s.bank(step: step, repTimesMs: liveRepTimesMs) } // provisional times of the step in progress
     lastRepCount = liveCount
     let cp = CoachCheckpoint(sessionId: folder.lastPathComponent, savedAtEpochMs: nowMs, seq: seq, state: s)
     seq += 1

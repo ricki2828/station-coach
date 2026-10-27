@@ -59,6 +59,8 @@ public enum RunFade {
 
   /// One entry per completed run 2..N, in order. Empty when run 1 or the run is not done.
   public static func slowdowns(_ result: CoachResult) -> [Slowdown] {
+    // A session with a skipped station has no fade: "the run after the row" measures nothing when no row was done.
+    guard result.skippedStationCount == 0 else { return [] }
     let rows = result.rows
     guard let first = rows.first(where: { $0.step.isRun })?.actualSeconds else { return [] }
     var out: [Slowdown] = []

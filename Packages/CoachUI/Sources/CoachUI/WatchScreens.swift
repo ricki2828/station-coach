@@ -337,10 +337,12 @@ struct SplitRow: Layout {
 struct EdgeLadder: View {
   let ticks: [LadderTick]
   let outline: Color
+  /// 40-42 mm: shorter ticks, so a full sim's 16 fit below the heart-rate chip.
+  var compact = false
 
   var body: some View {
-    let tall: CGFloat = ticks.count > 12 ? 6 : 9
-    VStack(spacing: 2) {
+    let tall: CGFloat = compact ? (ticks.count > 12 ? 5 : 8) : (ticks.count > 12 ? 6 : 9)
+    VStack(spacing: compact ? 1 : 2) {
       ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
         RoundedRectangle(cornerRadius: 1.5)
           .fill(tick.state == .done ? Theme.background(tick.activity) : (tick.state == .upcoming ? outline.opacity(0.22) : Color.clear))
@@ -511,9 +513,9 @@ public struct CoachStepScreen: View {
     .padding(.top, c ? 1 : 2)
     .padding(.bottom, c ? 3 : 4)
     .background((dimmed ? Theme.ink : Theme.background(model.activity)).ignoresSafeArea())
-    .overlay(alignment: .trailing) {
+    .overlay(alignment: c ? .topTrailing : .trailing) {
       // Compact: start below the title row, so the ticks never run alongside the heart-rate chip.
-      if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg).padding(.top, c ? 44 : 0) }
+      if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg, compact: c).padding(.top, c ? 62 : 0) }
     }
     .transaction { if dimmed { $0.animation = nil } }
   }
@@ -881,13 +883,16 @@ public struct CoachLeftoverScreen: View {
   let activity: Activity
   var onNow: () -> Void = {}
   var onWithout: () -> Void = {}
+  var onUndo: () -> Void = {}
   @Environment(\.watchCompact) private var envCompact
 
-  public init(title: String, activity: Activity, onNow: @escaping () -> Void = {}, onWithout: @escaping () -> Void = {}) {
+  public init(title: String, activity: Activity, onNow: @escaping () -> Void = {}, onWithout: @escaping () -> Void = {},
+              onUndo: @escaping () -> Void = {}) {
     self.title = title
     self.activity = activity
     self.onNow = onNow
     self.onWithout = onWithout
+    self.onUndo = onUndo
   }
 
   public var body: some View {
@@ -909,6 +914,11 @@ public struct CoachLeftoverScreen: View {
         Button(action: onWithout) {
           Text("Finish without it").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.bone).lineLimit(1).minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity, minHeight: height).background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+        // An accidental NEXT on the last step lands here: a way back to the step it left.
+        Button(action: onUndo) {
+          Text("Undo last step").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, minHeight: height).background(Theme.bone, in: RoundedRectangle(cornerRadius: 14))
         }.buttonStyle(.plain)
       }
       .padding(.horizontal, Theme.Space.watchEdge)

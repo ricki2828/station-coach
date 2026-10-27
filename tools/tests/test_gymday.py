@@ -272,6 +272,33 @@ class VerdictTests(Base):
         self.assertIn("watch counted 20 (corrected 18 valid)", out)
 
 
+class SkippedStationTests(Base):
+    def skip_split(self, folder, step_index):
+        p = Path(folder) / "coach.json"
+        c = json.loads(p.read_text())
+        for sp in c["splits"]:
+            if sp["stepIndex"] == step_index:
+                sp["skipped"] = True
+        p.write_text(json.dumps(c))
+
+    def test_a_skipped_station_does_not_count_as_a_recorded_activity(self):
+        root = self.data_dir()
+        self.skip_split(root / "A2" / "a2-session", 9)  # the Row: labelled for 12 s, then skipped
+        code, out = self.run_gymday(root)
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"Mark 4  FAIL")
+        self.assertIn("A2 missing row", out)
+
+    def test_wall_ball_window_skips_an_abandoned_attempt(self):
+        c = json.loads((COACHED / "coach.json").read_text())
+        full = gymday.wall_ball_windows(c)
+        for sp in c["splits"]:
+            if sp["stepIndex"] == 15:
+                sp["skipped"] = True
+        self.assertEqual(len(full), 1)
+        self.assertEqual(gymday.wall_ball_windows(c), [])
+
+
 class TornRowTests(Base):
     """After a crash-resume a CSV can hold a short or garbled row mid-file; every reader must skip it and say so."""
 
