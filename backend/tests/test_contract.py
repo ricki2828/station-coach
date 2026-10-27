@@ -58,3 +58,12 @@ def test_public_repo_hygiene():
             low = p.read_text(errors="ignore").lower()
             assert not any(n in low for n in private), p
             assert not re.search(r"sk-[A-Za-z0-9]{20,}", p.read_text(errors="ignore")), p
+
+
+def test_phone_fixture_is_valid_facts():
+    """The phone (CoachKit tests) decodes this same file, so the two sides cannot drift."""
+    import json
+    f = json.loads((ROOT / "tests" / "fixtures" / "coach_facts.json").read_text())
+    facts = CoachFacts.model_validate(f)
+    assert set(f) <= set(SCHEMAS["CoachFacts"]["properties"])
+    assert facts.steps[1].skipped and facts.steps[1].actualSeconds is None
