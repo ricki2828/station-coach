@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://station-coach.invalid/schema/manifest.schema.json",
+  "title": "SessionManifest (manifest.json)",
+  "description": "One per session folder. Keep in step with SessionManifest in Packages/CoachKit/Sources/CoachKit/Session.swift and docs/FORMAT.md; tools/tests/test_schema.py checks the property names. endedAtEpochMs and files are absent from a session that never finished.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "sessionId", "startedAtEpochMs", "device", "osVersion", "appVersion", "workoutActivityType", "motionApi", "requestedHz", "storeHz", "cueIntervalSec"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "startedAtEpochMs": { "type": "integer" },
+    "endedAtEpochMs": { "type": "integer" },
+    "device": { "type": "string" },
+    "osVersion": { "type": "string" },
+    "appVersion": { "type": "string" },
+    "workoutActivityType": { "type": "string" },
+    "motionApi": { "type": "string" },
+    "requestedHz": { "type": "number", "exclusiveMinimum": 0 },
+    "storeHz": { "type": "number", "exclusiveMinimum": 0 },
+    "cueIntervalSec": { "type": "integer", "minimum": 0, "description": "0 in a coached session (no periodic cues)." },
+    "files": { "type": "array", "items": { "type": "string" } },
+    "audioMode": { "enum": ["A", "B"] },
+    "athlete": { "type": "string", "pattern": "^[A-Za-z][0-9]+$", "description": "A code such as A1, never a name." },
+    "wrist": { "enum": ["left", "right"] },
+    "crownOrientation": { "enum": ["left", "right"] },
+    "recovered": { "type": "boolean" },
+    "labelSource": { "enum": ["athlete_taps", "coach"] },
+    "transitionLabelSeconds": { "type": "integer", "minimum": 0 },
+    "resumed": { "type": "integer", "minimum": 1, "description": "How many times the app was killed and the session carried on; absent = never." }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://station-coach.invalid/schema/coach.schema.json",
+  "title": "CoachResult (coach.json)",
+  "description": "Written by the watch at the end of a coached session (or from a checkpoint with early=true). Keep in step with CoachResult.swift and docs/FORMAT.md. phone-correction.json is a separate phone-only file and is not described here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan", "splits", "early", "repTimesMs", "repCorrection", "startedAtEpochMs", "endedAtEpochMs"],
+  "properties": {
+    "plan": { "$ref": "plan.schema.json" },
+    "splits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stepIndex", "startMs"],
+        "properties": {
+          "stepIndex": { "type": "integer", "minimum": 0 },
+          "startMs": { "type": "integer" },
+          "endMs": { "type": ["integer", "null"], "description": "Absent or null: the step was never finished." }
+        }
+      }
+    },
+    "early": { "type": "boolean" },
+    "repTimesMs": { "type": "array", "items": { "type": "integer" }, "description": "Heuristic wall-ball rep times, epoch ms, every counted throw (no-reps included)." },
+    "repCorrection": { "type": "integer", "description": "Net manual +/-." },
+    "startedAtEpochMs": { "type": "integer" },
+    "endedAtEpochMs": { "type": "integer" },
+    "noReps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tMs", "setIndex"],
+        "properties": {
+          "tMs": { "type": "integer" },
+          "setIndex": { "type": "integer", "minimum": 0 },
+          "stepIndex": { "type": ["integer", "null"], "description": "Absent in older files: the first wall-ball step." }
+        }
+      }
+    },
+    "wallBallCorrection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validReps", "noReps"],
+          "properties": { "validReps": { "type": "integer" }, "noReps": { "type": "integer" } }
+        },
+        { "type": "integer", "description": "Legacy early builds: total throws." }
+      ]
+    }
+  }
+}
