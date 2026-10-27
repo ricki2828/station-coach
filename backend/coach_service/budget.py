@@ -1,6 +1,6 @@
-"""Spend control, in the shape of run-solo's coach budget (reserve before the call, settle after, release on failure),
-cut down to what this service needs: a per-device daily count and one monthly USD cap. Days and months are UTC because
-the facts carry no time zone."""
+"""Spend control, in the shape of an earlier internal coach service's budget (reserve before the call, settle after,
+release when nothing was spent), cut down to what this service needs: a per-device daily count, a global daily ceiling and
+a monthly cap. Days and months are UTC because the facts carry no time zone."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -8,11 +8,13 @@ from datetime import datetime, timezone
 from .config import Settings
 from .store import Store
 
+CALLS_PER_DEBRIEF = 2   # the first reply plus at most one repair turn
+
 
 class Capped(Exception):
     def __init__(self, code: str):
         super().__init__(code)
-        self.code = code   # "daily_cap" | "month_cap"
+        self.code = code   # "daily_cap" | "month_cap" | "day_ceiling"
 
 
 def day_start(now: datetime) -> datetime:
@@ -28,10 +30,13 @@ def remaining_today(store: Store, s: Settings, install_id: str, now: datetime) -
 
 
 def reserve(store: Store, s: Settings, install_id: str, now: datetime) -> int:
-    """Raises Capped. The check and the insert share the store lock so two requests cannot both take the last slot."""
-    with store.tx():
+    """Raises Capped. Reserves the worst case (two model calls). Check and insert share one IMMEDIATE transaction."""
+    worst = s.est_call_usd * CALLS_PER_DEBRIEF
+    with store.transaction():
         if store.day_count(install_id, day_start(now)) >= s.daily_limit:
             raise Capped("daily_cap")
-        if store.month_spend(month_start(now)) + s.est_call_usd > s.monthly_cap_usd:
+        if s.monthly_cap_usd <= 0 or store.spend_since(month_start(now)) + worst > s.monthly_cap_usd:
             raise Capped("month_cap")
-        return store.reserve(install_id, s.est_call_usd, now)
+        if s.daily_ceiling_usd <= 0 or store.spend_since(day_start(now)) + worst > s.daily_ceiling_usd:
+            raise Capped("day_ceiling")
+        return store.reserve(install_id, worst, now)

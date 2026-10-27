@@ -1,5 +1,5 @@
 """Reply rules for the debrief (design spec section 4). Written for this service; the idea (ground every figure in the
-source facts, refuse and repair once) follows run-solo's companion/coach/validator.py. A failing reply is never shown."""
+source facts, refuse and repair once) follows an earlier internal coach service. A failing reply is never shown."""
 from __future__ import annotations
 
 import re
@@ -36,6 +36,8 @@ def allowed_numbers(f: CoachFacts) -> set[str]:
     secs: list[int] = [f.raceTargetSeconds, f.totalSeconds, f.plannedSeconds]
     secs.append(f.totalSeconds - f.plannedSeconds)
     for st in f.steps:
+        if st.skipped:
+            continue   # a skipped step has no time to quote
         secs += [st.targetSeconds, st.actualSeconds, st.actualSeconds - st.targetSeconds]
     if f.fadeSeconds is not None:
         secs.append(f.fadeSeconds)

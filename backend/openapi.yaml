@@ -16,7 +16,7 @@ info:
     - `installId` is a random UUID the phone makes at consent. It is not a name, email or Apple ID.
 servers:
   - url: https://coach.invalid
-    description: Placeholder. The real host is a Ricki decision.
+    description: Placeholder. The real host is the owner's decision.
 paths:
   /v1/register:
     post:
@@ -34,12 +34,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RegisterResponse' }
         '403':
-          description: consentVersion missing or not the current version.
+          description: consentVersion missing or not the current version (`consent_required`), or attestation failed (`attestation_failed`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: This installId is already registered. Re-registering needs the current token as a Bearer token; after a reinstall make a new installId.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Body over 8 KB.
         '422':
           description: Unknown or malformed field.
+        '429':
+          description: Too many new installs from this address or in total today (`register_limit`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/coach:
     post:
       operationId: coach
@@ -66,15 +78,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Body over 8 KB.
         '422':
           description: A field outside the facts schema, or a value out of range.
         '429':
-          description: Per-device daily cap or monthly spend cap reached (`daily_cap` or `month_cap`). The phone shows "That's today's debriefs. More tomorrow."
+          description: Per-device daily cap (`daily_cap`), global daily spend ceiling (`day_ceiling`) or monthly spend cap (`month_cap`). The phone shows "That's today's debriefs. More tomorrow."
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '502':
-          description: The reply failed the reply rules twice (`reply_rejected`). The phone shows its error state and tries again later. Nothing is returned.
+          description: The reply failed the reply rules (including medical language) twice (`reply_rejected`). The phone shows its error state and tries again later. Nothing is returned.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -122,6 +136,10 @@ components:
       properties:
         installId: { type: string, format: uuid }
         consentVersion: { type: integer, minimum: 1 }
+        attestation:
+          type: string
+          maxLength: 6000
+          description: App Attest / DeviceCheck blob. The server fails closed without a valid one (dev mode excepted).
     RegisterResponse:
       type: object
       required: [deviceToken]
@@ -133,11 +151,15 @@ components:
     Step:
       type: object
       additionalProperties: false
-      required: [activity, targetSeconds, actualSeconds, skipped]
+      required: [activity, targetSeconds, skipped]
       properties:
         activity: { $ref: '#/components/schemas/Activity' }
         targetSeconds: { type: integer, minimum: 0, maximum: 36000 }
-        actualSeconds: { type: integer, minimum: 0, maximum: 36000 }
+        actualSeconds:
+          type: integer
+          minimum: 0
+          maximum: 36000
+          description: Required when skipped is false. Must be absent (never 0) when skipped is true.
         skipped: { type: boolean }
     WallBalls:
       type: object
@@ -178,6 +200,5 @@ components:
         reply: { type: string, description: Plain text, at most 90 words. }
         kind:
           type: string
-          enum: [debrief, safety]
-          description: '`safety` is fixed server copy used when the model reply touched a red-flag topic.'
+          enum: [debrief]
         remainingToday: { type: integer, minimum: 0 }

@@ -59,15 +59,15 @@ class Env:
     def __init__(self, llm, **settings):
         self.llm = llm
         self.clock = Clock()
-        base = dict(monthly_cap_usd=5.0, daily_limit=3)
+        base = dict(monthly_cap_usd=5.0, daily_ceiling_usd=5.0, daily_limit=3, dev_mode=True)
         base.update(settings)
         self.app = create_app(Settings(**base), llm, self.clock)
         self.client = TestClient(self.app)
         self.install = str(uuid.uuid4())
         self.token = None
 
-    def register(self, version=1):
-        r = self.client.post("/v1/register", json={"installId": self.install, "consentVersion": version})
+    def register(self, version=1, **extra):
+        r = self.client.post("/v1/register", json={"installId": self.install, "consentVersion": version, **extra})
         if r.status_code == 200:
             self.token = r.json()["deviceToken"]
         return r

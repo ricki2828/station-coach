@@ -1,4 +1,4 @@
-"""System prompt and user message. The host-rules block follows run-solo's companion/coach/prompt.py (facts are data,
+"""System prompt and user message. The host-rules block follows an earlier internal coach service (facts are data,
 the model never claims it changed anything), rewritten for a facts-only debrief. `prompt_hash` identifies the text."""
 from __future__ import annotations
 

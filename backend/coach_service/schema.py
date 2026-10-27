@@ -7,7 +7,7 @@ import uuid
 from enum import Enum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 Secs = Annotated[int, Field(ge=0, le=36000, strict=True)]
 
@@ -51,8 +51,16 @@ class Reference(str, Enum):
 class Step(Strict):
     activity: Activity
     targetSeconds: Secs
-    actualSeconds: Secs
+    actualSeconds: Secs | None = None   # absent for a skipped step, never 0
     skipped: StrictBool
+
+    @model_validator(mode="after")
+    def _actual_iff_done(self):
+        if self.skipped and self.actualSeconds is not None:
+            raise ValueError("a skipped step carries no actualSeconds")
+        if not self.skipped and self.actualSeconds is None:
+            raise ValueError("actualSeconds is required unless the step was skipped")
+        return self
 
 
 class WallBalls(Strict):
@@ -101,6 +109,7 @@ class CoachFacts(Strict):
 class RegisterRequest(Strict):
     installId: uuid.UUID
     consentVersion: Annotated[int, Field(ge=1, strict=True)]
+    attestation: str | None = Field(default=None, max_length=6000)   # App Attest / DeviceCheck blob
 
     @field_validator("installId", mode="before")
     @classmethod

@@ -51,7 +51,10 @@ def test_paths_are_the_ones_the_app_serves():
 
 def test_public_repo_hygiene():
     banned = "hy" + "rox"
+    private = ["ric" + "ki", "run " + "supreme", "run" + "-solo", "companion" + "-server"]   # owner and sibling-app names
     for p in ROOT.rglob("*"):
         if p.is_file() and p.suffix in {".py", ".md", ".yaml", ".txt", ".ini"} and ".pytest_cache" not in p.parts:
             assert banned not in p.read_text(errors="ignore").lower(), p
+            low = p.read_text(errors="ignore").lower()
+            assert not any(n in low for n in private), p
             assert not re.search(r"sk-[A-Za-z0-9]{20,}", p.read_text(errors="ignore")), p

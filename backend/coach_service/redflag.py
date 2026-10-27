@@ -1,8 +1,9 @@
-"""Red-flag escalation, vendored and cut down from run-solo companion/coach/redflag.py (see README).
+"""Red-flag patterns, vendored and cut down from an earlier internal coach service (see README).
 
-Run Supreme scans what the runner types. This service takes no free text (D8), so the only text to scan is what the
-model writes. If the reply touches a red-flag topic the model's text is dropped and the fixed safety copy goes out
-instead; no model words are shown. The patterns lean towards false positives on purpose. English only.
+The debrief takes no free text (D8), so nothing an athlete says reaches this service. `detect` is used on the model's own
+reply as a validator rule: medical language in a facts-only debrief is a failure (repair once, then refuse), never a reason
+to show emergency copy. `template` is kept for a future free-text version and is not sent by any route today.
+Everyday debrief words ("pace collapsed", "short of breath") are NOT in the hard list. English only.
 """
 from __future__ import annotations
 
@@ -16,10 +17,10 @@ _CHEST = r"(?:chest|sternum)"
 _URGENT = [
     _CHEST + r"\W*(?:pain|pains|tight\w*|pressure|hurt\w*|ache\w*|squeez\w*|discomfort)",
     r"(?:pain|tightness|pressure|crush\w*|squeez\w*)\s+(?:\w+\s+){0,3}" + _CHEST,
-    r"(?:nearly|almost|about to)\s+(?:faint\w*|pass(?:ed)?\s+out|black(?:ed)?\s+out|collaps\w*)",
-    r"faint(?:ed|ing)\b", r"pass(?:ed|ing)?\s+out", r"black(?:ed)\s+out", r"collaps(?:e|ed|ing)\b", r"lost\s+consciousness",
+    r"(?:nearly|almost|about to)\s+(?:faint\w*|pass(?:ed)?\s+out|black(?:ed)?\s+out)",
+    r"faint(?:ed|ing)\b", r"pass(?:ed|ing)?\s+out", r"black(?:ed)\s+out", r"lost\s+consciousness",
     r"palpitation\w*", r"arm\s+(?:went\s+|is\s+|was\s+|felt\s+)?numb", r"numb\s+(?:left\s+)?arm",
-    r"heat\s*stroke", r"dizz\w*", r"light\s*-?\s*headed\w*", r"short(?:ness)?\s+of\s+breath",
+    r"heat\s*stroke",
 ]
 _WELLBEING = [
     r"kill(?:ing)?\s+my\s*self", r"suicid\w*", r"self[\s-]*harm\w*", r"(?:hurt|harm|cut)(?:ting)?\s+my\s*self",
