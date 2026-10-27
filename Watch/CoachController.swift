@@ -56,8 +56,10 @@ final class CoachController: ObservableObject {
   }
   private var checkpointer = CoachCheckpointer()
   /// Coached sessions finished on this watch: the first one gets the baseline lines.
-  private static let finishedKey = "coachedSessionsFinished"
-  private var isFirstSession: Bool { UserDefaults.standard.integer(forKey: Self.finishedKey) == 0 }
+  /// Per athlete code (athletes share a watch on gym day). Only a session that ran to the end counts: one ended early
+  /// never says the baseline line, so it must not use the first-session status up.
+  private var finishedKey: String { "coachedSessionsFinished." + recorder.athlete }
+  private var isFirstSession: Bool { UserDefaults.standard.integer(forKey: finishedKey) == 0 }
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
@@ -326,13 +328,15 @@ final class CoachController: ObservableObject {
   }
 
   private func offer(_ kind: CoachCueKind, _ text: String) {
-    scheduler.offer(CoachCue(kind: kind, text: text, createdAt: clock))
+    // The buzz is chosen now, from the same delta as the words, so a cue that waits in the queue still matches itself.
+    let haptic = CueHaptic.for(kind, deltaSeconds: machine?.deltaSeconds(at: nowMs) ?? 0)
+    scheduler.offer(CoachCue(kind: kind, text: text, createdAt: clock, haptic: haptic))
     pump()
   }
 
   private func pump() {
     guard recorder.phase == .running, let cue = scheduler.next(at: clock, speaking: recorder.cues.isSpeaking) else { return }
-    recorder.cues.speak(cue.text, haptic: CueHaptic.for(cue.kind, deltaSeconds: machine?.deltaSeconds(at: nowMs) ?? 0))
+    recorder.cues.speak(cue.text, haptic: cue.haptic ?? CueHaptic.for(cue.kind, deltaSeconds: 0))
   }
 
   // MARK: Screen
@@ -471,7 +475,7 @@ final class CoachController: ObservableObject {
     }
     try? await Task.sleep(nanoseconds: 300_000_000) // the delegate's finished event arrives on the main queue
     recorder.onMotionMagnitude = nil
-    UserDefaults.standard.set(UserDefaults.standard.integer(forKey: Self.finishedKey) + 1, forKey: Self.finishedKey)
+    if finish?.early == false { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: finishedKey) + 1, forKey: finishedKey) }
     // Clean finish: coach.json is the record. The checkpoint must not travel to the phone in the file list.
     if let folder = recorder.sessionFolder { CoachCheckpoint.remove(from: folder) }
     await recorder.stop()

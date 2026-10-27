@@ -92,6 +92,17 @@ final class CoachWiringTests: XCTestCase {
     XCTAssertEqual(b.seq, 2)
   }
 
+  func testCheckpointerWritesNothingForAFinishedSession() throws {
+    let f = try folder("cp-done")
+    var s = runningState(atStep: plan.steps.count - 1)
+    s.machine.advance(at: 1_000_000 + Int64(plan.steps.count) * 60_000)
+    XCTAssertNil(s.machine.current)
+    let cp = CoachCheckpointer()
+    cp.save(s, liveRepTimesMs: [], liveCount: 0, folder: f, nowMs: 1)
+    XCTAssertEqual(CoachCheckpoint.load(from: f), .none)
+    XCTAssertEqual(cp.seq, 0)
+  }
+
   func testCheckpointerWritesOncePerRepCountChange() throws {
     let f = try folder("cp3")
     let cp = CoachCheckpointer()
@@ -135,12 +146,31 @@ final class CoachWiringTests: XCTestCase {
 
   // MARK: AlarmGate
 
-  func testFirstFaultAlarmsAndAnotherWhileUpIsIgnored() {
+  func testASecondFaultWhileOneIsUpShowsAfterOKAndNothingIsDropped() {
     var g = AlarmGate()
     XCTAssertEqual(g.raise("No motion samples for 30 s", at: 0), .alarm)
     XCTAssertEqual(g.current, "No motion samples for 30 s")
-    XCTAssertEqual(g.raise("No motion samples for 30 s", at: 10), .ignore)
-    XCTAssertEqual(g.raise("Workout session ended", at: 10), .ignore)
+    XCTAssertEqual(g.raise("No motion samples for 30 s", at: 10), .ignore, "the same fault needs no second copy")
+    XCTAssertEqual(g.raise("Workout session ended", at: 10), .ignore, "waits its turn")
+    XCTAssertEqual(g.raise("Workout session ended", at: 11), .ignore)
+    XCTAssertEqual(g.raise("Motion stream failed", at: 12), .ignore)
+    XCTAssertEqual(g.pending, ["Workout session ended", "Motion stream failed"])
+    XCTAssertEqual(g.dismiss(), "Workout session ended", "OK on the stall shows the workout-ended alarm")
+    XCTAssertEqual(g.current, "Workout session ended")
+    XCTAssertEqual(g.dismiss(), "Motion stream failed")
+    XCTAssertNil(g.dismiss())
+    XCTAssertNil(g.current)
+    XCTAssertEqual(g.pending, [])
+    // All three were acknowledged: none comes back as an alarm.
+    XCTAssertEqual(g.raise("Workout session ended", at: 20), .toast)
+  }
+
+  func testAPendingFaultThatClearsBeforeOKIsNotShown() {
+    var g = AlarmGate()
+    _ = g.raise("No motion samples for 30 s", at: 0)
+    _ = g.raise("Motion never started", at: 1)
+    g.clear("Motion never started")
+    XCTAssertNil(g.dismiss())
   }
 
   func testAfterOKTheSameFaultNeverAlarmsAgainOnlyTheOccasionalToast() {

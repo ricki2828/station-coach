@@ -65,8 +65,10 @@ public final class CoachCheckpointer {
   /// Returns nil on success or when it already reported a failure; otherwise the first failure's description.
   @discardableResult
   public func save(_ state: CoachSessionState, liveRepTimesMs: [Int64], liveCount: Int, folder: URL, nowMs: Int64) -> String? {
+    // Only a running session is worth resuming: a finished one has coach.json.
+    guard let step = state.machine.current else { return nil }
     var s = state
-    if let step = s.machine.current { s.bank(step: step, repTimesMs: liveRepTimesMs) } // provisional times of the step in progress
+    s.bank(step: step, repTimesMs: liveRepTimesMs) // provisional times of the step in progress
     lastRepCount = liveCount
     let cp = CoachCheckpoint(sessionId: folder.lastPathComponent, savedAtEpochMs: nowMs, seq: seq, state: s)
     seq += 1
@@ -110,32 +112,47 @@ public struct AlarmGate {
   public static let toastEvery: TimeInterval = 120
 
   public private(set) var current: String?
+  /// Faults raised while another alarm was up, in order. None is dropped: `dismiss()` hands them back one at a time.
+  public private(set) var pending: [String] = []
   private var acknowledged = Set<String>()
   private var lastToast: [String: TimeInterval] = [:]
 
   public init() {}
 
   public mutating func raise(_ message: String, at now: TimeInterval) -> Action {
-    if current != nil { return .ignore } // one alarm on screen at a time
     if acknowledged.contains(message) {
       if let last = lastToast[message], now - last < Self.toastEvery { return .ignore }
       lastToast[message] = now
       return .toast
     }
+    if current != nil {
+      // One alarm on screen at a time. A different fault waits its turn (a recurrence of the one showing needs no second copy).
+      if message != current, !pending.contains(message) { pending.append(message) }
+      return .ignore
+    }
     current = message
     return .alarm
   }
 
-  /// The athlete tapped OK.
-  public mutating func dismiss() {
+  /// The athlete tapped OK. Returns the next waiting fault, which is now the current alarm and must be shown; nil if none.
+  @discardableResult
+  public mutating func dismiss() -> String? {
     if let m = current { acknowledged.insert(m) }
     current = nil
+    while !pending.isEmpty {
+      let next = pending.removeFirst()
+      if acknowledged.contains(next) { continue }
+      current = next
+      return next
+    }
+    return nil
   }
 
   /// The fault has cleared (samples are flowing again, the stream is back). A later recurrence alarms afresh.
   public mutating func clear(_ message: String) {
     acknowledged.remove(message)
     lastToast[message] = nil
+    pending.removeAll { $0 == message }
   }
 
   /// A new session: forget everything.

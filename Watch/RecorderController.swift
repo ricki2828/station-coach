@@ -330,23 +330,29 @@ final class RecorderController: ObservableObject {
   }
 
   func dismissAlarm() {
-    alarmGate.dismiss()
-    alarm = nil
     alarmTimer?.invalidate()
     alarmTimer = nil
+    alarm = nil
+    // A fault that arrived while this one was up is shown now, not lost.
+    if let next = alarmGate.dismiss() { showAlarm(next) }
+  }
+
+  private func showAlarm(_ message: String) {
+    alarm = message
+    WKInterfaceDevice.current().play(.failure)
+    alarmTimer?.invalidate()
+    alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
   }
 
   private func raiseAlarm(_ message: String) {
     guard phase == .running else { return }
+    log("alarm", message) // every raise is logged, whatever the gate then decides
     switch alarmGate.raise(message, at: clock) {
     case .alarm:
-      log("alarm", message)
-      alarm = message
-      WKInterfaceDevice.current().play(.failure)
-      alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
+      showAlarm(message)
     case .toast:
-      // Already acknowledged and still true: a short note in the band, never the full-screen alarm again.
-      log("alarm_repeat", message)
+      // Already acknowledged and still true: a short note in the band and one buzz, never the full-screen alarm again.
+      WKInterfaceDevice.current().play(.failure)
       flash(message)
     case .ignore:
       break

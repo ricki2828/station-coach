@@ -32,7 +32,7 @@ final class CueHapticTests: XCTestCase {
       XCTAssertEqual(CueHaptic.for(kind, deltaSeconds: -30), .planAhead, "ahead must not feel like behind")
       XCTAssertEqual(CueHaptic.for(kind, deltaSeconds: 4), .setDone, "inside 10 s is on plan")
       XCTAssertEqual(CueHaptic.for(kind, deltaSeconds: -9), .setDone)
-      XCTAssertNotEqual(HapticKind.planAhead.signature, HapticKind.jogIn.signature)
+      XCTAssertNotEqual(HapticKind.planAhead.motion, HapticKind.jogIn.motion, "ahead must not be a jog-in with a different count")
     }
   }
 }

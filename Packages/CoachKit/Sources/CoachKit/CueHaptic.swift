@@ -16,6 +16,8 @@ public enum HapticKind: CaseIterable, Equatable {
     case start
     /// The system "success" pattern.
     case success
+    /// The system "retry" pattern: a quick double tap, unlike the rising or falling ones.
+    case retry
   }
 
   public struct Signature: Hashable {
@@ -28,7 +30,7 @@ public enum HapticKind: CaseIterable, Equatable {
     case .stationIntro: return .start
     case .setDone: return .tap
     case .planBehind: return .down
-    case .planAhead: return .up
+    case .planAhead: return .retry
     case .jogIn: return .up
     case .finish: return .success
     }
@@ -38,8 +40,7 @@ public enum HapticKind: CaseIterable, Equatable {
   public var pulses: Int {
     switch self {
     case .stationIntro: return 2
-    case .setDone, .planBehind, .jogIn: return 1
-    case .planAhead: return 2
+    case .setDone, .planBehind, .planAhead, .jogIn: return 1
     case .finish: return 3
     }
   }
