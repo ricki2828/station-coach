@@ -43,7 +43,7 @@ struct CoachRunningHost: View {
     Group {
       if let step = coach.leftover {
         CoachLeftoverScreen(title: CoachCopy.leftoverTitle(step), activity: step.activity,
-                            onNow: { coach.doLeftover() }, onWithout: { coach.finishWithoutLeftover() })
+                            onNow: { coach.doLeftover() }, onWithout: { coach.finishWithoutLeftover() }, onUndo: { coach.undo() })
       } else if let model = coach.screen {
         CoachStepScreen(
           model: model,

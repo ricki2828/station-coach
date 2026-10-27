@@ -21,4 +21,7 @@ public struct NoRepLog: Codable, Equatable {
   }
 
   public mutating func reset() { events = [] }
+
+  /// Forgets every tap made in `step` (a fresh attempt at a moved station starts with no no-reps).
+  public mutating func removeAll(inStep step: Int) { events.removeAll { $0.stepIndex == step } }
 }

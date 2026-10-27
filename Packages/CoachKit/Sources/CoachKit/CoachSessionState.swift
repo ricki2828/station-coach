@@ -16,6 +16,9 @@ public struct CoachSessionState: Codable, Equatable {
   public var midCueDone = Set<Int>()
   public var jogInDone = Set<Int>()
   public var noRepAnnounced = false
+  /// Start of the split that began each wall-ball step's current attempt. A later start means a new attempt (the step was
+  /// skipped or moved and is now done afresh). Optional so checkpoints from before skipping still decode.
+  public var attemptStart: [Int: Int64]?
 
   public init(plan: SessionPlan) { machine = SessionMachine(plan: plan) }
 
@@ -36,10 +39,24 @@ public struct CoachSessionState: Codable, Equatable {
 
   /// Entering a wall-ball step. True when it is the first visit (the count starts at zero); false on an undo back
   /// into it or after a resume, when the earlier correction comes back.
-  public mutating func enterWallBalls(_ step: PlanStep) -> Bool {
-    let fresh = !enteredWallBalls.contains(step.index)
-    enteredWallBalls.insert(step.index)
-    repCorrection = fresh ? 0 : (correctionByStep[step.index] ?? 0)
+  /// `splitStartMs` is the start of the open split: a later one than the attempt on record means a new attempt, which
+  /// starts from nothing (the reps, correction and no-reps of the abandoned one are dropped).
+  public mutating func enterWallBalls(_ step: PlanStep, splitStartMs: Int64 = 0) -> Bool {
+    let idx = step.index
+    let earlier = attemptStart?[idx]
+    let newAttempt = earlier.map { splitStartMs > $0 } ?? false
+    let fresh = !enteredWallBalls.contains(idx) || newAttempt
+    enteredWallBalls.insert(idx)
+    if fresh {
+      if attemptStart == nil { attemptStart = [:] }
+      attemptStart?[idx] = splitStartMs
+      repsByStep[idx] = nil
+      correctionByStep[idx] = nil
+      noRepLog.removeAll(inStep: idx)
+      repCorrection = 0
+    } else {
+      repCorrection = correctionByStep[idx] ?? 0
+    }
     return fresh
   }
 
@@ -81,6 +98,15 @@ public struct CoachSessionState: Codable, Equatable {
     s.repsByStep = s.repsByStep.filter { done.contains($0.key) }
     s.correctionByStep = s.correctionByStep.filter { done.contains($0.key) }
     s.noRepLog = NoRepLog(events: s.noRepLog.events.filter { $0.stepIndex.map(done.contains) ?? true })
+    // A station moved to later and then done has two attempts: only what falls inside the done split's window is its own.
+    var windows: [Int: (Int64, Int64)] = [:]
+    for sp in s.machine.splits where !sp.isSkipped {
+      if let end = sp.endMs, s.machine.splits.contains(where: { $0.stepIndex == sp.stepIndex && $0.isSkipped }) { windows[sp.stepIndex] = (sp.startMs, end) }
+    }
+    for (idx, w) in windows {
+      s.repsByStep[idx] = s.repsByStep[idx]?.filter { $0 >= w.0 && $0 <= w.1 }
+      s.noRepLog = NoRepLog(events: s.noRepLog.events.filter { $0.stepIndex != idx || ($0.tMs >= w.0 && $0.tMs <= w.1) })
+    }
     let isEarly: Bool
     if case .finished(let e) = s.machine.phase { isEarly = e || early } else { isEarly = true }
     return CoachResult(

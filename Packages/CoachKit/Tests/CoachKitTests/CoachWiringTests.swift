@@ -208,4 +208,53 @@ final class CoachWiringTests: XCTestCase {
     g.reset()
     XCTAssertEqual(g.raise("x", at: 1), .alarm)
   }
+
+  // MARK: The leftover prompt is checkpointed
+
+  /// A full-sim state on the "Row still to do" prompt (wall balls moved with nothing after it).
+  private func leftoverState() -> CoachSessionState {
+    var s = CoachSessionState(plan: plan)
+    s.machine.start(at: 1_000_000)
+    var n = 1
+    while s.machine.current?.index != 15 { s.machine.advance(at: 1_000_000 + Int64(n) * 120_000); n += 1 }
+    XCTAssertEqual(s.machine.skip(later: true, at: 1_000_000 + Int64(n) * 120_000), .leftover)
+    return s
+  }
+
+  func testCheckpointerWritesInTheLeftoverPhase() throws {
+    let f = try folder("cp-leftover")
+    let s = leftoverState()
+    XCTAssertEqual(s.machine.phase, .awaitingLeftover)
+    let cp = CoachCheckpointer()
+    XCTAssertNil(cp.save(s, liveRepTimesMs: [], liveCount: 0, folder: f, nowMs: 5))
+    guard case let .valid(loaded, _) = CoachCheckpoint.load(from: f) else { return XCTFail("the leftover checkpoint should load") }
+    XCTAssertEqual(loaded.state.machine.phase, .awaitingLeftover)
+    XCTAssertEqual(loaded.state.machine.leftoverStep?.index, 15)
+  }
+
+  func testCrashOnTheLeftoverScreenResumesOnTheLeftoverScreen() throws {
+    let f = try folder("cp-crash")
+    let s = leftoverState()
+    CoachCheckpointer().save(s, liveRepTimesMs: [], liveCount: 0, folder: f, nowMs: 5)
+    guard case let .valid(loaded, _) = CoachCheckpoint.load(from: f) else { return XCTFail() }
+    var resumed = loaded.state
+    XCTAssertTrue(resumed.isConsistent)
+    XCTAssertNil(resumed.machine.current, "no step is running: the prompt shows, the last step's timer does not carry on")
+    XCTAssertEqual(resumed.machine.leftoverStep?.index, 15)
+    XCTAssertEqual(resumed.machine.doLeftover(at: 9_000_000), .started(15), "Do it now works after the relaunch")
+    // Undo from the prompt also survives it.
+    var again = loaded.state
+    XCTAssertTrue(again.machine.undo(at: 9_000_001))
+    XCTAssertEqual(again.machine.currentIndex, 15)
+  }
+
+  func testNotResumedLeftoverIsSalvagedWithTheDoneSteps() throws {
+    let f = try folder("cp-salvage")
+    CoachCheckpointer().save(leftoverState(), liveRepTimesMs: [], liveCount: 0, folder: f, nowMs: 5)
+    XCTAssertTrue(CoachCheckpoint.salvage(folder: f, endedAtEpochMs: 99_000_000))
+    let r = try CoachResult.load(inSessionFolder: f)
+    XCTAssertTrue(r.early)
+    XCTAssertEqual(r.splits.count, 16)
+    XCTAssertEqual(r.skippedStationCount, 1, "the left-over station stays skipped")
+  }
 }

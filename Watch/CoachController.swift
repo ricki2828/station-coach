@@ -340,7 +340,8 @@ final class CoachController: ObservableObject {
     scheduler.drop(.jogIn) // still waiting out the cue gap when the athlete moved on: no use now
     applyLabel()
     if step.activity == .wallBalls {
-      let fresh = state?.enterWallBalls(step) ?? true
+      // A station moved to later and now done afresh starts from nothing; undo or a relaunch into the same attempt carries on.
+      let fresh = state?.enterWallBalls(step, splitStartMs: m.splits.last?.startMs ?? 0) ?? true
       let earlier = (state?.repsByStep[step.index] ?? []).map { Double($0) / 1000 }
       counter.begin(step: step.index, fresh: fresh, earlier: earlier)
       noRepRest.reset(count: counter.snapshot().count, nowMs: nowMs)

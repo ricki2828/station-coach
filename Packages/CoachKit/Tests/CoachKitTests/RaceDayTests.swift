@@ -339,4 +339,81 @@ final class RaceDayTests: XCTestCase {
     let moved = try JSONDecoder().decode(SessionMachine.self, from: JSONSerialization.data(withJSONObject: obj))
     XCTAssertFalse(moved.isConsistent, "pos does not point at the open step")
   }
+
+  // MARK: Review follow-ups
+
+  /// A full-sim state moved to the last step (wall balls), with the first attempt's reps banked.
+  private func wallBallsAttempt() -> (state: CoachSessionState, step: PlanStep, firstStart: Int64) {
+    var state = CoachSessionState(plan: plan(.fullSim))
+    state.machine.start(at: t0)
+    var n = 1
+    while state.machine.current?.index != 15 { state.machine.advance(at: at(n * 2)); n += 1 }
+    let step = state.machine.current!
+    let start = state.machine.splits.last!.startMs
+    XCTAssertTrue(state.enterWallBalls(step, splitStartMs: start))
+    state.repCorrection = 2
+    state.bank(step: step, repTimesMs: [start + 1_000, start + 3_000, start + 5_000])
+    state.noRepLog.add(NoRepEvent(tMs: start + 4_000, setIndex: 0, stepIndex: 15))
+    return (state, step, start)
+  }
+
+  func testWallBallsMovedToLaterAndDoneStartFromNothing() {
+    var (state, step, firstStart) = wallBallsAttempt()
+    let skipAt = firstStart + 60_000
+    XCTAssertEqual(state.machine.skip(later: true, at: skipAt), .leftover)
+    let nowAt = skipAt + 30_000
+    XCTAssertEqual(state.machine.doLeftover(at: nowAt), .started(15))
+    // The new attempt: a new split start, so a fresh count with nothing carried over.
+    XCTAssertTrue(state.enterWallBalls(step, splitStartMs: nowAt), "a later attempt is fresh")
+    XCTAssertEqual(state.repCorrection, 0)
+    XCTAssertNil(state.repsByStep[15])
+    XCTAssertEqual(state.noRepLog.count(inStep: 15), 0, "the abandoned attempt's no-reps are gone")
+    XCTAssertEqual(state.repsDone(step, counted: 0), 0)
+    // Same attempt again (a relaunch, an undo back into it): not fresh.
+    state.bank(step: step, repTimesMs: [nowAt + 2_000, nowAt + 4_000])
+    state.repCorrection = 1
+    state.bank(step: step, repTimesMs: [nowAt + 2_000, nowAt + 4_000])
+    XCTAssertFalse(state.enterWallBalls(step, splitStartMs: nowAt))
+    XCTAssertEqual(state.repCorrection, 1)
+    XCTAssertEqual(state.machine.advance(at: nowAt + 120_000), .finished)
+    let r = state.makeResult(early: false, endedAtEpochMs: nowAt + 120_000)!
+    XCTAssertEqual(r.repTimesMs, [nowAt + 2_000, nowAt + 4_000], "only the second attempt's reps")
+    XCTAssertEqual(r.repCorrection, 1)
+    XCTAssertEqual(r.noReps, [])
+    XCTAssertEqual(r.skippedStationCount, 0, "it was done in the end")
+  }
+
+  func testResultKeepsOnlyTheDoneWindowEvenIfStaleRepsRemain() {
+    var (state, step, firstStart) = wallBallsAttempt()
+    let skipAt = firstStart + 60_000
+    state.machine.skip(later: true, at: skipAt)
+    let nowAt = skipAt + 30_000
+    state.machine.doLeftover(at: nowAt)
+    // Stale first-attempt reps and a no-rep are still in the state (no fresh entry happened): the window filter drops them.
+    state.bank(step: step, repTimesMs: [firstStart + 1_000, nowAt + 2_000])
+    state.machine.advance(at: nowAt + 100_000)
+    let r = state.makeResult(early: false, endedAtEpochMs: nowAt + 100_000)!
+    XCTAssertEqual(r.repTimesMs, [nowAt + 2_000])
+    XCTAssertEqual(r.noReps, [], "the no-rep at the first attempt's time is not in the done window")
+  }
+
+  func testUndoingASkipKeepsTheFirstAttemptsReps() {
+    var (state, step, firstStart) = wallBallsAttempt()
+    state.machine.skip(later: false, at: firstStart + 60_000)
+    XCTAssertTrue(state.machine.undo(at: firstStart + 61_000))
+    XCTAssertFalse(state.enterWallBalls(step, splitStartMs: firstStart), "the same attempt: nothing is lost")
+    XCTAssertEqual(state.repsByStep[15]?.count, 3)
+    XCTAssertEqual(state.repCorrection, 2)
+  }
+
+  func testNoRunFadeForASessionWithASkippedStation() {
+    let skipped = resultWithASkippedRow()
+    XCTAssertEqual(RunFade.slowdowns(skipped), [])
+    XCTAssertNil(RunFade.fade(skipped))
+    XCTAssertNil(SessionRecord(id: "s", result: skipped).fade)
+    XCTAssertNotEqual(InsightPicker.pick(skipped).rule, 1, "the fade headline is not offered")
+    var clean = skipped
+    clean.splits[9].skipped = nil
+    XCTAssertFalse(RunFade.slowdowns(clean).isEmpty, "a clean session still has its fade")
+  }
 }

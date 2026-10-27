@@ -56,6 +56,8 @@ def wall_ball_windows(coach):
     plan = {s["index"]: s for s in coach["plan"]["steps"]}
     out = []
     for sp in coach["splits"]:
+        if sp.get("skipped"):
+            continue  # an abandoned attempt (skipped or moved): its reps are not wall-ball reps
         if plan.get(sp["stepIndex"], {}).get("activity") == "wall_balls":
             out.append((sp["startMs"], sp.get("endMs") or coach["endedAtEpochMs"]))
     return out
