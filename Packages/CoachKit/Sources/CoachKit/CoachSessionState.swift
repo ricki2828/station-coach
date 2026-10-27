@@ -76,6 +76,11 @@ public struct CoachSessionState: Codable, Equatable {
       s.machine.end(at: max(endedAtEpochMs, s.machine.splits.last?.startMs ?? endedAtEpochMs))
     }
     guard let started = s.machine.startMs else { return nil }
+    // A skipped station has no reps and no no-reps: whatever was counted before the skip is not part of the result.
+    let done = s.machine.doneSteps
+    s.repsByStep = s.repsByStep.filter { done.contains($0.key) }
+    s.correctionByStep = s.correctionByStep.filter { done.contains($0.key) }
+    s.noRepLog = NoRepLog(events: s.noRepLog.events.filter { $0.stepIndex.map(done.contains) ?? true })
     let isEarly: Bool
     if case .finished(let e) = s.machine.phase { isEarly = e || early } else { isEarly = true }
     return CoachResult(

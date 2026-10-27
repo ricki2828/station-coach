@@ -275,6 +275,9 @@ final class RecorderController: ObservableObject {
     phase = .idle
   }
 
+  /// A short notice over the running screen (3 s for the skip notices, 4 s otherwise).
+  func notify(_ text: String) { flash(text) }
+
   /// A short-lived notice over the running screen.
   private func flash(_ text: String) {
     toast = text

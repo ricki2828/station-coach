@@ -197,6 +197,19 @@ final class LayoutTests: XCTestCase {
     XCTAssertNil(CoachReadyScreen.warningLine(ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")))
   }
 
+  func testLadderFollowsWhatWasDoneNotThePlanOrder() {
+    let plan = PlanBuilder.build(division: .openMen, target: 4800, type: .fullSim)
+    var m = SessionMachine(plan: plan)
+    m.start(at: 0)
+    m.advance(at: 120_000); m.advance(at: 240_000); m.advance(at: 360_000)
+    m.skip(later: true, at: 480_000) // sled push moved behind the next station; now on run 3
+    let ticks = LadderTick.ladder(for: plan, done: m.doneSteps, current: m.currentIndex ?? 0)
+    XCTAssertEqual(ticks[3].state, .upcoming, "the moved station is still to do")
+    XCTAssertEqual(ticks[4].state, .current)
+    XCTAssertEqual(ticks[0].state, .done)
+    XCTAssertEqual(ticks[2].state, .done)
+  }
+
   func testBandSaysTheDeltaInWords() {
     XCTAssertEqual(DeltaBand(seconds: 32).bandText, "0:32 DOWN")
     XCTAssertEqual(DeltaBand(seconds: -12, reference: .last(name: "sim")).bandText, "0:12 UP")

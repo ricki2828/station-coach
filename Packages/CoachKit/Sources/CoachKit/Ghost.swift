@@ -80,7 +80,7 @@ public enum Ghost {
     guard r.splits.count == r.plan.steps.count else { return nil }
     var out: [Int] = []
     for (i, s) in r.splits.enumerated() {
-      guard s.stepIndex == i, let end = s.endMs, end >= s.startMs else { return nil }
+      guard s.stepIndex == i, !s.isSkipped, let end = s.endMs, end >= s.startMs else { return nil }
       out.append(Int((end - s.startMs) / 1000))
     }
     return out
@@ -138,7 +138,8 @@ public enum Ghost {
   /// `plan` raced against the offer's ghost, or unchanged when `race` is off or there is no ghost.
   public static func plan(_ plan: SessionPlan, racing offer: GhostOffer, race: Bool) -> SessionPlan {
     var p = plan
-    p.ghostSplits = (race && offer.available && offer.splits?.count == plan.steps.count) ? offer.splits : nil
+    // Race day is always against the plan (D6).
+    p.ghostSplits = (race && plan.type != .raceDay && offer.available && offer.splits?.count == plan.steps.count) ? offer.splits : nil
     return p
   }
 

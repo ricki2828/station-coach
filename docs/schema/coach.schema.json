@@ -17,7 +17,8 @@
         "properties": {
           "stepIndex": { "type": "integer", "minimum": 0 },
           "startMs": { "type": "integer" },
-          "endMs": { "type": ["integer", "null"], "description": "Absent or null: the step was never finished." }
+          "endMs": { "type": ["integer", "null"], "description": "Absent or null: the step was never finished." },
+          "skipped": { "type": ["boolean", "null"], "description": "True: the station was skipped, or moved to later (the move leaves a skipped split behind). No seconds count. Absent in older files." }
         }
       }
     },

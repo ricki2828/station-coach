@@ -34,6 +34,7 @@ class SessionType(str, Enum):
     full_sim = "full_sim"
     half_sim = "half_sim"
     wall_ball_focus = "wall_ball_focus"
+    race_day = "race_day"
 
 
 class Division(str, Enum):

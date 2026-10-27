@@ -91,8 +91,8 @@ final class SchemaContractTests: XCTestCase {
   }
 
   func testCoachFullAndMin() throws {
-    let splits = [StepSplit(stepIndex: 0, startMs: 1_790_000_000_000, endMs: 1_790_000_300_000),
-                  StepSplit(stepIndex: 1, startMs: 1_790_000_300_000, endMs: 1_790_000_400_000)]
+    let splits = [StepSplit(stepIndex: 0, startMs: 1_790_000_000_000, endMs: 1_790_000_300_000, skipped: true),
+                  StepSplit(stepIndex: 1, startMs: 1_790_000_300_000, endMs: 1_790_000_400_000, skipped: false)]
     let full = CoachResult(
       plan: fullPlan, splits: splits, early: true, repTimesMs: [1_790_000_310_000, 1_790_000_313_000], repCorrection: -1,
       startedAtEpochMs: 1_790_000_000_000, endedAtEpochMs: 1_790_000_400_000,

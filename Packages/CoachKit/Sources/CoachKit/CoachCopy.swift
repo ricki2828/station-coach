@@ -10,9 +10,10 @@ public enum CoachCopy {
 
   /// Said once during a run's last `transitionSeconds` (the walk-in allowance at its end), when a station follows
   /// and has a target to jog towards. A cue of its own at the lowest priority, so the gap rules decide when.
-  public static func jogInDue(run: PlanStep, next: PlanStep?, elapsedSeconds: Int, transitionSeconds: Int) -> Bool {
+  /// Racing a ghost, `referenceSeconds` is the ghost's time for this run and replaces the plan target in the timing.
+  public static func jogInDue(run: PlanStep, next: PlanStep?, elapsedSeconds: Int, transitionSeconds: Int, referenceSeconds: Int? = nil) -> Bool {
     guard run.isRun, let next, !next.isRun, next.targetSeconds > 0, transitionSeconds > 0 else { return false }
-    return elapsedSeconds >= max(0, run.targetSeconds - transitionSeconds)
+    return elapsedSeconds >= max(0, (referenceSeconds ?? run.targetSeconds) - transitionSeconds)
   }
 
   public static func stationIntro(_ step: PlanStep) -> String {
@@ -34,13 +35,17 @@ public enum CoachCopy {
   }
 
   /// Said once, halfway through a station's target time. Nil for wall balls (set cues instead).
-  public static func midStation(_ step: PlanStep) -> String? {
+  /// Racing a ghost the pace is the ghost's (`referenceSeconds`): "Last time 2:05 per 500."
+  public static func midStation(_ step: PlanStep, reference: DeltaReference = .plan, referenceSeconds: Int? = nil) -> String? {
+    let half = Fmt.clock((referenceSeconds ?? step.targetSeconds) / 2)
+    let hold: String
+    if case .last = reference, referenceSeconds != nil { hold = "Last time \(half) per 500." } else { hold = "Hold \(half) per 500." }
     switch step.activity {
-    case .skierg: return "Hold \(Fmt.clock(step.targetSeconds / 2)) per 500. Build the last 200."
+    case .skierg: return "\(hold) Build the last 200."
     case .sledPush: return "Short fast steps. Don't stop. 2 lengths left."
     case .sledPull: return "Sit back, drive with the legs. 2 lengths left."
     case .burpeeBroadJump: return "One every 5 seconds. Keep the rhythm, don't chase distance."
-    case .row: return "Hold \(Fmt.clock(step.targetSeconds / 2)) per 500. This is not a rest."
+    case .row: return "\(hold) This is not a rest."
     case .farmersCarry: return "Quick steps. Don't put them down. 100 to go."
     case .sandbagLunges: return "One lunge every 2 seconds. Knee down. 50 metres left."
     default: return nil
@@ -80,6 +85,60 @@ public enum CoachCopy {
     return parts.joined(separator: " ")
   }
 
+  // MARK: Race day (split calls only)
+
+  /// "Race day. Target 80 minutes. Run 1, 4:48 for the kilometre."
+  public static func raceStart(plan: SessionPlan, run: PlanStep) -> String {
+    "Race day. Target \(Fmt.spoken(plan.plannedSeconds)). Run \(run.runNumber ?? 1), \(Fmt.clock(max(0, run.targetSeconds - 2 * plan.transitionSeconds))) for the kilometre."
+  }
+
+  /// "Sled push. Target 4:02." No technique line.
+  public static func raceStation(_ step: PlanStep) -> String {
+    "\(Stations.name(step.activity)). Target \(Fmt.clock(step.targetSeconds))."
+  }
+
+  /// "4:10. 8 seconds down. Run 4, target 5:05." The split just done, the delta, the next kilometre. The legs line
+  /// stays after the heavy stations: it is an instruction.
+  public static func raceRunStart(stationSeconds: Int, deltaSeconds: Int, after station: PlanStep, run: PlanStep, transitionSeconds: Int) -> String {
+    let d: String
+    if DeltaBandWords.isLevel(deltaSeconds) {
+      d = "On plan."
+    } else {
+      d = "\(Fmt.spoken(abs(deltaSeconds))) \(deltaSeconds > 0 ? "down" : "up")."
+    }
+    var s = "\(Fmt.clock(stationSeconds)). \(d)"
+    if heavyLegs.contains(station.activity) { s += " Short quick steps." }
+    s += " Run \(run.runNumber ?? 1), target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds)))."
+    return s
+  }
+
+  /// Race-day wall-ball set call: no "Breathe".
+  public static func raceWallBallSet(nextSet: Int?) -> String {
+    guard let n = nextSet else { return "Set done. Last one done." }
+    return "Set done. Next \(Fmt.word(n))."
+  }
+
+  // MARK: Skipping a station
+
+  /// "Skip Row?"
+  public static func skipTitle(_ step: PlanStep) -> String { "Skip \(Stations.name(step.activity))?" }
+
+  /// The toast after "Skip it": "Row skipped. Not counted."
+  public static func skippedToast(_ step: PlanStep) -> String { "\(Stations.name(step.activity)) skipped. Not counted." }
+
+  /// The toast after "Do it later": "Row moved after Carry." / "Row moved to the end."
+  public static func movedToast(_ step: PlanStep, after other: PlanStep?) -> String {
+    let name = Stations.name(step.activity)
+    guard let other else { return "\(name) moved to the end." }
+    return "\(name) moved after \(Stations.name(other.activity))."
+  }
+
+  /// The leftover screen's title: "Row still to do".
+  public static func leftoverTitle(_ step: PlanStep) -> String { "\(Stations.name(step.activity)) still to do" }
+
+  /// "1 station skipped." / "2 stations skipped."
+  public static func skippedCount(_ n: Int) -> String { "\(n) station\(n == 1 ? "" : "s") skipped." }
+
   /// Spoken on the first NO REP tap only.
   public static let noRepNoted = "No rep noted."
 
@@ -92,10 +151,13 @@ public enum CoachCopy {
   /// Racing a ghost (`reference` is `.last`), the gap is to its finish time, not the target: "0:48 faster than your last full sim."
   public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool,
                             reference: DeltaReference = .plan, referenceTotalSeconds: Int? = nil, sessionName: String = "sim",
-                            comparedSeconds: Int? = nil) -> String {
+                            comparedSeconds: Int? = nil, skipped: Int = 0) -> String {
     let d = totalSeconds - plannedSeconds
     var s = "\(Fmt.clock(totalSeconds))."
-    if !early {
+    if skipped > 0 {
+      // The total is not comparable with the target or a ghost: no under/over claim.
+      s += " \(skippedCount(skipped))"
+    } else if !early {
       if case .last = reference, let ghostTotal = referenceTotalSeconds {
         let g = (comparedSeconds ?? totalSeconds) - ghostTotal // like with like: whole-second steps on both sides
         s += DeltaBandWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."

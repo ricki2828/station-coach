@@ -12,7 +12,8 @@ public struct SessionRecord: Equatable, Identifiable {
 
   public var date: Date { Date(timeIntervalSince1970: Double(result.startedAtEpochMs) / 1000) }
   public var type: SessionType { result.plan.type }
-  public var isComplete: Bool { !result.early }
+  /// Ran to the end with nothing skipped: only such a session is comparable (a best, a fade, a target line, a ghost).
+  public var isComplete: Bool { !result.early && result.skippedStationCount == 0 }
   public var fade: Int? { RunFade.fade(result) }
 
   /// Newest first.

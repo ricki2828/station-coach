@@ -37,7 +37,7 @@ public struct LoadBar: Equatable, Identifiable {
 
   /// Full sim at the bottom, then half sim, then wall-ball focus.
   static func segments(_ p: LoadPeriod) -> [LoadSegment] {
-    [SessionType.fullSim, .halfSim, .wallBallFocus].compactMap { t in
+    [SessionType.fullSim, .halfSim, .wallBallFocus, .raceDay].compactMap { t in
       let v = p.loadByType[t] ?? 0
       return v > 0 ? LoadSegment(type: t, load: v) : nil
     }

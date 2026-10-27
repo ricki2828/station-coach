@@ -32,17 +32,19 @@ public enum PhoneTheme {
   public static let buttonHeight: CGFloat = 56
   public static let buttonRadius: CGFloat = 16
 
-  // Session colours: full = violet, half = cyan, wall-ball focus = pink.
+  // Session colours: full = violet, half = cyan, wall-ball focus = pink, race day = ink.
   public static func sessionHex(_ t: SessionType) -> UInt32 {
     switch t {
     case .fullSim: return 0x7C4DDB
     case .halfSim: return 0x22C7E8
     case .wallBallFocus: return 0xE8337F
+    // Race day is the one dark card: the nine flat colours are all taken by stations.
+    case .raceDay: return Palette.ink
     }
   }
 
   public static func sessionTextHex(_ t: SessionType) -> UInt32 {
-    t == .fullSim ? Palette.bone : Palette.ink
+    (t == .fullSim || t == .raceDay) ? Palette.bone : Palette.ink
   }
 
   public static func sessionColor(_ t: SessionType) -> Color { Theme.color(sessionHex(t)) }

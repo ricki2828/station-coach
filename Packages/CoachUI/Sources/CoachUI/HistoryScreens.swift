@@ -14,6 +14,7 @@ struct SessionRowContent: View {
       HStack {
         SessionChip(record.type)
         if let label { Text(label.uppercased()).scaledFont(13, .heavy).foregroundStyle(PhoneTheme.amberText) }
+        if r.skippedStationCount > 0 { Text("\(r.skippedStationCount) SKIPPED").scaledFont(13, .heavy).foregroundStyle(PhoneTheme.amberText) }
         Spacer()
         Text(HistoryFormat.shortDate(record.date)).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
       }
@@ -142,6 +143,8 @@ public struct SessionDetailScreen: View {
           } else {
             Text(Fmt.clock(r.totalSeconds)).scaledHero()
             if let words = record.targetWords { Text(words.text).scaledFont(17, .semibold) }
+            // The total of a session with a skipped station is not comparable with the target: say so, never claim under/over.
+            if r.skippedStationCount > 0 { Text(CoachCopy.skippedCount(r.skippedStationCount)).scaledFont(17, .semibold) }
             // Only a session that raced a ghost: how it did against that session.
             if let versus = Ghost.comparisonLine(r) { Text(versus).scaledFont(17, .semibold) }
           }
@@ -228,7 +231,7 @@ public struct SessionDetailScreen: View {
 
   /// "Sled push, 4:04, 20 s over": the full name, never the BBJ short label, with the time and the delta.
   static func rowLabel(_ row: CoachResult.Row) -> String {
-    guard let actual = row.actualSeconds, let d = row.deltaSeconds else { return "\(row.step.name), not done" }
+    guard let actual = row.actualSeconds, let d = row.deltaSeconds else { return "\(row.step.name), \(row.skipped ? "skipped" : "not done")" }
     return "\(row.step.name), \(Fmt.clock(actual)), \(DeltaWords.text(d).text)"
   }
 
@@ -245,7 +248,7 @@ public struct SessionDetailScreen: View {
       Text(Fmt.clock(actual)).scaledFont(20, .semibold).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
         .frame(minWidth: 64, alignment: .trailing)
     } else {
-      Text("not done").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
+      Text(row.skipped ? "skipped" : "not done").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
     }
   }
 }

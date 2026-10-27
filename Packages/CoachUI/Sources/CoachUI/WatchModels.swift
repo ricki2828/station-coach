@@ -16,6 +16,11 @@ public struct LadderTick: Equatable {
   public static func ladder(for plan: SessionPlan, currentIndex: Int) -> [LadderTick] {
     plan.steps.map { LadderTick(activity: $0.activity, state: $0.index < currentIndex ? .done : ($0.index == currentIndex ? .current : .upcoming)) }
   }
+
+  /// The ladder when steps can be skipped or moved: a tick is done when its step was done, whatever the order.
+  public static func ladder(for plan: SessionPlan, done: Set<Int>, current: Int) -> [LadderTick] {
+    plan.steps.map { LadderTick(activity: $0.activity, state: $0.index == current ? .current : (done.contains($0.index) ? .done : .upcoming)) }
+  }
 }
 
 /// What the watch shows for one moment of a coached session. Plain values so the same views render
@@ -98,8 +103,11 @@ public struct ReadyInfo: Equatable {
   /// Warnings that do not block START: "No headphones: cues by vibration", "Heart rate off. The coach still works."
   public var chips: [String]
   public var batteryLine: String?
+  /// One quiet line under the target when there is no warning ("Splits are estimates").
+  public var line: String?
 
-  public init(sessionName: String, targetText: String, athleteChip: String? = nil, chips: [String] = [], batteryLine: String? = nil) {
+  public init(sessionName: String, targetText: String, athleteChip: String? = nil, chips: [String] = [], batteryLine: String? = nil, line: String? = nil) {
+    self.line = line
     self.sessionName = sessionName
     self.targetText = targetText
     self.athleteChip = athleteChip

@@ -101,6 +101,8 @@ public struct SessionLoad: Equatable {
       guard let step = r.plan.steps.first(where: { $0.index == sp.stepIndex }) else { continue }
       let a = sp.startMs
       let b = sp.endMs ?? e
+      // A skipped station was not done: the time spent on it before the skip weighs as rest, not as the station.
+      if sp.isSkipped { add(a, b, .rest); continue }
       if step.isRun, (step.runNumber ?? 1) > 1 {
         let t = a + Int64(r.plan.transitionSeconds) * 1000
         add(a, min(t, b), .transition)
@@ -139,7 +141,7 @@ public struct SessionLoad: Equatable {
     var metres = 0
     // The watch closes the step in progress when a session ends early, so that step was quit, not completed.
     let quit = result.early ? result.splits.max(by: { $0.startMs < $1.startMs })?.stepIndex : nil
-    for sp in result.splits where sp.endMs != nil && sp.stepIndex != quit && result.splitsLookValid {
+    for sp in result.splits where sp.endMs != nil && sp.stepIndex != quit && !sp.isSkipped && result.splitsLookValid {
       guard let step = result.plan.steps.first(where: { $0.index == sp.stepIndex }) else { continue }
       if step.isRun { km += 1 } else { metres += Self.metres(step.activity) }
     }

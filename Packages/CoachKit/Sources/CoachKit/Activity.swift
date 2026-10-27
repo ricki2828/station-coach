@@ -20,7 +20,7 @@ public enum Activity: String, CaseIterable, Codable, Sendable, Identifiable {
   public var buttonTitle: String {
     switch self {
     case .run: return "Run"
-    case .transition: return "Transition"
+    case .transition: return "Changeover"
     case .skierg: return "SkiErg"
     case .sledPush: return "Sled push"
     case .sledPull: return "Sled pull"

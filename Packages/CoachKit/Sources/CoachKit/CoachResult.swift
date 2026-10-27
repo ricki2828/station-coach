@@ -185,16 +185,29 @@ public struct CoachResult: Codable, Equatable {
     public let step: PlanStep
     /// nil when the step was not completed. Never 0:00.
     public let actualSeconds: Int?
+    /// Skipped (or moved and never done): no seconds, shown as "skipped", never 0:00.
+    public let skipped: Bool
     public var deltaSeconds: Int? { actualSeconds.map { $0 - step.targetSeconds } }
+
+    public init(step: PlanStep, actualSeconds: Int?, skipped: Bool = false) {
+      self.step = step
+      self.actualSeconds = actualSeconds
+      self.skipped = skipped
+    }
   }
 
   public var rows: [Row] {
     plan.steps.map { step in
-      let s = splits.first { $0.stepIndex == step.index }
+      // A step moved to later has two splits: the skipped one it left behind and the one it was done in. The done one counts.
+      let s = splits.first { $0.stepIndex == step.index && !$0.isSkipped }
       let actual = s?.endMs.map { Int(($0 - s!.startMs) / 1000) }
-      return Row(step: step, actualSeconds: actual)
+      let skipped = s == nil && splits.contains { $0.stepIndex == step.index && $0.isSkipped }
+      return Row(step: step, actualSeconds: actual, skipped: skipped)
     }
   }
+
+  /// Stations skipped, or moved and never done.
+  public var skippedStationCount: Int { rows.filter { !$0.step.isRun && $0.skipped }.count }
 
   public var totalSeconds: Int { Int((endedAtEpochMs - startedAtEpochMs) / 1000) }
   public var completedStationCount: Int { rows.filter { !$0.step.isRun && $0.actualSeconds != nil }.count }
@@ -204,8 +217,8 @@ public struct CoachResult: Codable, Equatable {
 
   public func wallBallSets() -> [WallBallSet] {
     // First wall-ball step that was started; only reps inside its window count (a focus session has three).
-    guard let step = plan.steps.first(where: { s in s.activity == .wallBalls && splits.contains { $0.stepIndex == s.index } }),
-          let split = splits.first(where: { $0.stepIndex == step.index }) else { return [] }
+    guard let step = plan.steps.first(where: { s in s.activity == .wallBalls && splits.contains { $0.stepIndex == s.index && !$0.isSkipped } }),
+          let split = splits.first(where: { $0.stepIndex == step.index && !$0.isSkipped }) else { return [] }
     let end = split.endMs ?? endedAtEpochMs
     let reps = repTimesMs.filter { $0 >= split.startMs && $0 <= end }
     return WallBallAnalysis.sets(repTimesMs: reps)
