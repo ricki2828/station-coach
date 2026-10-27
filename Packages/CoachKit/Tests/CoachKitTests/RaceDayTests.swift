@@ -70,7 +70,7 @@ final class RaceDayTests: XCTestCase {
     let line = CoachCopy.raceRunStart(stationSeconds: 250, deltaSeconds: 8, after: p.steps[3], run: p.steps[4], transitionSeconds: p.transitionSeconds)
     XCTAssertEqual(line, "4:10. 8 seconds down. Short quick steps. Run 3, target \(Fmt.clock(p.steps[4].targetSeconds - 2 * p.transitionSeconds)).")
     let ahead = CoachCopy.raceRunStart(stationSeconds: 250, deltaSeconds: -20, after: p.steps[1], run: p.steps[2], transitionSeconds: p.transitionSeconds)
-    XCTAssertTrue(ahead.hasPrefix("4:10. 20 seconds up. Run 2, target"), ahead) // SkiErg: no legs line
+    XCTAssertTrue(ahead.hasPrefix("4:10. twenty seconds up. Run 2, target"), ahead) // SkiErg: no legs line
     XCTAssertTrue(CoachCopy.raceRunStart(stationSeconds: 250, deltaSeconds: 1, after: p.steps[1], run: p.steps[2], transitionSeconds: 10).contains("On plan."))
     XCTAssertEqual(CoachCopy.raceWallBallSet(nextSet: 15), "Set done. Next fifteen.")
     XCTAssertEqual(CoachCopy.raceWallBallSet(nextSet: nil), "Set done. Last one done.")

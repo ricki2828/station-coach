@@ -96,7 +96,7 @@ public enum ScreenCatalog {
     var sled = step(.time, .sledPull, "Sled pull", dominant: "1:48", dominantLabel: "Station time 1 minute 48", secondary: "/ 4:25",
                     secondaryLabel: "Target 4 minutes 25", next: "Next: Run 4", delta: 8)
     sled.hrBpm = 171
-    return [
+    let base: [CatalogEntry] = [
       watch("ready-loading", CoachReadyScreen(model: .loading)),
       watch("ready-no-plan", CoachReadyScreen(model: .noPlan)),
       watch("ready", CoachReadyScreen(model: .ready(ready))),
@@ -156,7 +156,8 @@ public enum ScreenCatalog {
       watch("finish-save-failed", CoachFinishScreen(model: FinishScreenModel(
         mode: .saveFailed(missing: 1), totalText: "1:18:42", line: "1:18 under target", early: false,
         totalSeconds: 4722, stations: allStations), animate: false)),
-    ] + RaceScreens.watchScreens
+    ]
+    return base + RaceScreens.watchScreens
   }
 
   /// A last half sim to race: Sat 24 Oct, 41:12 (an even pace over the plan's steps).
