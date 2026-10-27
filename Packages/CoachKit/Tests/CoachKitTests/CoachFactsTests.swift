@@ -15,8 +15,8 @@ final class CoachFactsTests: XCTestCase {
     return try Data(contentsOf: root.appendingPathComponent("backend/tests/fixtures/coach_facts.json"))
   }
 
-  private func session(until: Int? = nil) -> CoachResult {
-    let plan = PlanBuilder.build(division: .openMen, target: 4800, type: .halfSim)
+  private func session(until: Int? = nil, type: SessionType = .halfSim) -> CoachResult {
+    let plan = PlanBuilder.build(division: .openMen, target: 4800, type: type)
     var t: Int64 = 1_792_836_000_000
     var splits: [StepSplit] = []
     for step in plan.steps {
@@ -95,7 +95,7 @@ final class CoachFactsTests: XCTestCase {
   }
 
   func testWallBallsCarryRepsSetsAndRests() {
-    var r = session()
+    var r = session(type: .fullSim)
     let wb = r.plan.steps.first { $0.activity == .wallBalls }!
     let start = r.splits.first { $0.stepIndex == wb.index }!.startMs
     r.repTimesMs = (0..<30).map { i in start + 1_000 + Int64(i) * 2_000 + (i >= 15 ? 12_000 : 0) }
