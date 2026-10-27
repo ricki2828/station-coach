@@ -29,6 +29,12 @@ Actions, `testflight`, Run workflow (or push a tag such as `beta-3`). The build 
 
 The lane is `xcodegen`, `xcodebuild archive`, then `xcodebuild -exportArchive` with `destination` `upload` in the export options, which uploads straight to App Store Connect. It uses only what ships with Xcode: no Ruby or Bundler to pin, and no separate `altool` step (Apple is steering away from `altool --upload-app`). The runner selects the newest stable Xcode 26.x first (`tools/ci/select-xcode.sh`, also used by `ci.yml`), because App Store Connect now wants uploads built with the 26 SDKs. Signing is automatic: `-allowProvisioningUpdates` with the API key creates the cloud-managed certificate and profiles, so none are in the repo. Each clean runner may create a new Apple Development certificate; if Apple reports the certificate limit, revoke old ones. The key is written to a temp file with mode 600 and deleted in an `always()` step.
 
+## Privacy manifest and policy
+
+- `iOS/PrivacyInfo.xcprivacy` and `Watch/PrivacyInfo.xcprivacy` declare the required-reason APIs the app uses (UserDefaults CA92.1, file timestamp C617.1, and on the watch system boot time 35F9.1), no tracking, and health/fitness data as not linked and not used for tracking. Without them App Store Connect can refuse the upload (ITMS-91053). CI checks that the file is inside both built apps.
+- If you add an API from Apple's required-reason list (UserDefaults, file timestamps, boot time, disk space, active keyboards), add its reason code to both manifests.
+- A privacy policy URL is required in App Store Connect before external testers. `docs/PRIVACY.md` is a draft for Ricki and a lawyer; it is not published.
+
 ## Background modes and other notes
 
 - `WKBackgroundModes` `workout-processing` and `audio` are set in `project.yml`. Confirm the audio mode is accepted for the profile.

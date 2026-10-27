@@ -1,6 +1,7 @@
 name: ci
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -51,6 +52,20 @@ jobs:
           xcodebuild -project StationCoach.xcodeproj -scheme StationCoach \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Privacy manifests are valid and inside both built apps
+        run: |
+          set -eo pipefail
+          plutil -lint iOS/PrivacyInfo.xcprivacy Watch/PrivacyInfo.xcprivacy
+          ios_app=$(find ~/Library/Developer/Xcode/DerivedData -path '*Build/Products/Debug-iphonesimulator/StationCoach.app' -maxdepth 6 -type d | head -1)
+          watch_app=$(find ~/Library/Developer/Xcode/DerivedData -path '*Build/Products/Debug-watchsimulator/StationCoachWatch.app' -maxdepth 6 -type d | head -1)
+          echo "iOS app: $ios_app"; echo "Watch app: $watch_app"
+          test -n "$ios_app" -a -n "$watch_app"
+          embedded=$(find "$ios_app" -name StationCoachWatch.app -type d | head -1)
+          for app in "$ios_app" "$watch_app" "$embedded"; do
+            test -n "$app" || { echo "missing app bundle"; exit 1; }
+            test -f "$app/PrivacyInfo.xcprivacy" || { echo "no PrivacyInfo.xcprivacy in $app"; exit 1; }
+            plutil -lint "$app/PrivacyInfo.xcprivacy"
+          done
       - name: Render screens (iOS simulator host, watch views at 46 mm)
         working-directory: Packages/CoachUI
         run: |

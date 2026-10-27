@@ -24,6 +24,10 @@ final class OnboardingScreensTests: XCTestCase {
     XCTAssertFalse(partial.line.contains("baseline is"))
   }
 
+  func testWatchStepStatesPrivacyLine() {
+    XCTAssertEqual(OnboardingWatchScreen.privacyLine, "Your sessions stay on your watch and phone. Nothing is uploaded.")
+  }
+
   func testMomentColoursPassContrast() {
     for t in SessionType.allCases {
       let d = MomentDisplay.make(.first(t), totalSeconds: 3000, fadeSeconds: nil)

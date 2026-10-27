@@ -168,6 +168,9 @@ public struct OnboardingWatchScreen: View {
     self.onSkip = onSkip
   }
 
+  /// Shown under the install check. Must stay true: nothing leaves the phone and watch unless the user exports it.
+  static let privacyLine = "Your sessions stay on your watch and phone. Nothing is uploaded."
+
   private static let rows: [(Activity, String)] = [
     (.skierg, "Tap NEXT when you finish each run or station."),
     (.sledPush, "Hold the screen for Undo and End."),
@@ -200,6 +203,7 @@ public struct OnboardingWatchScreen: View {
             }
           }
         }
+        Text(Self.privacyLine).scaledFont(size: 15, weight: .semibold).foregroundStyle(PhoneTheme.muted).fixedSize(horizontal: false, vertical: true)
       }
     }, footer: {
       PrimaryButton("Build my first session", action: onBuild)
