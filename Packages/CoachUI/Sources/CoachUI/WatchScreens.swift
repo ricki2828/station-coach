@@ -790,15 +790,19 @@ public struct CoachMenuScreen: View {
       Theme.ink.ignoresSafeArea()
       if canSkip {
         let height: CGFloat = resolveWatchCompact(envCompact) ? 44 : 52
-        ScrollView {
-          VStack(spacing: 6) {
-            row("Undo last step", fill: Theme.bone, text: Theme.ink, height: height, action: onUndo)
-            row("Skip station", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onSkip)
-            row("End session", fill: Theme.amber, text: Theme.ink, height: height, action: onEnd)
-            row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onCancel)
-          }
-          .padding(.horizontal, Theme.Space.watchEdge)
+        let rows = VStack(spacing: 6) {
+          row("Undo last step", fill: Theme.bone, text: Theme.ink, height: height, action: onUndo)
+          row("Skip station", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onSkip)
+          row("End session", fill: Theme.amber, text: Theme.ink, height: height, action: onEnd)
+          row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onCancel)
         }
+        .padding(.horizontal, Theme.Space.watchEdge)
+        #if os(watchOS)
+        ScrollView { rows }
+        #else
+        // The test host cannot render a ScrollView (UIKit-backed): show the rows top-aligned, clipped like a scroll's first page.
+        rows.frame(maxHeight: .infinity, alignment: .top).clipped()
+        #endif
       } else {
         VStack(spacing: 8) {
           row("Undo last step", fill: Theme.bone, text: Theme.ink, action: onUndo)
@@ -840,10 +844,11 @@ public struct CoachSkipConfirmScreen: View {
   }
 
   public var body: some View {
-    let height: CGFloat = resolveWatchCompact(envCompact) ? 44 : 52
+    // 40-42 mm: 17 + 3 x 42 + 3 gaps of 4 = 155 pt, inside the ~173 pt budget under the clock.
+    let height: CGFloat = resolveWatchCompact(envCompact) ? 42 : 52
     ZStack {
       Theme.ink.ignoresSafeArea()
-      VStack(spacing: 6) {
+      VStack(spacing: 4) {
         HStack(spacing: 6) {
           Circle().fill(Theme.background(activity)).frame(width: 12, height: 12)
           Text(title).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
@@ -885,10 +890,10 @@ public struct CoachLeftoverScreen: View {
   }
 
   public var body: some View {
-    let height: CGFloat = resolveWatchCompact(envCompact) ? 44 : 52
+    let height: CGFloat = resolveWatchCompact(envCompact) ? 42 : 52
     ZStack {
       Theme.ink.ignoresSafeArea()
-      VStack(spacing: 6) {
+      VStack(spacing: 4) {
         HStack(spacing: 6) {
           Circle().fill(Theme.background(activity)).frame(width: 12, height: 12)
           Text(title).font(.system(size: 17, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
@@ -907,6 +912,7 @@ public struct CoachLeftoverScreen: View {
       }
       .padding(.horizontal, Theme.Space.watchEdge)
       .padding(.top, 2)
+      .padding(.bottom, 8) // clear of the rounded bottom corners
     }
   }
 }
