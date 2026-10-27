@@ -64,6 +64,7 @@ final class RecorderController: ObservableObject {
   /// Time allowed for the first motion sample (the batched stream can start slowly).
   static let startGraceSeconds: TimeInterval = 90
   private var sawFirstSample = false
+  private var thermalObserver: NSObjectProtocol?
 
   init() {
     let saved = UserDefaults.standard.integer(forKey: "cueInterval")
@@ -140,27 +141,7 @@ final class RecorderController: ObservableObject {
       log("session_start", manifest.sessionId)
       await workout.endOrphanedSession()
       try await workout.start()
-      hrWatch.start(at: clock)
-      hrOff = false
-      heartRate = nil
-      motion.onMagnitude = { [weak self] t, m in self?.onMotionMagnitude?(t, m) }
-      motion.start(writer: writer)
-      motionApi = motion.api
-      cues.audioMode = audioMode
-      await cues.prepare()
-      if cues.headphones == false { flash("No headphones: cues by vibration") }
-      if !coach { cues.start(interval: TimeInterval(cueInterval)) }
-      minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-        Task { @MainActor in self?.minuteTick() }
-      }
-      watchdogTotal = 0
-      sawFirstSample = false
-      watchdogSince = Date()
-      watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-        Task { @MainActor in self?.watchdogTick() }
-      }
-      minuteTick()
-      phase = .running
+      await beginRuntime(writer: writer, motion: motion, coach: coach)
     } catch {
       statusMessage = "Could not start: \(error.localizedDescription)"
       writer?.flushAll()
@@ -169,6 +150,89 @@ final class RecorderController: ObservableObject {
       WatchTransfer.shared.activeSessionId = nil
       phase = .idle
     }
+  }
+
+  /// Everything after the workout session is up: heart rate, motion, cues, the timers. Shared by a fresh start and a resume.
+  private func beginRuntime(writer: SessionWriter, motion: MotionRecorder, coach: Bool) async {
+    hrWatch.start(at: clock)
+    hrOff = false
+    heartRate = nil
+    motion.onMagnitude = { [weak self] t, m in self?.onMotionMagnitude?(t, m) }
+    motion.start(writer: writer)
+    motionApi = motion.api
+    cues.audioMode = audioMode
+    await cues.prepare()
+    if cues.headphones == false { flash("No headphones: cues by vibration") }
+    if !coach { cues.start(interval: TimeInterval(cueInterval)) }
+    minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+      Task { @MainActor in self?.minuteTick() }
+    }
+    watchdogTotal = 0
+    sawFirstSample = false
+    watchdogSince = Date()
+    watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+      Task { @MainActor in self?.watchdogTick() }
+    }
+    minuteTick()
+    startThermalLog()
+    phase = .running
+  }
+
+  /// Picks up an unfinished coached session after the app was killed: appends to its files, reattaches the system workout
+  /// session and carries on. False (and the folder untouched) if any of that fails; the caller then closes the folder.
+  func resume(folder: URL) async -> Bool {
+    guard phase == .idle else { return false }
+    coachMode = true
+    phase = .starting
+    statusMessage = nil
+    do {
+      let writer = try SessionWriter(resuming: folder)
+      let motion = MotionRecorder(storeHz: writer.manifest.storeHz)
+      self.writer = writer
+      self.motion = motion
+      labelLog = LabelLog()
+      currentLabel = nil
+      cueCount = 0
+      missedTaps = 0
+      lastCue = "-"
+      startedAt = Date(timeIntervalSince1970: Double(writer.manifest.startedAtEpochMs) / 1000)
+      WatchTransfer.shared.activeSessionId = writer.manifest.sessionId
+      WatchTransfer.shared.pauseForRecording()
+      wire(writer: writer, motion: motion)
+      try await workout.recover()
+      unfinished.removeAll { $0 == writer.manifest.sessionId }
+      await beginRuntime(writer: writer, motion: motion, coach: true)
+      return true
+    } catch {
+      writer?.flushAll()
+      writer = nil
+      motion = nil
+      WatchTransfer.shared.activeSessionId = nil
+      phase = .idle
+      return false
+    }
+  }
+
+  /// A resume was not possible: end the system workout session the relaunch found and keep what was recorded.
+  func abandonRecovered() async {
+    await workout.endOrphanedSession()
+    keepUnfinished()
+  }
+
+  /// A line in `events.csv`.
+  func note(_ kind: String, _ detail: String) { log(kind, detail) }
+
+  private func startThermalLog() {
+    if let t = thermalObserver { NotificationCenter.default.removeObserver(t) }
+    log(ThermalLog.kind, ThermalLog.label(ProcessInfo.processInfo.thermalState))
+    thermalObserver = NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+      Task { @MainActor in self?.log(ThermalLog.kind, ThermalLog.label(ProcessInfo.processInfo.thermalState)) }
+    }
+  }
+
+  private func stopThermalLog() {
+    if let t = thermalObserver { NotificationCenter.default.removeObserver(t) }
+    thermalObserver = nil
   }
 
   func stop() async {
@@ -180,6 +244,7 @@ final class RecorderController: ObservableObject {
     watchdogTimer?.invalidate()
     watchdogTimer = nil
     cues.stop(letSpeechFinish: coachMode)
+    stopThermalLog()
     UserDefaults.standard.set(hrWatch.missedEntireSession(endingAt: clock), forKey: Self.hrMissedKey)
     hrWatch.stop()
     hrOff = false

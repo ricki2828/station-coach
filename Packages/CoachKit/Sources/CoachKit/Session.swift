@@ -131,6 +131,8 @@ public enum SessionFiles {
     }
     m.endedAtEpochMs = Clock.epochMs(newest)
     m.recovered = true
+    // A coached session that could not be resumed keeps its splits: coach.json (early) from the last checkpoint.
+    CoachCheckpoint.salvage(folder: folder, endedAtEpochMs: m.endedAtEpochMs ?? Clock.epochMs(newest))
     m.files = try list(folder).map(\.name)
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -177,7 +179,12 @@ public final class AppendWriter {
       guard fm.createFile(atPath: url.path, contents: Data((header + "\n").utf8)) else { throw CocoaError(.fileWriteUnknown) }
     }
     let h = try FileHandle(forWritingTo: url)
-    try h.seekToEnd()
+    let end = try h.seekToEnd()
+    // A crash can leave a half-written last line. End it, so the first new line starts on its own line.
+    if end > 0 {
+      try h.seek(toOffset: end - 1)
+      if try h.read(upToCount: 1) != Data([0x0A]) { try h.write(contentsOf: Data([0x0A])) }
+    }
     self.handle = h
   }
 
@@ -233,6 +240,17 @@ public final class SessionWriter {
     self.folder = root.appendingPathComponent(manifest.sessionId, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try writeManifest()
+    for stream in SessionStream.allCases {
+      writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
+    }
+  }
+
+  /// Reopens an unfinished session after a relaunch: every stream is appended to, headers are not repeated, and the
+  /// manifest is left as it was. Throws if the folder has no manifest or the session already finished.
+  public init(resuming folder: URL) throws {
+    guard let m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
+    self.manifest = m
+    self.folder = folder
     for stream in SessionStream.allCases {
       writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
     }

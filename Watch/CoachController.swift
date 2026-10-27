@@ -10,11 +10,23 @@ final class LockedCounter {
   private let lock = NSLock()
   private var counter = WallBallCounter()
   private var enabled = false
+  /// Rep times (s) counted before a relaunch, which the detector itself no longer holds.
+  private var carried: [Double] = []
+  private var owner: Int?
 
-  /// Start counting; `fresh` starts from zero, otherwise the earlier count carries on (undo back into a step).
-  func begin(fresh: Bool) {
+  /// Start counting `step`. `fresh` starts from zero. Otherwise the earlier count carries on: from the detector when it
+  /// still holds that step (undo back into it), else from `earlier` (after a relaunch, or an undo across steps).
+  func begin(step: Int, fresh: Bool, earlier: [Double]) {
     lock.lock(); defer { lock.unlock() }
-    if fresh { counter = WallBallCounter() }
+    if fresh {
+      counter = WallBallCounter()
+      carried = []
+      owner = step
+    } else if owner != step {
+      counter = WallBallCounter()
+      carried = earlier
+      owner = step
+    }
     enabled = true
   }
 
@@ -31,7 +43,7 @@ final class LockedCounter {
 
   func snapshot() -> (count: Int, confidence: WallBallCounter.Confidence, times: [Double]) {
     lock.lock(); defer { lock.unlock() }
-    return (counter.count, counter.confidence, counter.repTimes)
+    return (carried.count + counter.count, counter.confidence, carried + counter.repTimes)
   }
 }
 
@@ -48,22 +60,45 @@ final class CoachController: ObservableObject {
 
   private let recorder: RecorderController
   private let transfer = WatchTransfer.shared
-  private var machine: SessionMachine?
+  /// Everything that must survive a relaunch (CoachKit); checkpointed to `coach-checkpoint.json`.
+  private var state: CoachSessionState?
+  private var machine: SessionMachine? {
+    get { state?.machine }
+    set { if let newValue { state?.machine = newValue } }
+  }
   private var scheduler = CueScheduler()
   private let counter = LockedCounter()
   private var ticker: Timer?
-  private var midCueDone = Set<Int>()
-  private var jogInDone = Set<Int>()
-  private var announcedSets = Set<Int>()
-  private var repCorrection = 0
-  private var repsByStep: [Int: [Int64]] = [:]
-  private var correctionByStep: [Int: Int] = [:]
-  private var noRepLog = NoRepLog()
+  private var midCueDone: Set<Int> {
+    get { state?.midCueDone ?? [] }
+    set { state?.midCueDone = newValue }
+  }
+  private var jogInDone: Set<Int> {
+    get { state?.jogInDone ?? [] }
+    set { state?.jogInDone = newValue }
+  }
+  private var announcedSets: Set<Int> {
+    get { state?.announcedSets ?? [] }
+    set { state?.announcedSets = newValue }
+  }
+  private var repCorrection: Int {
+    get { state?.repCorrection ?? 0 }
+    set { state?.repCorrection = newValue }
+  }
+  private var noRepLog: NoRepLog {
+    get { state?.noRepLog ?? NoRepLog() }
+    set { state?.noRepLog = newValue }
+  }
   /// NO REP button and Undo chip timing (CoachKit).
   private var noRepRest = NoRepRest()
   private var noRepShown: Bool { noRepRest.shown }
-  private var noRepAnnounced = false
-  private var enteredWallBalls = Set<Int>()
+  private var noRepAnnounced: Bool {
+    get { state?.noRepAnnounced ?? false }
+    set { state?.noRepAnnounced = newValue }
+  }
+  private var checkpointSeq = 0
+  private var checkpointedReps = -1
+  private var checkpointFailed = false
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
@@ -106,30 +141,57 @@ final class CoachController: ObservableObject {
     finish = nil
     await recorder.start(coach: true, transitionSeconds: plan.transitionSeconds)
     guard recorder.phase == .running else { return }
-    var m = SessionMachine(plan: plan)
-    m.start(at: nowMs)
-    machine = m
+    var fresh = CoachSessionState(plan: plan)
+    fresh.machine.start(at: nowMs)
+    state = fresh
+    checkpointSeq = 0
+    checkpointedReps = -1
+    checkpointFailed = false
     scheduler = CueScheduler()
-    midCueDone = []
-    jogInDone = []
-    announcedSets = []
-    repCorrection = 0
-    repsByStep = [:]
-    correctionByStep = [:]
-    noRepLog.reset()
     noRepRest = NoRepRest()
-    noRepAnnounced = false
-    enteredWallBalls = []
     lastLabel = nil
     let c = counter
     recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
     active = true
     beginStep()
+    checkpoint()
+    startTicker()
+    refresh()
+  }
+
+  private func startTicker() {
     ticker?.invalidate()
     ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.tick() }
     }
+  }
+
+  /// Picks a session up after the app was killed mid-session: the workout reattached, the files appended to, and the
+  /// coach state restored from `coach-checkpoint.json`. False when nothing could be resumed; the caller then closes the
+  /// folder, which writes `coach.json` from the checkpoint so the splits still reach History.
+  func resume() async -> Bool {
+    guard !active, recorder.phase == .idle, let root = try? SessionFiles.defaultRoot(),
+          let found = CoachCheckpoint.latestResumable(in: root, nowMs: nowMs) else { return false }
+    guard await recorder.resume(folder: found.folder) else { return false }
+    state = found.checkpoint.state
+    checkpointSeq = found.checkpoint.seq + 1
+    checkpointedReps = -1
+    checkpointFailed = false
+    scheduler = CueScheduler()
+    noRepRest = NoRepRest()
+    lastLabel = nil
+    finish = nil
+    let c = counter
+    recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
+    active = true
+    if let step = machine?.current {
+      recorder.note("recovered_resume", "step=\(step.index) splits=\(machine?.splits.count ?? 0) seq=\(found.checkpoint.seq)\(found.usedBackup ? " backup" : "")")
+    }
+    beginStep(announce: false)
+    checkpoint()
+    startTicker()
     refresh()
+    return true
   }
 
   func advance() {
@@ -142,6 +204,7 @@ final class CoachController: ObservableObject {
       leaveStep(before)
       WKInterfaceDevice.current().play(.click)
       beginStep()
+      checkpoint()
     case .finished:
       leaveStep(before)
       WKInterfaceDevice.current().play(.click)
@@ -158,6 +221,7 @@ final class CoachController: ObservableObject {
       machine = m
       WKInterfaceDevice.current().play(.retry)
       beginStep(announce: false)
+      checkpoint()
     }
     showMenu = false
     refresh()
@@ -176,6 +240,7 @@ final class CoachController: ObservableObject {
     guard active else { return }
     repCorrection += delta
     WKInterfaceDevice.current().play(.click)
+    checkpoint()
     refresh()
   }
 
@@ -190,6 +255,7 @@ final class CoachController: ObservableObject {
       noRepAnnounced = true
       offer(.noRep, CoachCopy.noRepNoted)
     }
+    checkpoint()
     refresh()
   }
 
@@ -198,6 +264,7 @@ final class CoachController: ObservableObject {
     guard active, let step = machine?.current, noRepLog.undoLast(inStep: step.index) != nil else { return }
     noRepRest.clearUndo()
     WKInterfaceDevice.current().play(.retry)
+    checkpoint()
     refresh()
   }
 
@@ -214,9 +281,7 @@ final class CoachController: ObservableObject {
   /// Banks the wall-ball reps of the step just left and stops counting.
   private func leaveStep(_ step: PlanStep?) {
     guard let step, step.activity == .wallBalls else { return }
-    let snap = counter.snapshot()
-    repsByStep[step.index] = snap.times.map { Int64(($0 * 1000).rounded()) }
-    correctionByStep[step.index] = repCorrection
+    state?.bank(step: step, repTimesMs: Self.repTimesMs(counter.snapshot().times))
     noRepRest.hide()
     scheduler.drop(.noRep)
     counter.pause()
@@ -227,18 +292,12 @@ final class CoachController: ObservableObject {
     scheduler.drop(.jogIn) // still waiting out the cue gap when the athlete moved on: no use now
     applyLabel()
     if step.activity == .wallBalls {
-      let fresh = !enteredWallBalls.contains(step.index)
-      enteredWallBalls.insert(step.index)
-      counter.begin(fresh: fresh)
-      repCorrection = fresh ? 0 : (correctionByStep[step.index] ?? 0)
+      let fresh = state?.enterWallBalls(step) ?? true
+      let earlier = (state?.repsByStep[step.index] ?? []).map { Double($0) / 1000 }
+      counter.begin(step: step.index, fresh: fresh, earlier: earlier)
       noRepRest.reset(count: counter.snapshot().count, nowMs: nowMs)
-      // Sets already passed (an undo back into the step) are not announced again.
-      announcedSets = []
-      var cumulative = 0
-      for (k, size) in step.sets.enumerated() {
-        cumulative += size
-        if repsDone(step) >= cumulative { announcedSets.insert(k) }
-      }
+      // Sets already passed (an undo back into the step, or a resume) are not announced again.
+      state?.resetAnnouncedSets(for: step, repsDone: repsDone(step))
     } else {
       counter.pause()
     }
@@ -268,35 +327,51 @@ final class CoachController: ObservableObject {
          let text = CoachCopy.midStation(step) {
         midCueDone.insert(step.index)
         offer(.midStation, text)
+        checkpoint()
       }
       if step.isRun, !jogInDone.contains(step.index),
          CoachCopy.jogInDue(run: step, next: m.next, elapsedSeconds: elapsed, transitionSeconds: m.plan.transitionSeconds) {
         jogInDone.insert(step.index)
         offer(.jogIn, CoachCopy.jogIn)
+        checkpoint()
       }
-      if step.activity == .wallBalls { announceSets(step) }
+      if step.activity == .wallBalls {
+        announceSets(step)
+        if counter.snapshot().count != checkpointedReps { checkpoint() } // a rep was counted: at most one write per rep
+      }
       refresh()
     }
     pump()
   }
 
   private func repsDone(_ step: PlanStep) -> Int {
-    let total = step.reps ?? 100
-    return min(total, max(0, counter.snapshot().count + repCorrection - noRepLog.count(inStep: step.index)))
+    state?.repsDone(step, counted: counter.snapshot().count) ?? 0
+  }
+
+  private static func repTimesMs(_ seconds: [Double]) -> [Int64] { seconds.map { Int64(($0 * 1000).rounded()) } }
+
+  /// Writes `coach-checkpoint.json` (atomic). Called on every change that matters, never on the 1 s tick itself.
+  private func checkpoint() {
+    guard active, var s = state, let folder = recorder.sessionFolder, let step = s.machine.current else { return }
+    let snap = counter.snapshot()
+    s.bank(step: step, repTimesMs: Self.repTimesMs(snap.times)) // provisional times of the step in progress
+    checkpointedReps = snap.count
+    let cp = CoachCheckpoint(sessionId: folder.lastPathComponent, savedAtEpochMs: nowMs, seq: checkpointSeq, state: s)
+    checkpointSeq += 1
+    do {
+      try CoachCheckpoint.write(cp, to: folder)
+    } catch {
+      guard !checkpointFailed else { return }
+      checkpointFailed = true
+      recorder.note("checkpoint_error", "\(error)")
+    }
   }
 
   /// Said only while the count is trustworthy: a "Set done" spoken at a wrong count is worse than silence.
   private func announceSets(_ step: PlanStep) {
-    let done = repsDone(step)
     let trusted = counter.snapshot().confidence == .high
-    var cumulative = 0
-    for (k, size) in step.sets.enumerated() {
-      cumulative += size
-      if done >= cumulative, !announcedSets.contains(k) {
-        announcedSets.insert(k)
-        let next = k + 1 < step.sets.count ? step.sets[k + 1] : nil
-        if trusted { offer(.wallBallSet, CoachCopy.wallBallSetDone(nextSet: next)) }
-      }
+    for done in state?.newlyDoneSets(step, repsDone: repsDone(step)) ?? [] where trusted {
+      offer(.wallBallSet, CoachCopy.wallBallSetDone(nextSet: done.next))
     }
   }
 
@@ -363,11 +438,7 @@ final class CoachController: ObservableObject {
   static let undoWindowSeconds = 10
 
   private func finishSession(early: Bool) {
-    guard let m = machine, let started = m.startMs else { return }
-    let ended = m.endMs ?? nowMs
-    let allReps = repsByStep.values.flatMap { $0 }.sorted()
-    let result = CoachResult(plan: m.plan, splits: m.splits, early: early, repTimesMs: allReps, repCorrection: correctionByStep.values.reduce(0, +),
-                             startedAtEpochMs: started, endedAtEpochMs: ended, noReps: noRepLog.events)
+    guard let m = machine, let result = state?.makeResult(early: early, endedAtEpochMs: nowMs) else { return }
     let saved = writeResult(result)
 
     let best = result.bestWorstStations
@@ -444,6 +515,8 @@ final class CoachController: ObservableObject {
     }
     try? await Task.sleep(nanoseconds: 300_000_000) // the delegate's finished event arrives on the main queue
     recorder.onMotionMagnitude = nil
+    // Clean finish: coach.json is the record. The checkpoint must not travel to the phone in the file list.
+    if let folder = recorder.sessionFolder { CoachCheckpoint.remove(from: folder) }
     await recorder.stop()
     finish?.saving = false
   }
@@ -459,6 +532,7 @@ final class CoachController: ObservableObject {
     active = true
     WKInterfaceDevice.current().play(.retry)
     beginStep(announce: false)
+    checkpoint()
     refresh()
   }
 }

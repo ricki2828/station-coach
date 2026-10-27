@@ -36,6 +36,27 @@ final class WorkoutService: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBui
     }
   }
 
+  struct RecoveryError: Error, CustomStringConvertible {
+    let description: String
+  }
+
+  /// Reattaches to the workout session the system kept alive across a relaunch (called from `handleActiveWorkoutRecovery`).
+  /// The builder keeps collecting; only the delegates need setting again. Not verifiable without a watch.
+  func recover() async throws {
+    guard let recovered = try await store.recoverActiveWorkoutSession() else { throw RecoveryError(description: "no active workout session") }
+    guard recovered.state != .ended, recovered.state != .stopped else { throw RecoveryError(description: "recovered session already ended") }
+    let builder = recovered.associatedWorkoutBuilder()
+    if builder.dataSource == nil {
+      builder.dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: recovered.workoutConfiguration)
+    }
+    recovered.delegate = self
+    builder.delegate = self
+    session = recovered
+    self.builder = builder
+    stopping = false
+    onEvent?("workout_recovered", "state \(recovered.state.rawValue)")
+  }
+
   func start() async throws {
     let config = HKWorkoutConfiguration()
     config.activityType = .crossTraining
