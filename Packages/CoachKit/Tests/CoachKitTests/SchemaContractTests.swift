@@ -5,7 +5,8 @@ import XCTest
 /// tools/tests/test_schema.py validates against docs/schema/*.schema.json. A new Codable field changes the encoding,
 /// fails here until the fixture is regenerated, and then fails the schema test until the schema is updated.
 /// Regenerate: SC_UPDATE_CONTRACT=1 swift test --filter SchemaContractTests (run from Packages/CoachKit).
-/// Optionals are all set in the "full" variants and all nil in the "min" ones, so a new optional field shows up too.
+/// Every stored property of a "full" value, at any depth and access level, must be non-nil (checked with Mirror), so a new
+/// optional field cannot hide as an omitted key; the "min" variants leave optionals nil.
 final class SchemaContractTests: XCTestCase {
   private var dir: URL {
     URL(fileURLWithPath: #filePath)
@@ -19,7 +20,12 @@ final class SchemaContractTests: XCTestCase {
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try enc.encode(value)
-    if ProcessInfo.processInfo.environment["SC_UPDATE_CONTRACT"] == "1" {
+    let env = ProcessInfo.processInfo.environment
+    if env["SC_UPDATE_CONTRACT"] == "1" {
+      if env["CI"] != nil {
+        XCTFail("SC_UPDATE_CONTRACT is set in CI: refusing to rewrite the fixtures and pass", file: file, line: line)
+        return
+      }
       try (data + Data("\n".utf8)).write(to: url)
       return
     }
@@ -27,6 +33,31 @@ final class SchemaContractTests: XCTestCase {
     let got = try JSONSerialization.jsonObject(with: data) as AnyObject
     let want = try JSONSerialization.jsonObject(with: committed) as AnyObject
     XCTAssertTrue(got.isEqual(want), "\(name).json is out of date with the Swift type. Encoded now:\n\(String(decoding: data, as: UTF8.self))", file: file, line: line)
+  }
+
+  /// Fails for any nil stored property, at any depth (structs and arrays), whatever its access level.
+  private func assertAllSet(_ value: Any, _ path: String, file: StaticString = #filePath, line: UInt = #line) {
+    let m = Mirror(reflecting: value)
+    if m.displayStyle == .optional {
+      guard let wrapped = m.children.first?.value else {
+        XCTFail("\(path) is nil in a \"full\" value: set it, regenerate the fixture and update the schema", file: file, line: line)
+        return
+      }
+      assertAllSet(wrapped, path, file: file, line: line)
+      return
+    }
+    guard m.displayStyle == .struct || m.displayStyle == .collection else { return } // scalars, strings, enums
+    for (i, child) in m.children.enumerated() {
+      assertAllSet(child.value, "\(path).\(child.label ?? "[\(i)]")", file: file, line: line)
+    }
+  }
+
+  /// Every optional set (steps of a run carry `reps` here only so the Mirror check can demand a value).
+  private var fullPlan: SessionPlan {
+    SessionPlan(division: .openMen, type: .wallBallFocus, raceTargetSeconds: 5400, steps: [
+      PlanStep(activity: .run, index: 0, runNumber: 1, targetSeconds: 300, reps: 1, sets: []),
+      PlanStep(activity: .wallBalls, index: 1, runNumber: 2, targetSeconds: 240, reps: 50, sets: [25, 25]),
+    ], transitionSeconds: 10)
   }
 
   private var plan: SessionPlan {
@@ -37,7 +68,8 @@ final class SchemaContractTests: XCTestCase {
   }
 
   func testPlan() throws {
-    try check(plan, "plan")
+    assertAllSet(fullPlan, "plan")
+    try check(fullPlan, "plan")
   }
 
   func testManifestFullAndMin() throws {
@@ -50,6 +82,7 @@ final class SchemaContractTests: XCTestCase {
     full.files = ["manifest.json", "coach.json"]
     full.recovered = true
     full.resumed = 2
+    assertAllSet(full, "manifest")
     try check(full, "manifest-full")
     let min = SessionManifest(
       sessionId: "s", startedAtEpochMs: 1, device: "d", osVersion: "o", appVersion: "a", workoutActivityType: "w",
@@ -59,19 +92,22 @@ final class SchemaContractTests: XCTestCase {
 
   func testCoachFullAndMin() throws {
     let splits = [StepSplit(stepIndex: 0, startMs: 1_790_000_000_000, endMs: 1_790_000_300_000),
-                  StepSplit(stepIndex: 1, startMs: 1_790_000_300_000)]
+                  StepSplit(stepIndex: 1, startMs: 1_790_000_300_000, endMs: 1_790_000_400_000)]
     let full = CoachResult(
-      plan: plan, splits: splits, early: true, repTimesMs: [1_790_000_310_000, 1_790_000_313_000], repCorrection: -1,
+      plan: fullPlan, splits: splits, early: true, repTimesMs: [1_790_000_310_000, 1_790_000_313_000], repCorrection: -1,
       startedAtEpochMs: 1_790_000_000_000, endedAtEpochMs: 1_790_000_400_000,
       noReps: [NoRepEvent(tMs: 1_790_000_313_500, setIndex: 0, stepIndex: 1)],
       wallBallCorrection: WallBallCorrection(validReps: 48, noReps: 2))
+    assertAllSet(full, "coach")
     try check(full, "coach-full")
     let min = CoachResult(plan: plan, splits: [], early: false, repTimesMs: [], repCorrection: 0, startedAtEpochMs: 1, endedAtEpochMs: 2)
     try check(min, "coach-min")
   }
 
   func testPhoneCorrection() throws {
-    try check(WallBallCorrection(validReps: 48, noReps: 2), "phone-correction")
+    let c = WallBallCorrection(validReps: 48, noReps: 2)
+    assertAllSet(c, "correction")
+    try check(c, "phone-correction")
   }
 
   /// Early builds wrote a bare Int (total throws) for `wallBallCorrection`: it decodes, and the schema accepts it.
