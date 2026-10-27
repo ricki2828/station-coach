@@ -58,7 +58,7 @@ final class CoachController: ObservableObject {
   /// Coached sessions finished on this watch: the first one gets the baseline lines.
   /// Per athlete code (athletes share a watch on gym day). Only a session that ran to the end counts: one ended early
   /// never says the baseline line, so it must not use the first-session status up.
-  private var finishedKey: String { "coachedSessionsFinished." + recorder.athlete }
+  private var finishedKey: String { recorder.athlete.isEmpty ? "coachedSessionsFinished" : "coachedSessionsFinished." + recorder.athlete }
   private var isFirstSession: Bool { UserDefaults.standard.integer(forKey: finishedKey) == 0 }
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
