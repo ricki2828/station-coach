@@ -29,6 +29,13 @@ Actions, `testflight`, Run workflow (or push a tag such as `beta-3`). The build 
 
 The lane is `xcodegen`, `xcodebuild archive`, then `xcodebuild -exportArchive` with `destination` `upload` in the export options, which uploads straight to App Store Connect. It uses only what ships with Xcode: no Ruby or Bundler to pin, and no separate `altool` step (Apple is steering away from `altool --upload-app`). The runner selects the newest stable Xcode 26.x first (`tools/ci/select-xcode.sh`, also used by `ci.yml`), because App Store Connect now wants uploads built with the 26 SDKs. Signing is automatic: `-allowProvisioningUpdates` with the API key creates the cloud-managed certificate and profiles, so none are in the repo. Each clean runner may create a new Apple Development certificate; if Apple reports the certificate limit, revoke old ones. The key is written to a temp file with mode 600 and deleted in an `always()` step.
 
+## Privacy manifest and policy
+
+- `iOS/PrivacyInfo.xcprivacy` and `Watch/PrivacyInfo.xcprivacy` declare the required-reason APIs the app uses: UserDefaults CA92.1, file timestamp C617.1, and on the watch system boot time 8FFB.1 (absolute timestamps for motion samples). Without them App Store Connect does not accept the upload (Apple, "Describing use of required reason API"). CI checks the files are inside the Debug and Release builds and that the reason codes are the expected ones.
+- `NSPrivacyCollectedDataTypes` is empty on purpose. The app has no network code, and Apple does not count data processed only on device as collected. In App Store Connect answer App Privacy as "Data Not Collected". The manifest and the App Store Connect answers must agree. Open question for Ricki: if testers send gym-day zips to him as a standing programme, he holds health data by user-initiated sharing; decide whether that changes the answer and cover it in the policy and tester consent.
+- If you add an API from Apple's required-reason list (UserDefaults, file timestamps, boot time, disk space, active keyboards), add its reason code to the manifest of every app whose code uses it, including code in CoachKit/CoachUI, which links into both apps.
+- A privacy policy URL is required in App Store Connect before external testers. `docs/PRIVACY.md` is a draft for Ricki and a lawyer; it is not published.
+
 ## Background modes and other notes
 
 - `WKBackgroundModes` `workout-processing` and `audio` are set in `project.yml`. Confirm the audio mode is accepted for the profile.
