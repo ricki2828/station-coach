@@ -52,6 +52,38 @@ final class ShareLoopTests: XCTestCase {
     return Double(sum) / Double(max(1, min(x.count, y.count)))
   }
 
+  /// Fraction of pixels where any colour channel differs by more than `by` (a missing label or segment shows here even when the
+  /// whole-frame mean barely moves).
+  private func badPixelFraction(_ a: UIImage, _ b: UIImage, by: Int = 48) throws -> Double {
+    func bytes(_ i: UIImage) throws -> [UInt8] {
+      let cg = try XCTUnwrap(i.cgImage)
+      var data = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+      let ctx = try XCTUnwrap(CGContext(data: &data, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+      return data
+    }
+    let x = try bytes(a), y = try bytes(b)
+    XCTAssertEqual(x.count, y.count)
+    var bad = 0
+    var i = 0
+    while i + 3 < min(x.count, y.count) {
+      if abs(Int(x[i]) - Int(y[i])) > by || abs(Int(x[i + 1]) - Int(y[i + 1])) > by || abs(Int(x[i + 2]) - Int(y[i + 2])) > by { bad += 1 }
+      i += 4
+    }
+    return Double(bad) / Double(max(1, min(x.count, y.count) / 4))
+  }
+
+  private func composite(_ comp: ShareLoopCompositor, _ t: Double) throws -> UIImage {
+    let ctx = try XCTUnwrap(CGContext(data: nil, width: 1080, height: 1350, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue))
+    if ShareLoop.isStill(t) { comp.drawStill(into: ctx, alpha: 1) }
+    else if t > ShareLoop.holdEnd { comp.drawStill(into: ctx, alpha: 1 - ShareLoop.progress(t, ShareLoop.holdEnd, ShareLoop.duration)) }
+    else { comp.draw(t, into: ctx) }
+    return UIImage(cgImage: try XCTUnwrap(ctx.makeImage()))
+  }
+
   func testKeyFrames() throws {
     let frames: [(String, CoachResult, MomentDisplay?, Double)] = [
       ("full", full, nil, 0.4), ("full", full, nil, 1.5), ("full", full, nil, 2.7), ("full", full, nil, 3.5), ("full", full, nil, 4.5),
@@ -102,28 +134,43 @@ final class ShareLoopTests: XCTestCase {
     XCTAssertEqual(ShareLoop.frameCount, 150)
   }
 
-  /// The composited frame (layers drawn with an alpha or an offset) matches the reference render of the same view at the same `t`.
+  /// The composited frame (layers drawn with an alpha or an offset) matches the reference render of the same view at the same `t`:
+  /// on average over the frame, and locally (under 0.05% of pixels off by more than 48 in any channel), so one missing label,
+  /// lift or badge cannot hide in a good mean. The local check runs where nothing sits at a fractional offset, because a
+  /// resampled image and a re-rasterised glyph legitimately differ at the edges of moving text.
   func testCompositedFramesMatchTheFullRender() throws {
     let cases: [(String, CoachResult, MomentDisplay?)] = [("full", full, nil), ("partial", partial, nil), ("best", full, best)]
+    let steady: Set<Double> = [1.0, 1.4, 2.0, 2.6, 3.75, 4.9]
     for (name, result, moment) in cases {
       let comp = ShareLoopCompositor(result: result, moment: moment, dateText: date)
       for t in [0.1, 0.3, 0.6, 0.85, 1.0, 1.4, 2.0, 2.6, 2.8, 3.0, 3.3, 3.6, 3.75, 4.9, 4.95] {
         if comp.needsFullRender(t) { continue }
-        let ctx = try XCTUnwrap(CGContext(data: nil, width: 1080, height: 1350, bitsPerComponent: 8, bytesPerRow: 0,
-                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue))
-        if ShareLoop.isStill(t) { comp.drawStill(into: ctx, alpha: 1) }
-        else if t > ShareLoop.holdEnd { comp.drawStill(into: ctx, alpha: 1 - ShareLoop.progress(t, ShareLoop.holdEnd, ShareLoop.duration)) }
-        else { comp.draw(t, into: ctx) }
-        let composed = UIImage(cgImage: try XCTUnwrap(ctx.makeImage()))
-        let d = try meanDiff(composed, image(frame(result, moment, t: t)))
-        if d >= 1.5 {
+        let composed = try composite(comp, t)
+        let reference = try image(frame(result, moment, t: t))
+        let d = try meanDiff(composed, reference)
+        let bad = steady.contains(t) ? try badPixelFraction(composed, reference) : 0
+        if d >= 1.5 || bad >= 0.0005 {
           try write(composed, "fail-composite-\(name)-t\(t)")
-          try write(image(frame(result, moment, t: t)), "fail-reference-\(name)-t\(t)")
+          try write(reference, "fail-reference-\(name)-t\(t)")
         }
         XCTAssertLessThan(d, 1.5, "\(name) t=\(t): composite drifts from the full render (mean diff \(d))")
+        XCTAssertLessThan(bad, 0.0005, "\(name) t=\(t): \(bad * 100)% of pixels differ by more than 48")
       }
     }
+  }
+
+  /// The local check has teeth: with the station labels dropped from the composite, the whole-frame mean stays under its
+  /// threshold but the bad-pixel fraction fails.
+  func testGuardCatchesADroppedLabel() throws {
+    let comp = ShareLoopCompositor(result: full, moment: nil, dateText: date)
+    comp.debugDropLabels = true
+    let t = 2.6
+    let composed = try composite(comp, t)
+    let reference = try image(frame(full, nil, t: t))
+    let mean = try meanDiff(composed, reference)
+    let bad = try badPixelFraction(composed, reference)
+    print("dropped label: mean diff \(mean), bad pixels \(bad * 100)%")
+    XCTAssertGreaterThan(bad, 0.0005, "the local check should fail when the labels are missing (mean diff was \(mean))")
   }
 
   func testLiftNamesTheInsightsStation() throws {

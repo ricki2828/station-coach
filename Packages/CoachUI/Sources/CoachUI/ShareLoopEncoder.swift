@@ -22,6 +22,11 @@ final class ShareLoopCompositor {
   /// Where each labelled station's segment ends, as a fraction of the strip's width, ascending and de-duplicated.
   private let labelEnds: [Double]
   private let size = CGSize(width: 1080, height: 1350)
+  /// The band of the frame, in points from the top, that the count-up number is rendered in. The number sits between about 125 and 215.
+  private static let textBandTop: CGFloat = 100
+  private static let textBandHeight: CGFloat = 140
+  /// Test hook: skip the station labels, to show the composite guard catches a dropped label.
+  var debugDropLabels = false
   private let scale = ShareCardV2.renderScale
   /// The strip's left edge and width in pixels (20 pt page padding, 320 pt wide).
   private let stripX: CGFloat = 60
@@ -55,7 +60,11 @@ final class ShareLoopCompositor {
       img = render(ShareLoopFrame(layer: l, result: result, moment: moment, dateText: dateText,
                                   heroText: l == .cardZero ? ShareLoop.heroText(result: result, moment: moment, clock: 0) : nil))
     case .text(let s):
-      img = render(ShareLoopFrame(layer: .heroText, result: result, moment: moment, dateText: dateText, heroText: s))
+      // The number sits in a band of the card; render only that band (a third of the canvas) and draw it back at its place.
+      img = render(ShareLoopFrame(layer: .heroText, result: result, moment: moment, dateText: dateText, heroText: s)
+        .offset(y: -Self.textBandTop)
+        .frame(width: ShareCardV2.size.width, height: Self.textBandHeight, alignment: .topLeading)
+        .clipped())
     case .labels(let k):
       img = render(ShareLoopFrame(layer: .labels, result: result, moment: moment, dateText: dateText, labelsRevealed: k < 0 ? 0 : labelEnds[k]))
     case .still:
@@ -79,7 +88,10 @@ final class ShareLoopCompositor {
     ctx.setAlpha(CGFloat(alpha))
     if let clipWidth { ctx.clip(to: CGRect(x: stripX, y: 0, width: clipWidth, height: size.height)) }
     // Bitmap context space is y-up; SwiftUI offsets are y-down in points.
-    ctx.draw(img, in: CGRect(x: 0, y: -CGFloat(dy) * scale, width: size.width, height: size.height))
+    // A cropped layer (the number's band) hangs from `top` points below the top edge; a full layer is at 0.
+    let top: CGFloat = { if case .text = key { return Self.textBandTop * scale } else { return 0 } }()
+    let h = CGFloat(img.height)
+    ctx.draw(img, in: CGRect(x: 0, y: size.height - top - h - CGFloat(dy) * scale, width: size.width, height: h))
     ctx.restoreGState()
   }
 
@@ -93,7 +105,7 @@ final class ShareLoopCompositor {
     paint(ctx, .layer(.track), alpha: st.rise * (1 - st.clock))
     paint(ctx, .layer(.bars), alpha: st.rise, clipWidth: stripW * CGFloat(st.clock))
     let done = labelEnds.lastIndex { $0 <= st.clock + 1e-9 }
-    if let done { paint(ctx, .labels(done), alpha: st.rise) }
+    if let done, !debugDropLabels { paint(ctx, .labels(done), alpha: st.rise) }
     if st.lift > 0 && st.lift < 1 && ShareLoop.liftIndex(result) != nil {
       paint(ctx, .layer(.lift), dy: -6 * sin(Double.pi * st.lift))
     }
@@ -182,16 +194,19 @@ public enum ShareLoopEncoder {
         } else {
           guard let b = autoreleasepool(invoking: { () -> CVPixelBuffer? in
             guard let b = makeBuffer(adaptor, w, h) else { return nil }
-            let ok = fill(b, w, h) { ctx in
+            let ok = fill(b, w, h) { ctx -> Bool in
               if ShareLoop.isStill(t) {
                 compositor.drawStill(into: ctx, alpha: 1)
               } else if t > ShareLoop.holdEnd {
                 compositor.drawStill(into: ctx, alpha: 1 - ShareLoop.progress(t, ShareLoop.holdEnd, ShareLoop.duration))
               } else if !composite || compositor.needsFullRender(t) {
-                if let cg = compositor.fullFrame(t) { ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h)) }
+                // No image means no frame: fail, and the caller falls back to the still card (never reuse a stale pooled buffer).
+                guard let cg = compositor.fullFrame(t) else { return false }
+                ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
               } else {
                 compositor.draw(t, into: ctx)
               }
+              return true
             }
             return ok ? b : nil
           }) else { throw EncodeError.render(i) }
@@ -232,14 +247,13 @@ public enum ShareLoopEncoder {
   }
 
   /// Runs `draw` with a context over the buffer's memory (premultiplied BGRA, sRGB).
-  private static func fill(_ buffer: CVPixelBuffer, _ w: Int, _ h: Int, _ draw: (CGContext) -> Void) -> Bool {
+  private static func fill(_ buffer: CVPixelBuffer, _ w: Int, _ h: Int, _ draw: (CGContext) -> Bool) -> Bool {
     CVPixelBufferLockBaseAddress(buffer, [])
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
     guard let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: w, height: h, bitsPerComponent: 8,
                               bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                               bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return false }
-    draw(ctx)
-    return true
+    return draw(ctx)
   }
 }
 #endif
