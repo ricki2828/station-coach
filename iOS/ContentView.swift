@@ -103,8 +103,8 @@ struct HomeHost: View {
           if app.watchNudge && !phone.watchAppInstalled {
             InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
           }
-          HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup), recoveredIds: phone.recoveredIds,
-                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()),
+          HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
+                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()), recoveredIds: phone.recoveredIds,
                      onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan },
                      onOpenWeek: { openSummary() })
         }
