@@ -40,6 +40,7 @@ public enum CoachConsentCopy {
   public static let resetNotice = "AI coach was reset after 30 days without use. Your earlier debriefs are kept. Turn it on again if you want more."
   public static let revokedPending = "AI coach is off. We\u{2019}ll delete your data as soon as we can reach our server."
 
+  public static let needsUpdate = "Update the app to keep the AI coach. Nothing more is sent until you do."
   public static let reconsentStatement = "What\u{2019}s sent has changed"
   public static let keepItOn = "Keep it on"
   public static let turnOff = "Turn off"
@@ -237,6 +238,8 @@ public enum CoachSettingsState: Equatable {
   case revokedPending
   /// The service forgot this install after 30 idle days.
   case reset
+  /// The service wants a consent this build cannot show: only turning off is offered.
+  case needsUpdate
 }
 
 public struct CoachSettingsCard: View {
@@ -265,6 +268,13 @@ public struct CoachSettingsCard: View {
             .buttonStyle(.plain)
           case .revoked(let n):
             Text(CoachConsentCopy.revoked(deleted: n)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+          case .needsUpdate:
+            Text(CoachConsentCopy.needsUpdate).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+            Button(action: onTurnOff) {
+              Text(CoachConsentCopy.turnOffRow).underline().scaledFont(15, .semibold).foregroundStyle(PhoneTheme.amberText)
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
           case .reset:
             Text(CoachConsentCopy.resetNotice).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
           case .revokedPending:
