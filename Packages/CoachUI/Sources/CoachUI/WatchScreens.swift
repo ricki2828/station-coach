@@ -9,12 +9,21 @@ import WatchKit
 struct DeltaBand: View {
   let seconds: Int
   var height: CGFloat = 26
+  /// A phase word ("Transition", later "Changeover") shown small beside the delta; it scales down, never truncates.
+  var tag: String?
 
   var body: some View {
-    Text(Fmt.delta(seconds))
-      .font(Theme.number(Theme.Size.band)).condensed()
-      .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
-      .lineLimit(1)
+    HStack(spacing: 6) {
+      if let tag {
+        Text(tag.uppercased()).font(.system(size: 11, weight: .heavy)).foregroundStyle(Theme.bone.opacity(0.8))
+          .lineLimit(1).minimumScaleFactor(0.5)
+      }
+      Text(Fmt.delta(seconds))
+        .font(Theme.number(Theme.Size.band)).condensed()
+        .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
+        .lineLimit(1).fixedSize()
+    }
+      .padding(.horizontal, 6)
       .frame(maxWidth: .infinity)
       .frame(height: height)
       .background(Theme.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 8))
@@ -102,11 +111,12 @@ struct Toast: View {
 
   var body: some View {
     Text(text)
-      .font(.system(size: 15, weight: .semibold))
+      .font(.system(size: 14, weight: .semibold))
       .foregroundStyle(Theme.bone)
       .multilineTextAlignment(.center)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
+      .lineLimit(2).minimumScaleFactor(0.6)
+      .padding(.horizontal, 6)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Theme.ink.opacity(0.92), in: RoundedRectangle(cornerRadius: 10))
   }
 }
@@ -133,6 +143,32 @@ public struct AlarmBanner: View {
     .frame(maxWidth: .infinity)
     .padding(6)
     .background(Color.red, in: RoundedRectangle(cornerRadius: 10))
+  }
+}
+
+/// The alarm as its own screen with one way out, so it never sits over the numbers.
+struct AlarmScreen: View {
+  let text: String
+  let onAction: () -> Void
+
+  var body: some View {
+    VStack(spacing: 4) {
+      Spacer(minLength: 0)
+      Text("RECORDING AT RISK").font(.system(size: 15, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
+      Text(text).font(.system(size: 17, weight: .semibold)).multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7)
+      Spacer(minLength: 0)
+      Button(action: onAction) {
+        Text("OK").font(.system(size: 22, weight: .heavy)).foregroundStyle(Color.red)
+          .frame(maxWidth: .infinity, minHeight: 44)
+          .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+      }.buttonStyle(.plain)
+    }
+    .foregroundStyle(.white)
+    .padding(.horizontal, Theme.Space.watchEdge)
+    .padding(.top, 2)
+    .padding(.bottom, 4)
+    .background(Color.red.ignoresSafeArea())
+    .accessibilityElement(children: .contain)
   }
 }
 
@@ -357,6 +393,14 @@ public struct CoachStepScreen: View {
   private var compact: Bool { resolveWatchCompact(envCompact) }
 
   public var body: some View {
+    if let alarm = model.alarm {
+      AlarmScreen(text: alarm, onAction: onAlarm)
+    } else {
+      stepBody
+    }
+  }
+
+  private var stepBody: some View {
     let fg = dimmed ? Theme.background(model.activity) : Theme.text(model.activity)
     // Wrist down, the station colour is only safe for the big numbers: small text goes bone to stay readable on ink.
     let small = dimmed ? Theme.bone.opacity(0.85) : fg
@@ -367,7 +411,14 @@ public struct CoachStepScreen: View {
     let tight = c && model.noRepVisible
     let button: CGFloat = c ? (tight ? 40 : 44) : 48
     VStack(spacing: tight ? 1 : 2) {
-      DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24))
+      if let toast = model.toast {
+        // A notice takes the band and title rows for its few seconds, so it never covers the dominant number.
+        let rowH: CGFloat = tight ? 20 : (c ? 22 : 24)
+        Toast(text: toast).frame(maxWidth: .infinity).frame(height: rowH + (tight ? 16 : (c ? 18 : 20)) + (tight ? 1 : 2))
+      } else {
+        DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24), tag: model.badge)
+      }
+      if model.toast == nil {
       HStack(spacing: 4) {
         // The title scales down (never "WALL BA\u{2026}"); the LEFT badge and heart chip keep their full width.
         Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.4)
@@ -378,12 +429,6 @@ public struct CoachStepScreen: View {
             .background(fg.opacity(0.18), in: Capsule())
             .accessibilityLabel(model.approximate ? "Reps left, estimated" : "Reps left")
         }
-        if let badge = model.badge {
-          // Scales down rather than "TRANS\u{2026}" on a small case.
-          Text(badge.uppercased()).font(.system(size: c ? 10 : 12, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
-            .padding(.horizontal, c ? 4 : 5).padding(.vertical, 1)
-            .background(fg.opacity(0.18), in: Capsule())
-        }
         Spacer(minLength: 0)
         if model.hrOff {
           HeartOffChip().fixedSize().layoutPriority(2)
@@ -393,6 +438,7 @@ public struct CoachStepScreen: View {
       }
       .foregroundStyle(small)
       .frame(height: tight ? 16 : (c ? 18 : 20))
+      }
       dominantRow(fg, compact: c)
       if model.noRepVisible {
         HStack(spacing: 6) {
@@ -450,12 +496,6 @@ public struct CoachStepScreen: View {
       if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg) }
     }
     .transaction { if dimmed { $0.animation = nil } }
-    .overlay(alignment: .bottom) {
-      if let toast = model.toast { Toast(text: toast).padding(.horizontal, 12).padding(.bottom, 66) }
-    }
-    .overlay(alignment: .top) {
-      if let alarm = model.alarm { AlarmBanner(text: alarm, action: "OK", onAction: onAlarm).padding(.horizontal, 6) }
-    }
   }
 
   @Environment(\.dominantProbe) private var probe
@@ -526,15 +566,13 @@ public struct CoachReadyScreen: View {
           }
           Text(info.targetText).font(Theme.number(tight ? Theme.Size.floor : Theme.Size.dominant)).condensed().lineLimit(1).minimumScaleFactor(0.5)
             .accessibilityLabel("Target \(info.targetText)")
-          ForEach(info.chips, id: \.self) { chip in
-            Text(chip).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center)
-              .fixedSize(horizontal: false, vertical: true)
+          if let line = Self.warningLine(info) {
+            Text(line.short).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+              .foregroundStyle(info.batteryLine != nil ? Theme.amber : Theme.bone)
+              .lineLimit(2).minimumScaleFactor(0.8)
               .padding(.horizontal, 8).padding(.vertical, 1)
               .background(Theme.bone.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
-          }
-          if let b = info.batteryLine {
-            Text(b).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.amber).multilineTextAlignment(.center)
-              .fixedSize(horizontal: false, vertical: true)
+              .accessibilityLabel(line.full)
           }
           Spacer(minLength: 0)
           Button(action: onStart) {
@@ -549,6 +587,19 @@ public struct CoachReadyScreen: View {
       .padding(.top, 4)
       .padding(.bottom, 10)
     }
+  }
+
+  /// All warnings as one short line ("No headphones · Heart rate off · Battery 54%"), so START stays on screen.
+  /// The full sentences stay in the accessibility label.
+  static func warningLine(_ info: ReadyInfo) -> (short: String, full: String)? {
+    let all = info.chips + (info.batteryLine.map { [$0] } ?? [])
+    guard !all.isEmpty else { return nil }
+    func head(_ t: String) -> String {
+      if let i = t.firstIndex(of: ":") { return String(t[..<i]) }
+      if let r = t.range(of: ". ") { return String(t[..<r.lowerBound]) }
+      return t
+    }
+    return (all.map(head).joined(separator: " \u{00B7} "), all.joined(separator: ". "))
   }
 
   private func secondaryButton(_ title: String) -> some View {

@@ -146,7 +146,14 @@ final class LayoutTests: XCTestCase {
     noRep.noRepVisible = true
     noRep.noRepCount = 2
     noRep.next = ""
+    var toast = model(.run, .run, dominant: "3:12")
+    toast.toast = "Headphones lost, vibrating instead"
+    var alarm = model(.run, .run, dominant: "3:12")
+    alarm.alarm = "Workout session ended"
+    var changeover = model(.run, .run, dominant: "0:12", badge: "Changeover")
+    changeover.deltaSeconds = -14
     let cases: [(String, StepScreenModel)] = [
+      ("toast", toast), ("alarm", alarm), ("changeover", changeover),
       ("run", model(.run, .run, dominant: "3:12")), ("station", model(.time, .skierg, dominant: "2:10")),
       ("long next", transition), ("hr off", hrOff), ("ladder", withLadder),
       ("reps", model(.reps, .wallBalls, dominant: "100")), ("reps no rep", noRep),
@@ -176,15 +183,17 @@ final class LayoutTests: XCTestCase {
                            chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
                            batteryLine: "Battery 54%. A full sim needs about 60%.")
     fits("ready", CoachReadyScreen(model: .ready(ready)))
-    // With both warnings the Ready screen is taller than any case: IdleHost puts it in a ScrollView at 232 pt minimum,
-    // so START scrolls into view. It must not outgrow that frame.
-    for size in WatchSizes.all {
-      let h = naturalHeight(CoachReadyScreen(model: .ready(warned)), size.points)
-      note("height \(size.mm) mm ready warnings (scrolls, IdleHost minHeight 232): \(h)")
-      XCTAssertLessThanOrEqual(h, 232, "ready warnings at \(size.mm) mm")
-    }
+    fits("ready warnings", CoachReadyScreen(model: .ready(warned)))
     fits("ready no plan", CoachReadyScreen(model: .noPlan))
     fits("menu", CoachMenuScreen())
+  }
+
+  func testReadyWarningsAreOneShortLine() {
+    let info = ReadyInfo(sessionName: "Full sim", targetText: "1:20:00",
+                         chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
+                         batteryLine: "Battery 54%. A full sim needs about 60%.")
+    XCTAssertEqual(CoachReadyScreen.warningLine(info)?.short, "No headphones \u{00B7} Heart rate off \u{00B7} Battery 54%")
+    XCTAssertNil(CoachReadyScreen.warningLine(ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")))
   }
 
   func testNextLineShowsOnRegularStationScreensOnly() {
