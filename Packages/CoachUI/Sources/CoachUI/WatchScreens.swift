@@ -11,6 +11,14 @@ struct DeltaBand: View {
   var height: CGFloat = 26
   /// A phase word ("Transition", later "Changeover") shown small beside the delta; it scales down, never truncates.
   var tag: String?
+  /// Wrist down: the display refreshes once a minute, so the delta drops its seconds ("+1 min").
+  var dimmed = false
+
+  var bandText: String {
+    guard dimmed else { return Fmt.delta(seconds) }
+    let m = Int((Double(abs(seconds)) / 60).rounded())
+    return m == 0 ? "0 min" : (seconds > 0 ? "+" : "\u{2212}") + "\(m) min"
+  }
 
   var body: some View {
     HStack(spacing: 6) {
@@ -18,7 +26,7 @@ struct DeltaBand: View {
         Text(tag.uppercased()).font(.system(size: 11, weight: .heavy)).foregroundStyle(Theme.bone.opacity(0.8))
           .lineLimit(1).minimumScaleFactor(0.5)
       }
-      Text(Fmt.delta(seconds))
+      Text(bandText)
         .font(Theme.number(Theme.Size.band)).condensed()
         .foregroundStyle(seconds > 0 ? Theme.amber : Theme.bone)
         .lineLimit(1).fixedSize()
@@ -417,12 +425,17 @@ public struct CoachStepScreen: View {
         let rowH: CGFloat = tight ? 20 : (c ? 22 : 24)
         Toast(text: toast).frame(maxWidth: .infinity).frame(height: rowH + (tight ? 16 : (c ? 18 : 20)) + (tight ? 1 : 2))
       } else {
-        DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24), tag: model.badge)
+        DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24), tag: c ? nil : model.badge, dimmed: dimmed)
       }
       if model.toast == nil {
       HStack(spacing: 4) {
         // The title scales down (never "WALL BA\u{2026}"); the LEFT badge and heart chip keep their full width.
-        Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.4)
+        // Compact: the phase word ("Transition", "Changeover") takes the title slot at the title's size, never under 12 pt.
+        if c, let badge = model.badge {
+          Text(badge.uppercased()).font(Theme.label(15)).lineLimit(1).minimumScaleFactor(0.8)
+        } else {
+          Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.4)
+        }
         if model.kind == .reps {
           // A low-confidence count is flagged in this badge ("LEFT ~"), not inside the number: the digits keep their room.
           Text(model.approximate ? (c ? "LEFT~" : "LEFT ~") : "LEFT").font(.system(size: c ? 10 : 12, weight: .heavy)).lineLimit(1).fixedSize()
@@ -489,7 +502,9 @@ public struct CoachStepScreen: View {
         NextButton(activity: model.activity, isLast: model.isLast, height: button, outlined: dimmed, action: onNext)
       }
     }
-    .padding(.horizontal, Theme.Space.watchEdge)
+    .padding(.leading, Theme.Space.watchEdge)
+    // With the ladder on, the right edge keeps clear of it (4 pt more than the ladder's own width).
+    .padding(.trailing, Theme.Space.watchEdge + ((model.ladder?.isEmpty ?? true) ? 0 : 4))
     .padding(.top, c ? 1 : 2)
     .padding(.bottom, c ? 3 : 4)
     .background((dimmed ? Theme.ink : Theme.background(model.activity)).ignoresSafeArea())
