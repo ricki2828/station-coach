@@ -10,7 +10,7 @@ extension ScreenCatalog {
   /// coach tests render them with `CoachScreenshotTests`.
   public static var coachScreens: [CatalogEntry] {
     let last = CoachFactRow.exampleFacts
-    let changed = CoachFactRow.rows(for: last).filter { $0.id == "wallBalls" }
+    let changed = CoachFactRow.rows(for: last).filter { $0.id == "reference" }
     let reply = "Your total of 41:12 came in 1:12 over the 40:00 plan, and Sled push gave back most of it: 4:20 against a 3:30 target. Next, Half sim."
     return [
       coachW("coach-offer", CoachOfferCard()),

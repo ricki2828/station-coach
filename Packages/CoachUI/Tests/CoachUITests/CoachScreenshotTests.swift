@@ -36,6 +36,10 @@ final class CoachScreenshotTests: XCTestCase {
     XCTAssertEqual(Set(ids).count, ids.count)
   }
 
+  func testReconsentSampleShowsAChangedRow() {
+    XCTAssertFalse(CoachFactRow.rows(for: CoachFactRow.exampleFacts).filter { $0.id == "reference" }.isEmpty)
+  }
+
   func testNeverSentListNamesWhatTheFactsLeaveOut() {
     let never = CoachConsentCopy.neverSent.joined(separator: "|").lowercased()
     for word in ["heart rate", "motion", "location", "name", "health", "age or weight", "notes"] {
