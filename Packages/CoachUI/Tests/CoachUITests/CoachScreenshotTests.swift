@@ -37,19 +37,19 @@ final class CoachScreenshotTests: XCTestCase {
   }
 
   func testNeverSentListNamesWhatTheFactsLeaveOut() {
-    let never = CoachCopy.neverSent.joined(separator: "|").lowercased()
+    let never = CoachConsentCopy.neverSent.joined(separator: "|").lowercased()
     for word in ["heart rate", "motion", "location", "name", "health", "age or weight", "notes"] {
       XCTAssertTrue(never.contains(word), word)
     }
   }
 
   func testProviderSentenceFollowsTheRetentionAnswer() {
-    XCTAssertTrue(CoachCopy.whoSees(zeroRetentionConfirmed: false).contains("may keep it for up to 30 days"))
-    XCTAssertTrue(CoachCopy.whoSees(zeroRetentionConfirmed: true).contains("doesn\u{2019}t keep it"))
+    XCTAssertTrue(CoachConsentCopy.whoSees(zeroRetentionConfirmed: false).contains("may keep it for up to 30 days"))
+    XCTAssertTrue(CoachConsentCopy.whoSees(zeroRetentionConfirmed: true).contains("doesn\u{2019}t keep it"))
   }
 
   func testCopyHasNoRaceBrandTerm() {
-    let all = ([CoachCopy.offerBody, CoachCopy.howLong, CoachCopy.debriefError] + CoachCopy.neverSent).joined().lowercased()
+    let all = ([CoachConsentCopy.offerBody, CoachConsentCopy.howLong, CoachConsentCopy.debriefError] + CoachConsentCopy.neverSent).joined().lowercased()
     XCTAssertFalse(all.contains("hy" + "rox"))
   }
 

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Copy and rows for the optional AI coach. Every line the athlete reads before turning it on lives here, so the text
 /// that is reviewed is the text that ships. Consent version 1. The privacy-policy link and the lawyer's wording are open items.
-public enum CoachCopy {
+public enum CoachConsentCopy {
   public static let offerKicker = "AI coach \u{00B7} optional"
   public static let offerStatement = "A debrief after every sim"
   public static let offerBody = "Turn this on and your session times go to our coach service. An AI model writes one short debrief: where the time went and what to train next."
@@ -77,7 +77,7 @@ public struct CoachFactRow: Equatable, Identifiable {
   /// The whole payload, as the athlete would see it for one session. Matches `CoachFacts` field for field.
   public static func rows(for f: CoachFacts) -> [CoachFactRow] {
     var out: [CoachFactRow] = [
-      CoachFactRow(id: "installId", label: "Install ID", value: CoachCopy.installIdLine),
+      CoachFactRow(id: "installId", label: "Install ID", value: CoachConsentCopy.installIdLine),
       CoachFactRow(id: "date", label: "The day of the session", value: CoachDay.short(f.date)),
       CoachFactRow(id: "sessionType", label: "Session type", value: f.sessionType.title),
       CoachFactRow(id: "division", label: "Division", value: f.division.title),
@@ -127,13 +127,13 @@ public struct CoachOfferCard: View {
     CoachPage {
       PhoneCard {
         VStack(alignment: .leading, spacing: 12) {
-          Text(CoachCopy.offerKicker).scaledKicker()
-          Text(CoachCopy.offerStatement).scaledStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
+          Text(CoachConsentCopy.offerKicker).scaledKicker()
+          Text(CoachConsentCopy.offerStatement).scaledStatement(size: 34).foregroundStyle(PhoneTheme.inkText)
             .fixedSize(horizontal: false, vertical: true)
-          Text(CoachCopy.offerBody).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
+          Text(CoachConsentCopy.offerBody).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
             .fixedSize(horizontal: false, vertical: true)
-          PrimaryButton(CoachCopy.seeWhatsSent, action: onSee)
-          TextLinkButton(CoachCopy.notNow, action: onNotNow)
+          PrimaryButton(CoachConsentCopy.seeWhatsSent, action: onSee)
+          TextLinkButton(CoachConsentCopy.notNow, action: onNotNow)
         }
       }
     }
@@ -169,7 +169,7 @@ public struct CoachFactsScreen: View {
 
   public var body: some View {
     CoachPage {
-      Text(CoachCopy.factsStatement).scaledStatement(size: 40).foregroundStyle(PhoneTheme.inkText)
+      Text(CoachConsentCopy.factsStatement).scaledStatement(size: 40).foregroundStyle(PhoneTheme.inkText)
         .fixedSize(horizontal: false, vertical: true)
       if mode == .example { Text("Example").scaledKicker() }
       PhoneCard {
@@ -179,8 +179,8 @@ public struct CoachFactsScreen: View {
       }
       PhoneCard {
         VStack(alignment: .leading, spacing: 8) {
-          Text(CoachCopy.neverSentKicker).scaledKicker()
-          ForEach(CoachCopy.neverSent, id: \.self) { item in
+          Text(CoachConsentCopy.neverSentKicker).scaledKicker()
+          ForEach(CoachConsentCopy.neverSent, id: \.self) { item in
             HStack(alignment: .firstTextBaseline, spacing: 10) {
               Text("\u{2715}").scaledFont(15, .heavy).foregroundStyle(PhoneTheme.inkText).accessibilityHidden(true)
               Text(item).scaledFont(17, .semibold).strikethrough().foregroundStyle(PhoneTheme.inkText)
@@ -191,15 +191,15 @@ public struct CoachFactsScreen: View {
           }
         }
       }
-      block("Who sees it", CoachCopy.whoSees(zeroRetentionConfirmed: zeroRetentionConfirmed))
-      block("How long", CoachCopy.howLong)
-      Text(CoachCopy.footer(version: CoachConsent.currentVersion)).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
+      block("Who sees it", CoachConsentCopy.whoSees(zeroRetentionConfirmed: zeroRetentionConfirmed))
+      block("How long", CoachConsentCopy.howLong)
+      Text(CoachConsentCopy.footer(version: CoachConsent.currentVersion)).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
       if mode == .failed {
-        Text(CoachCopy.onFailed).scaledFont(15, .heavy).foregroundStyle(PhoneTheme.amberText).fixedSize(horizontal: false, vertical: true)
+        Text(CoachConsentCopy.onFailed).scaledFont(15, .heavy).foregroundStyle(PhoneTheme.amberText).fixedSize(horizontal: false, vertical: true)
       }
-      PrimaryButton(mode == .turningOn ? CoachCopy.turningOn : CoachCopy.turnOn, action: onTurnOn)
+      PrimaryButton(mode == .turningOn ? CoachConsentCopy.turningOn : CoachConsentCopy.turnOn, action: onTurnOn)
         .opacity(mode == .turningOn ? 0.6 : 1).disabled(mode == .turningOn)
-      TextLinkButton(CoachCopy.notNow, action: onNotNow)
+      TextLinkButton(CoachConsentCopy.notNow, action: onNotNow)
     }
   }
 
@@ -253,17 +253,17 @@ public struct CoachSettingsCard: View {
           Text("AI coach").scaledKicker()
           switch state {
           case .on(let since):
-            Text(CoachCopy.onSince(since)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+            Text(CoachConsentCopy.onSince(since)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
             TextLinkButton("What\u{2019}s sent", action: onWhatsSent)
             Button(action: onTurnOff) {
-              Text(CoachCopy.turnOffRow).font(.system(size: 15, weight: .semibold)).underline().foregroundStyle(PhoneTheme.amberText)
+              Text(CoachConsentCopy.turnOffRow).font(.system(size: 15, weight: .semibold)).underline().foregroundStyle(PhoneTheme.amberText)
                 .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
           case .revoked(let n):
-            Text(CoachCopy.revoked(deleted: n)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+            Text(CoachConsentCopy.revoked(deleted: n)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
           case .revokedPending:
-            Text(CoachCopy.revokedPending).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+            Text(CoachConsentCopy.revokedPending).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
           }
         }
       }
@@ -284,7 +284,7 @@ public struct CoachReconsentScreen: View {
 
   public var body: some View {
     CoachPage {
-      Text(CoachCopy.reconsentStatement).scaledStatement(size: 40).foregroundStyle(PhoneTheme.inkText)
+      Text(CoachConsentCopy.reconsentStatement).scaledStatement(size: 40).foregroundStyle(PhoneTheme.inkText)
         .fixedSize(horizontal: false, vertical: true)
       PhoneCard {
         VStack(alignment: .leading, spacing: 12) {
@@ -294,8 +294,8 @@ public struct CoachReconsentScreen: View {
         }
       }
       Text("Nothing is sent until you answer.").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
-      PrimaryButton(CoachCopy.keepItOn, action: onKeep)
-      SecondaryButton(CoachCopy.turnOff, action: onTurnOff)
+      PrimaryButton(CoachConsentCopy.keepItOn, action: onKeep)
+      SecondaryButton(CoachConsentCopy.turnOff, action: onTurnOff)
     }
   }
 }
@@ -330,13 +330,13 @@ public struct DebriefCard: View {
         VStack(alignment: .leading, spacing: 10) {
           Text("Coach").scaledKicker()
           switch display {
-          case .queued: line(CoachCopy.debriefQueued)
-          case .loading: line(CoachCopy.debriefLoading)
+          case .queued: line(CoachConsentCopy.debriefQueued)
+          case .loading: line(CoachConsentCopy.debriefLoading)
           case .reply(let text):
             Text(text).scaledFont(19, .semibold).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
-            Text(CoachCopy.debriefAI).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
-          case .error: line(CoachCopy.debriefError)
-          case .cap: line(CoachCopy.debriefCap)
+            Text(CoachConsentCopy.debriefAI).scaledFont(13, .semibold).foregroundStyle(PhoneTheme.muted)
+          case .error: line(CoachConsentCopy.debriefError)
+          case .cap: line(CoachConsentCopy.debriefCap)
           }
         }
       }
