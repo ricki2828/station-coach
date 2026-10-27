@@ -96,4 +96,38 @@ final class CoachCopyTests: XCTestCase {
   func testNoRepNotedIsShortAndPlain() {
     XCTAssertEqual(CoachCopy.noRepNoted, "No rep noted.")
   }
+
+  private func words(_ line: String) -> Int { line.split(separator: " ").count }
+
+  func testSessionStartLines() {
+    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: true), "1:20:00 target. Start easy, run 1 sets your baseline.")
+    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: false), "1:20:00 target. Hold run 1 back.")
+  }
+
+  func testFinishPersonalityEveryBranch() {
+    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 2000, plannedSeconds: 4800, isFirst: true, early: true), "Ended early. Everything up to here is saved.")
+    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4900, plannedSeconds: 4800, isFirst: true, early: false), "First session logged. This time is your baseline.")
+    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4722, plannedSeconds: 4800, isFirst: false, early: false), "1:18 under target. Hold that next time.")
+    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4900, plannedSeconds: 4800, isFirst: false, early: false), "1:40 over target. Start with your slowest station.")
+    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4800, plannedSeconds: 4800, isFirst: false, early: false), "On target. Exactly the plan.")
+  }
+
+  func testNewLinesStayShortAndClean() {
+    var lines = [CoachCopy.sessionStart(plan: plan, isFirst: true), CoachCopy.sessionStart(plan: plan, isFirst: false)]
+    for (t, e, f) in [(2000, true, true), (4900, false, true), (4722, false, false), (5800, false, false), (4800, false, false)] {
+      lines.append(CoachCopy.finishPersonality(totalSeconds: t, plannedSeconds: 4800, isFirst: f, early: e))
+    }
+    for line in lines {
+      XCTAssertLessThanOrEqual(words(line), 12, line)
+      let l = line.lowercased()
+      for banned in ["ai ", "hyrox", "skierg", "great job", "keep going"] { XCTAssertFalse(l.contains(banned), line) }
+    }
+  }
+
+  func testSessionLabel() {
+    XCTAssertNil(CoachCopy.sessionLabel(early: false, recovered: false))
+    XCTAssertEqual(CoachCopy.sessionLabel(early: true, recovered: false), "Ended early")
+    XCTAssertEqual(CoachCopy.sessionLabel(early: true, recovered: true), "Recovered")
+    XCTAssertEqual(CoachCopy.sessionLabel(early: false, recovered: true), "Recovered")
+  }
 }

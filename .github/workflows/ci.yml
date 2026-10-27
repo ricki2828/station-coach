@@ -1,6 +1,7 @@
 name: ci
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -51,6 +52,39 @@ jobs:
           xcodebuild -project StationCoach.xcodeproj -scheme StationCoach \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Build iOS app with embedded watch app (Release, simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project StationCoach.xcodeproj -scheme StationCoach -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 30
+      - name: Privacy manifests are valid, correct, and inside both built apps (Debug and Release)
+        run: |
+          set -eo pipefail
+          plutil -lint iOS/PrivacyInfo.xcprivacy Watch/PrivacyInfo.xcprivacy
+          python3 - <<'PY'
+          import plistlib
+          def reasons(p):
+              d = plistlib.load(open(p, "rb"))
+              assert d["NSPrivacyTracking"] is False and d["NSPrivacyTrackingDomains"] == [], p
+              assert d["NSPrivacyCollectedDataTypes"] == [], p
+              return {a["NSPrivacyAccessedAPIType"].replace("NSPrivacyAccessedAPICategory", ""): a["NSPrivacyAccessedAPITypeReasons"] for a in d["NSPrivacyAccessedAPITypes"]}
+          ios = {"UserDefaults": ["CA92.1"], "FileTimestamp": ["C617.1"]}
+          assert reasons("iOS/PrivacyInfo.xcprivacy") == ios, reasons("iOS/PrivacyInfo.xcprivacy")
+          assert reasons("Watch/PrivacyInfo.xcprivacy") == {**ios, "SystemBootTime": ["8FFB.1"]}, reasons("Watch/PrivacyInfo.xcprivacy")
+          PY
+          dd=~/Library/Developer/Xcode/DerivedData
+          for cfg in Debug Release; do
+            ios_app=$(find $dd -path "*Build/Products/$cfg-iphonesimulator/StationCoach.app" -maxdepth 6 -type d | head -1)
+            echo "$cfg iOS app: $ios_app"
+            test -n "$ios_app" || { echo "no $cfg iOS app"; exit 1; }
+            embedded=$(find "$ios_app" -name StationCoachWatch.app -type d | head -1)
+            watch_app=$(find $dd -path "*Build/Products/$cfg-watchsimulator/StationCoachWatch.app" -maxdepth 6 -type d | head -1)
+            for app in "$ios_app" "$embedded" $watch_app; do
+              test -f "$app/PrivacyInfo.xcprivacy" || { echo "no PrivacyInfo.xcprivacy in $app"; exit 1; }
+              plutil -lint "$app/PrivacyInfo.xcprivacy"
+            done
+          done
       - name: Render screens (iOS simulator host, watch views at 46 mm)
         working-directory: Packages/CoachUI
         run: |

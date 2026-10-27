@@ -84,4 +84,27 @@ public enum CoachCopy {
     if let worst, worst.1 > 0 { s += " Worst: \(worst.0), \(Fmt.gap(worst.1)) over." }
     return s
   }
+
+  /// Said once at START. Number first, one short line. The first session sets the baseline; later ones go out steady.
+  public static func sessionStart(plan: SessionPlan, isFirst: Bool) -> String {
+    let target = Fmt.clock(plan.plannedSeconds)
+    return isFirst ? "\(target) target. Start easy, run 1 sets your baseline." : "\(target) target. Hold run 1 back."
+  }
+
+  /// One line after the numbers, chosen by outcome: ended early, first session, under, over, on target.
+  /// Reads the result only; no live-measurement or "AI" claims.
+  public static func finishPersonality(totalSeconds: Int, plannedSeconds: Int, isFirst: Bool, early: Bool) -> String {
+    if early { return "Ended early. Everything up to here is saved." }
+    if isFirst { return "First session logged. This time is your baseline." }
+    let d = totalSeconds - plannedSeconds
+    if d == 0 { return "On target. Exactly the plan." }
+    return d < 0 ? "\(Fmt.gap(d)) under target. Hold that next time." : "\(Fmt.gap(d)) over target. Start with your slowest station."
+  }
+
+  /// The History tag for a session that did not run start to finish. A recovered session (resumed after the app stopped,
+  /// or closed from a checkpoint) wins over "Ended early". Nil for a normal finish.
+  public static func sessionLabel(early: Bool, recovered: Bool) -> String? {
+    if recovered { return "Recovered" }
+    return early ? "Ended early" : nil
+  }
 }

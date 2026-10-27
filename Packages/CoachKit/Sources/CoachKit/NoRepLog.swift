@@ -1,7 +1,7 @@
 import Foundation
 
 /// The NO REP taps of a session, in order. Reps left on the watch is derived from `count(inStep:)`, so removing a tap restores it.
-public struct NoRepLog: Equatable {
+public struct NoRepLog: Codable, Equatable {
   /// How long the Undo chip stays up after a tap.
   public static let undoWindowSeconds = 4
 
