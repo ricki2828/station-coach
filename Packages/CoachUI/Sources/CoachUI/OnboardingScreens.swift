@@ -169,7 +169,7 @@ public struct OnboardingWatchScreen: View {
   }
 
   /// Shown under the install check. Must stay true: nothing leaves the phone and watch unless the user exports it.
-  static let privacyLine = "Your sessions stay on your watch and phone. Nothing is uploaded."
+  static let privacyLine = "Your sessions stay on your watch and phone. Nothing is uploaded unless you share it."
 
   private static let rows: [(Activity, String)] = [
     (.skierg, "Tap NEXT when you finish each run or station."),

@@ -11,7 +11,7 @@ Status: draft for Ricki and a lawyer to review. Not legal advice, not live, not 
 When you start a session, Station Coach records on your Apple Watch: heart rate, motion sensor data (accelerometer and gyroscope), timings of each run and station, the cues it spoke, and a workout saved to Apple Health. You also set a division and target time, and an athlete code.
 
 ## Where it goes
-- Data is stored on your watch and iPhone. The watch sends session files to your iPhone over Apple's WatchConnectivity.
+- Data is stored on your watch and iPhone. The watch sends session files to your iPhone, and the iPhone sends your session plan to the watch, over Apple's WatchConnectivity.
 - Nothing is uploaded to our servers. We run no account system, analytics, advertising or tracking SDKs, and we do not collect your data.
 - You can export session files from the iPhone app (share sheet or Files). Where they go after that is your choice. [Confirm for TestFlight: Apple provides us crash and usage data through TestFlight/App Store Connect.]
 - Weekly reminders, if you allow them, are local notifications generated on your phone.
@@ -39,6 +39,7 @@ Delete a session in the app, or delete the app to remove its data. Workouts save
 
 ---
 Notes for the lawyer
-- The app manifests declare health and fitness data as "not linked, not tracking" for app functionality. The data stays on device, so Apple may not count it as "collected"; confirm before the App Privacy answers in App Store Connect.
+- The app manifests declare no collected data types, and App Store Connect should say "Data Not Collected": Apple does not count data processed only on device. Ricki's call: if testers send gym-day zips to him as a standing programme, he holds health data; decide whether that changes the answer, and cover it in the Testers section.
+- Exporting from the share sheet can reach Mail or iCloud Drive, and Documents is visible in Files; iCloud backup and Health sync are Apple's. The policy should say so.
 - Station names include "SkiErg" (a Concept2 mark). Decide whether to rename.
 - A policy URL is needed before external TestFlight testers.

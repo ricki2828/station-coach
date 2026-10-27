@@ -31,8 +31,9 @@ The lane is `xcodegen`, `xcodebuild archive`, then `xcodebuild -exportArchive` w
 
 ## Privacy manifest and policy
 
-- `iOS/PrivacyInfo.xcprivacy` and `Watch/PrivacyInfo.xcprivacy` declare the required-reason APIs the app uses (UserDefaults CA92.1, file timestamp C617.1, and on the watch system boot time 35F9.1), no tracking, and health/fitness data as not linked and not used for tracking. Without them App Store Connect can refuse the upload (ITMS-91053). CI checks that the file is inside both built apps.
-- If you add an API from Apple's required-reason list (UserDefaults, file timestamps, boot time, disk space, active keyboards), add its reason code to both manifests.
+- `iOS/PrivacyInfo.xcprivacy` and `Watch/PrivacyInfo.xcprivacy` declare the required-reason APIs the app uses: UserDefaults CA92.1, file timestamp C617.1, and on the watch system boot time 8FFB.1 (absolute timestamps for motion samples). Without them App Store Connect does not accept the upload (Apple, "Describing use of required reason API"). CI checks the files are inside the Debug and Release builds and that the reason codes are the expected ones.
+- `NSPrivacyCollectedDataTypes` is empty on purpose. The app has no network code, and Apple does not count data processed only on device as collected. In App Store Connect answer App Privacy as "Data Not Collected". The manifest and the App Store Connect answers must agree. Open question for Ricki: if testers send gym-day zips to him as a standing programme, he holds health data by user-initiated sharing; decide whether that changes the answer and cover it in the policy and tester consent.
+- If you add an API from Apple's required-reason list (UserDefaults, file timestamps, boot time, disk space, active keyboards), add its reason code to the manifest of every app whose code uses it, including code in CoachKit/CoachUI, which links into both apps.
 - A privacy policy URL is required in App Store Connect before external testers. `docs/PRIVACY.md` is a draft for Ricki and a lawyer; it is not published.
 
 ## Background modes and other notes

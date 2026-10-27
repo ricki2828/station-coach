@@ -25,7 +25,7 @@ final class OnboardingScreensTests: XCTestCase {
   }
 
   func testWatchStepStatesPrivacyLine() {
-    XCTAssertEqual(OnboardingWatchScreen.privacyLine, "Your sessions stay on your watch and phone. Nothing is uploaded.")
+    XCTAssertEqual(OnboardingWatchScreen.privacyLine, "Your sessions stay on your watch and phone. Nothing is uploaded unless you share it.")
   }
 
   func testMomentColoursPassContrast() {
