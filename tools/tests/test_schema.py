@@ -71,6 +71,42 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual(errors("plan", load(p)["plan"]), [])
 
 
+CONTRACT = FIXTURES / "swift-contract"
+
+
+class SwiftEncodedTests(unittest.TestCase):
+    """tools/fixtures/swift-contract/*.json are compared with REAL encoded CoachKit structs by SchemaContractTests.swift
+    (CI, apple job), so what validates here is what the Swift types write."""
+
+    def test_each_validates(self):
+        for name, schema in [("manifest-full", "manifest"), ("manifest-min", "manifest"), ("coach-full", "coach"),
+                             ("coach-min", "coach"), ("coach-legacy-int", "coach"), ("plan", "plan"),
+                             ("phone-correction", "phone-correction")]:
+            with self.subTest(name):
+                self.assertEqual(errors(schema, load(CONTRACT / f"{name}.json")), [])
+
+    def test_full_variants_use_every_schema_property(self):
+        # A schema property no real struct ever fills is dead (or the Swift type lost a field).
+        manifest = load(SCHEMAS / "manifest.schema.json")["properties"]
+        self.assertEqual(set(load(CONTRACT / "manifest-full.json")), set(manifest))
+        coach = load(SCHEMAS / "coach.schema.json")["properties"]
+        full = load(CONTRACT / "coach-full.json")
+        self.assertEqual(set(full), set(coach))
+        step = load(SCHEMAS / "plan.schema.json")["definitions"]["step"]["properties"]
+        self.assertEqual(set().union(*(set(x) for x in full["plan"]["steps"])), set(step))
+        self.assertEqual(set(full["splits"][1]) | set(full["splits"][0]), {"stepIndex", "startMs", "endMs"})
+        self.assertEqual(set(full["noReps"][0]), {"tMs", "setIndex", "stepIndex"})
+
+    def test_min_variants_omit_nil_optionals(self):
+        required = set(load(SCHEMAS / "manifest.schema.json")["required"])
+        self.assertEqual(set(load(CONTRACT / "manifest-min.json")), required)
+
+    def test_swift_test_exists_for_every_fixture(self):
+        text = (ROOT / "Packages/CoachKit/Tests/CoachKitTests/SchemaContractTests.swift").read_text()
+        for p in CONTRACT.glob("*.json"):
+            self.assertIn(p.stem, text, f"{p.name} is not exercised by SchemaContractTests.swift")
+
+
 class RejectionTests(unittest.TestCase):
     """The schemas must actually refuse things, or the green fixtures above prove nothing."""
 
@@ -132,6 +168,35 @@ class SwiftAgreementTests(unittest.TestCase):
         self.assertEqual(plan["properties"]["type"]["enum"], swift_cases(SWIFT / "Plan.swift", "SessionType"))
         self.assertEqual(plan["definitions"]["step"]["properties"]["activity"]["enum"],
                          swift_cases(SWIFT / "Activity.swift", "Activity"))
+
+    def test_property_sets_match_swift(self):
+        schema = {n: load(SCHEMAS / f"{n}.schema.json") for n in ("coach", "plan", "phone-correction")}
+        cases = [
+            ("CoachResult.swift", "CoachResult", set(schema["coach"]["properties"])),
+            ("SessionMachine.swift", "StepSplit", set(schema["coach"]["properties"]["splits"]["items"]["properties"])),
+            ("CoachResult.swift", "NoRepEvent", set(schema["coach"]["properties"]["noReps"]["items"]["properties"])),
+            ("CoachResult.swift", "WallBallCorrection", set(schema["phone-correction"]["properties"])),
+            ("Plan.swift", "SessionPlan", set(schema["plan"]["properties"])),
+            ("Plan.swift", "PlanStep", set(schema["plan"]["definitions"]["step"]["properties"])),
+        ]
+        for file, struct, props in cases:
+            with self.subTest(struct):
+                text = (SWIFT / file).read_text()
+                body = re.search(r"struct %s\b[^{]*\{(.*?)\n\}" % struct, text, re.S).group(1)
+                # Stored properties only (`public let|var name: Type`), not computed ones (`... { ... }`).
+                names = {m.group(1) for m in re.finditer(r"^  public (?:let|var) (\w+): [^\n{]*$", body, re.M)}
+                self.assertEqual(props, names)
+        corr = schema["coach"]["properties"]["wallBallCorrection"]["oneOf"][0]["properties"]
+        self.assertEqual(set(corr), set(schema["phone-correction"]["properties"]))
+
+    def test_manifest_value_sets_match_swift(self):
+        props = load(SCHEMAS / "manifest.schema.json")["properties"]
+        self.assertEqual(props["audioMode"]["enum"], swift_cases(SWIFT / "CueLog.swift", "AudioMode"))
+        recorder = (ROOT / "Watch" / "RecorderController.swift").read_text()
+        m = re.search(r'labelSource: coach \? "(\w+)" : "(\w+)"', recorder)
+        self.assertEqual(set(props["labelSource"]["enum"]), set(m.groups()))
+        self.assertIn('["A1", "A2", "A3", "A4"]', recorder)
+        self.assertRegex("A4", props["athlete"]["pattern"])
 
     def test_manifest_properties_match_swift(self):
         text = (SWIFT / "Session.swift").read_text()

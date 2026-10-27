@@ -1,0 +1,26 @@
+{
+  "appVersion": "0.1.0",
+  "athlete": "A1",
+  "audioMode": "B",
+  "crownOrientation": "right",
+  "cueIntervalSec": 0,
+  "device": "Watch7,1",
+  "endedAtEpochMs": 1790005400000,
+  "files": [
+    "manifest.json",
+    "coach.json"
+  ],
+  "formatVersion": 1,
+  "labelSource": "coach",
+  "motionApi": "CMBatchedSensorManager",
+  "osVersion": "watchOS 11.0",
+  "recovered": true,
+  "requestedHz": 800,
+  "resumed": 2,
+  "sessionId": "20261027T090000Z-abc123",
+  "startedAtEpochMs": 1790000000000,
+  "storeHz": 100,
+  "transitionLabelSeconds": 10,
+  "workoutActivityType": "crossTraining",
+  "wrist": "left"
+}
