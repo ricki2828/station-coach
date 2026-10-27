@@ -252,7 +252,7 @@ public struct ShareFlowSheet: View {
       }
     }
     .padding(24)
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(PhoneTheme.paper)
   }
 }
