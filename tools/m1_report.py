@@ -26,17 +26,85 @@ CUE_MARK = 95.0
 BATTERY_MARK = 30.0
 HZ_MARK = 50.0
 BATTERY_MINUTES = 90
+BATTERY_START_MIN = 95.0  # a session that starts below this is not comparable with the 30%-at-90-min mark
 MIN_ACTIVITY_MINUTES = 0.0  # an activity counts as present only above this many labelled minutes
 COVERAGE_MARK = 0.95  # share of session seconds that must reach HZ_MARK
 CUE_ISSUED_MARK = 0.90  # issued cues as a share of interval x duration
 
 
-def read_rows(path):
+# Columns that must parse as numbers for a row to be usable (the first column is always a timestamp).
+NUMERIC = {"cues.csv": ("cue_id",), "battery.csv": ("level",), "hr.csv": ("bpm",)}
+TORN_FILES = ["labels.csv", "cues.csv", "battery.csv", "hr.csv", "accel.csv", "motion.csv", "rates.csv", "events.csv"]
+
+
+def _number(text):
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+def parse_csv(path):
+    """(rows as dicts, number of skipped rows). A row is skipped when it is short or long for the header or a
+    timestamp / numeric column does not parse: after a crash-resume a torn row can sit mid-file, not only at
+    the end. Parsed line by line so an unclosed quote in a torn row cannot swallow the rows after it."""
     p = Path(path)
     if not p.exists():
-        return []
-    with p.open(newline="") as f:
-        return list(csv.DictReader(f))
+        return [], 0
+    rows, skipped = [], 0
+    with p.open(newline="", errors="replace") as f:
+        header = next(csv.reader([f.readline()]), [])
+        numeric = [i for i, h in enumerate(header) if h in NUMERIC.get(p.name, ())]
+        for line in f:
+            line = line.rstrip("\r\n")
+            if not line:
+                continue
+            fields = next(csv.reader([line]), [])
+            if len(fields) != len(header) or not fields[0].strip().lstrip("-").isdigit() or not all(_number(fields[i]) for i in numeric):
+                skipped += 1
+                continue
+            rows.append(dict(zip(header, fields)))
+    return rows, skipped
+
+
+def read_rows(path):
+    return parse_csv(path)[0]
+
+
+def timestamps(path):
+    """(first column as floats, skipped rows) for the big motion CSVs, with the same skipping rule as parse_csv."""
+    p = Path(path)
+    if not p.exists():
+        return np.array([]), 0
+    out, skipped = [], 0
+    with p.open(errors="replace") as f:
+        ncols = f.readline().count(",") + 1
+        for line in f:
+            line = line.rstrip("\r\n")
+            if not line:
+                continue
+            first, _, _ = line.partition(",")
+            if line.count(",") + 1 != ncols or not first.lstrip("-").isdigit():
+                skipped += 1
+                continue
+            out.append(float(first))
+    return np.array(out), skipped
+
+
+def torn_rows(folder):
+    """{file name: skipped row count} for the session's CSVs, only those with any."""
+    out = {}
+    for name in TORN_FILES:
+        path = Path(folder) / name
+        n = timestamps(path)[1] if name in ("accel.csv", "motion.csv") else parse_csv(path)[1]
+        if n:
+            out[name] = n
+    return out
+
+
+def torn_note(torn):
+    return "skipped malformed rows (torn by a crash?): " + ", ".join(f"{k} {v}" for k, v in sorted(torn.items()))
 
 
 def load_manifest(folder):
@@ -119,10 +187,7 @@ def achieved_hz(path):
     p = Path(path)
     if not p.exists():
         return None
-    try:
-        ts = np.loadtxt(p, delimiter=",", skiprows=1, usecols=(0,), ndmin=1)
-    except ValueError:
-        return None
+    ts, _ = timestamps(p)
     if ts.size < 2:
         return None
     secs = (ts - ts[0]) / 1e6
@@ -142,10 +207,7 @@ def motion_coverage(path, start_ms, end_ms, mark=HZ_MARK):
     total = max(1, int((end_ms - start_ms) // 1000))
     counts = np.zeros(total, dtype=np.int64)
     if p.exists():
-        try:
-            ts = np.loadtxt(p, delimiter=",", skiprows=1, usecols=(0,), ndmin=1)
-        except ValueError:
-            ts = np.array([])
+        ts, _ = timestamps(p)
         if ts.size:
             secs = np.floor(ts / 1e6 - start_ms / 1000.0).astype(np.int64)
             secs = secs[(secs >= 0) & (secs < total)]
@@ -189,9 +251,8 @@ def label_minutes(rows, start_ms, end_ms):
     return minutes
 
 
-def athlete_summary(folders):
-    """Labelled minutes per activity, grouped by the manifest's athlete code (sessions with no code
-    are grouped as '?'). Needs all 10 activities per athlete to count as covered."""
+def athlete_minutes(folders):
+    """Per athlete code (sessions with no code are '?'): session count, wrists, labelled minutes per activity."""
     groups = {}
     for folder in folders:
         manifest = load_manifest(folder)
@@ -204,6 +265,13 @@ def athlete_summary(folders):
         for act, mins in label_minutes(read_rows(Path(folder) / "labels.csv"), start, end).items():
             if act in ACTIVITIES:
                 g["minutes"][act] = g["minutes"].get(act, 0.0) + mins
+    return groups
+
+
+def athlete_summary(folders):
+    """Labelled minutes per activity, grouped by the manifest's athlete code (sessions with no code
+    are grouped as '?'). Needs all 10 activities per athlete to count as covered."""
+    groups = athlete_minutes(folders)
     lines = ["Per athlete (labelled minutes, all sessions):"]
     for athlete in sorted(groups):
         g = groups[athlete]
@@ -213,6 +281,31 @@ def athlete_summary(folders):
                      + ("all 10 activities" if not missing else "missing " + ", ".join(missing)))
         lines.append("     " + "  ".join(f"{a}={g['minutes'].get(a, 0.0):.1f}" for a in ACTIVITIES))
     return lines
+
+
+def motion_check(folder, start, end):
+    """(description parts, ok) for mark 3 over the accel and motion streams of one session."""
+    folder = Path(folder)
+    hz_parts, hz_ok = [], True
+    for stream in ("accel", "motion"):
+        r = achieved_hz(folder / f"{stream}.csv")
+        if r is None:
+            hz_parts.append(f"{stream} none")
+            hz_ok = False
+        else:
+            cov = motion_coverage(folder / f"{stream}.csv", start, end)
+            hz_parts.append(f"{stream} {r['median_hz']:.0f} Hz median ({r['mean_hz']:.1f} mean, {r['samples']} samples), "
+                            f"{100 * cov['coverage']:.1f}% of session seconds >= {HZ_MARK:.0f} Hz, longest gap {cov['longest_gap_s']} s")
+            hz_ok = hz_ok and r["median_hz"] >= HZ_MARK and cov["coverage"] >= COVERAGE_MARK
+    return hz_parts, hz_ok
+
+
+def cues_ok(manifest, cues, start, end):
+    """Mark 1 for one session: enough delivered, and (interval sessions) enough issued."""
+    expected = expected_cues(manifest, start, end)
+    coached = manifest.get("cueIntervalSec") == 0
+    issued_share = cues["issued"] / expected if expected else 1.0
+    return cues["issued"] > 0 and cues["percent"] >= CUE_MARK and (coached or issued_share >= CUE_ISSUED_MARK)
 
 
 def flag(ok):
@@ -229,16 +322,19 @@ def report(folder):
         return lines + ["  no data"]
     lines.append(f"  device {manifest.get('device', '?')}  os {manifest.get('osVersion', '?')}  "
                  f"motion api {manifest.get('motionApi', '?')}  length {(end - start) / 60_000:.1f} min")
+    torn = torn_rows(folder)
+    if torn:
+        lines.append("  " + torn_note(torn))
 
     cues = cue_delivery(read_rows(folder / "cues.csv"))
     expected = expected_cues(manifest, start, end)
     coached = manifest.get("cueIntervalSec") == 0
     issued_share = cues["issued"] / expected if expected else 1.0
-    cues_ok = cues["issued"] > 0 and cues["percent"] >= CUE_MARK and (coached or issued_share >= CUE_ISSUED_MARK)
+    mark1 = cues_ok(manifest, cues, start, end)
     lines.append(f"1. Cue delivery: {cues['delivered']}/{cues['issued']} = {cues['percent']:.1f}% "
                  f"(route showed headphones {cues['route_headphones']}, haptic-only {cues['haptic_only']}, "
                  f"flagged missed {cues['missed']}, audio mode {'/'.join(cues['audio_modes']) or '?'})  "
-                 f"{flag(cues_ok)} (mark {CUE_MARK:.0f}%)")
+                 f"{flag(mark1)} (mark {CUE_MARK:.0f}%)")
     tap_rate = 100.0 * cues["missed"] / cues["issued"] if cues["issued"] else 0.0
     lines.append(f"   synth finished {cues['finished']}; athlete flagged 'didn't hear' {cues['missed']} ({tap_rate:.0f}% tap rate)"
                  + ("; no taps, so 'delivered' means the synth finished, NOT confirmed heard" if not cues["missed"] else ""))
@@ -264,17 +360,9 @@ def report(folder):
                      f"projected {bat['percent']:.0f}% at {bat['drain_per_min']:.2f}%/min  "
                      f"{flag(bat['percent'] >= BATTERY_MARK)} projected (mark {BATTERY_MARK:.0f}%)")
 
-    hz_parts, hz_ok = [], True
-    for stream in ("accel", "motion"):
-        r = achieved_hz(folder / f"{stream}.csv")
-        if r is None:
-            hz_parts.append(f"{stream} none")
-            hz_ok = False
-        else:
-            cov = motion_coverage(folder / f"{stream}.csv", start, end)
-            hz_parts.append(f"{stream} {r['median_hz']:.0f} Hz median ({r['mean_hz']:.1f} mean, {r['samples']} samples), "
-                            f"{100 * cov['coverage']:.1f}% of session seconds >= {HZ_MARK:.0f} Hz, longest gap {cov['longest_gap_s']} s")
-            hz_ok = hz_ok and r["median_hz"] >= HZ_MARK and cov["coverage"] >= COVERAGE_MARK
+    if bat.get("known") and bat["start_percent"] < BATTERY_START_MIN:
+        lines.append(f"   battery start {bat['start_percent']:.0f}% < {BATTERY_START_MIN:.0f}%: mark not comparable")
+    hz_parts, hz_ok = motion_check(folder, start, end)
     raw = [r for r in read_rows(folder / "rates.csv") if r.get("raw_hz")]
     if raw:
         best = max(float(r["raw_hz"]) for r in raw)

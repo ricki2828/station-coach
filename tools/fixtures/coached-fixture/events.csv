@@ -1,0 +1,6 @@
+epoch_ms,kind,detail
+1790000000000,session_start,coached-fixture
+1790000000000,thermal,nominal
+1790000100000,thermal,fair
+1790000060000,audio_mode,headphones lost; will re-activate when a headphone output reappears
+1790000070000,audio_mode,reactivating: headphones back

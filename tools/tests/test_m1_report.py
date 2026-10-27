@@ -201,5 +201,17 @@ class DegradedSessionTests(unittest.TestCase):
         self.assertIn("FAIL", line)
 
 
+class BatteryStartTests(unittest.TestCase):
+    def test_low_start_is_flagged_not_comparable(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        f = tmp / "s"
+        shutil.copytree(FIXTURE, f)
+        b = f / "battery.csv"
+        b.write_text(b.read_text().replace("1.00,", "0.85,"))
+        self.assertIn("battery start 85% < 95%: mark not comparable", run_cli(f))
+        self.assertNotIn("not comparable", run_cli(FIXTURE))
+
+
 if __name__ == "__main__":
     unittest.main()

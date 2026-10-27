@@ -6,3 +6,8 @@ xcuserdata/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Recordings (heart rate): keep outside the repo
+station-coach-data/
+*.zip
+verdict.*

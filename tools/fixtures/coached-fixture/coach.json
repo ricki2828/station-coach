@@ -1,0 +1,250 @@
+{
+  "early": false,
+  "endedAtEpochMs": 1790000188000,
+  "noReps": [],
+  "plan": {
+    "division": "open_men",
+    "raceTargetSeconds": 188,
+    "steps": [
+      {
+        "activity": "run",
+        "index": 0,
+        "reps": null,
+        "runNumber": 1,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "skierg",
+        "index": 1,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 2,
+        "reps": null,
+        "runNumber": 2,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "sled_push",
+        "index": 3,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 4,
+        "reps": null,
+        "runNumber": 3,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "sled_pull",
+        "index": 5,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 6,
+        "reps": null,
+        "runNumber": 4,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "burpee_broad_jump",
+        "index": 7,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 8,
+        "reps": null,
+        "runNumber": 5,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "row",
+        "index": 9,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 10,
+        "reps": null,
+        "runNumber": 6,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "farmers_carry",
+        "index": 11,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 12,
+        "reps": null,
+        "runNumber": 7,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "sandbag_lunges",
+        "index": 13,
+        "reps": null,
+        "runNumber": null,
+        "sets": [],
+        "targetSeconds": 12
+      },
+      {
+        "activity": "run",
+        "index": 14,
+        "reps": null,
+        "runNumber": 8,
+        "sets": [],
+        "targetSeconds": 8
+      },
+      {
+        "activity": "wall_balls",
+        "index": 15,
+        "reps": 20,
+        "runNumber": null,
+        "sets": [
+          10,
+          10
+        ],
+        "targetSeconds": 40
+      }
+    ],
+    "transitionSeconds": 2,
+    "type": "full_sim"
+  },
+  "repCorrection": 0,
+  "repTimesMs": [
+    1790000153000,
+    1790000154000,
+    1790000156000,
+    1790000157000,
+    1790000159000,
+    1790000160000,
+    1790000162000,
+    1790000163000,
+    1790000165000,
+    1790000166000,
+    1790000173000,
+    1790000174000,
+    1790000176000,
+    1790000177000,
+    1790000179000,
+    1790000180000,
+    1790000182000,
+    1790000183000,
+    1790000185000,
+    1790000186000
+  ],
+  "splits": [
+    {
+      "endMs": 1790000008000,
+      "startMs": 1790000000000,
+      "stepIndex": 0
+    },
+    {
+      "endMs": 1790000020000,
+      "startMs": 1790000008000,
+      "stepIndex": 1
+    },
+    {
+      "endMs": 1790000028000,
+      "startMs": 1790000020000,
+      "stepIndex": 2
+    },
+    {
+      "endMs": 1790000040000,
+      "startMs": 1790000028000,
+      "stepIndex": 3
+    },
+    {
+      "endMs": 1790000048000,
+      "startMs": 1790000040000,
+      "stepIndex": 4
+    },
+    {
+      "endMs": 1790000060000,
+      "startMs": 1790000048000,
+      "stepIndex": 5
+    },
+    {
+      "endMs": 1790000068000,
+      "startMs": 1790000060000,
+      "stepIndex": 6
+    },
+    {
+      "endMs": 1790000080000,
+      "startMs": 1790000068000,
+      "stepIndex": 7
+    },
+    {
+      "endMs": 1790000088000,
+      "startMs": 1790000080000,
+      "stepIndex": 8
+    },
+    {
+      "endMs": 1790000100000,
+      "startMs": 1790000088000,
+      "stepIndex": 9
+    },
+    {
+      "endMs": 1790000108000,
+      "startMs": 1790000100000,
+      "stepIndex": 10
+    },
+    {
+      "endMs": 1790000120000,
+      "startMs": 1790000108000,
+      "stepIndex": 11
+    },
+    {
+      "endMs": 1790000128000,
+      "startMs": 1790000120000,
+      "stepIndex": 12
+    },
+    {
+      "endMs": 1790000140000,
+      "startMs": 1790000128000,
+      "stepIndex": 13
+    },
+    {
+      "endMs": 1790000148000,
+      "startMs": 1790000140000,
+      "stepIndex": 14
+    },
+    {
+      "endMs": 1790000188000,
+      "startMs": 1790000148000,
+      "stepIndex": 15
+    }
+  ],
+  "startedAtEpochMs": 1790000000000
+}
