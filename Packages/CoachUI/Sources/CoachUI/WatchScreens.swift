@@ -797,6 +797,7 @@ public struct CoachMenuScreen: View {
           row("Keep going", fill: Theme.bone.opacity(0.16), text: Theme.bone, height: height, action: onCancel)
         }
         .padding(.horizontal, Theme.Space.watchEdge)
+        .padding(.top, 28) // clear of the clock; the first three rows still fit the 40 mm page
         #if os(watchOS)
         ScrollView { rows }
         #else
