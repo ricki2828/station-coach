@@ -40,16 +40,26 @@ struct HomeView: View {
 
 struct SessionsView: View {
   @ObservedObject private var transfer = WatchTransfer.shared
+  @State private var confirmDelete = false
+
+  private var sentCount: Int {
+    guard let root = try? SessionFiles.defaultRoot() else { return 0 }
+    return SessionFiles.summaries(in: root).filter { transfer.isAcked($0.id) }.count
+  }
 
   var body: some View {
     let sessions = SessionFiles.summaries(in: (try? SessionFiles.defaultRoot()) ?? URL(fileURLWithPath: "/"))
     List {
       Button("Send unsent") { transfer.sendUnsent() }
-      Button("Delete sent", role: .destructive) { transfer.deleteAcked() }
+      Button("Delete sent", role: .destructive) { confirmDelete = true }
+        .confirmationDialog("Delete \(sentCount) sent \(sentCount == 1 ? "session" : "sessions") from the watch?", isPresented: $confirmDelete, titleVisibility: .visible) {
+          Button("Delete \(sentCount)", role: .destructive) { transfer.deleteAcked() }
+          Button("Cancel", role: .cancel) {}
+        }
       ForEach(sessions) { s in
         VStack(alignment: .leading) {
           Text(s.id).font(.caption2)
-          Text("\(s.bytes / 1_000_000) MB  \(transfer.isAcked(s.id) ? "on phone" : "not confirmed")")
+          Text("\(s.bytes / 1_000_000) MB  \(transfer.isAcked(s.id) ? "on phone" : "on watch only")")
             .font(.footnote).foregroundStyle(.secondary)
         }
       }

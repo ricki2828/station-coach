@@ -4,21 +4,29 @@ import SwiftUI
 /// "Sat 24 Oct", total, words against target, strip. Shared by Home's last-session card and the History list.
 struct SessionRowContent: View {
   let record: SessionRecord
+  /// A session resumed after the app stopped, or closed from a checkpoint.
+  var recovered = false
 
   var body: some View {
     let r = record.result
+    let label = CoachCopy.sessionLabel(early: r.early, recovered: recovered)
     VStack(alignment: .leading, spacing: 10) {
       HStack {
         SessionChip(record.type)
+        if let label { Text(label.uppercased()).scaledFont(13, .heavy).foregroundStyle(PhoneTheme.amberText) }
         Spacer()
         Text(HistoryFormat.shortDate(record.date)).scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
       }
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Text(Fmt.clock(r.totalSeconds)).scaledStat().foregroundStyle(PhoneTheme.inkText)
-        if let words = record.targetWords {
-          Text(words.text).scaledFont(15, .semibold).foregroundStyle(words.over ? PhoneTheme.amberText : PhoneTheme.inkText)
+        // An early session has no finish time: show how far it got, not a total.
+        if r.early {
+          Text("\(r.completedStationCount) of \(r.plan.stationCount)").scaledStat().foregroundStyle(PhoneTheme.inkText)
+          Text("stations").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
         } else {
-          Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
+          Text(Fmt.clock(r.totalSeconds)).scaledStat().foregroundStyle(PhoneTheme.inkText)
+          if let words = record.targetWords {
+            Text(words.text).scaledFont(15, .semibold).foregroundStyle(words.over ? PhoneTheme.amberText : PhoneTheme.inkText)
+          }
         }
       }
       StationStrip(result: r, height: 8)
@@ -33,11 +41,13 @@ public struct HistoryScreen: View {
   let onOpen: (SessionRecord) -> Void
   let onRawFiles: () -> Void
   let totals: AnyView?
+  let recoveredIds: Set<String>
 
   /// `totals` is the Week / Month / Year card, shown above the list once there is a session.
-  public init(records: [SessionRecord], syncPercent: Int? = nil, totals: AnyView? = nil, onOpen: @escaping (SessionRecord) -> Void = { _ in },
+  public init(records: [SessionRecord], syncPercent: Int? = nil, totals: AnyView? = nil, recoveredIds: Set<String> = [], onOpen: @escaping (SessionRecord) -> Void = { _ in },
               onRawFiles: @escaping () -> Void = {}) {
     self.totals = totals
+    self.recoveredIds = recoveredIds
     self.records = SessionRecord.sorted(records)
     self.syncPercent = syncPercent
     self.onOpen = onOpen
@@ -75,7 +85,7 @@ public struct HistoryScreen: View {
         }
       }
       ForEach(records) { rec in
-        Button { onOpen(rec) } label: { PhoneCard { SessionRowContent(record: rec) } }.buttonStyle(.plain)
+        Button { onOpen(rec) } label: { PhoneCard { SessionRowContent(record: rec, recovered: recoveredIds.contains(rec.id)) } }.buttonStyle(.plain)
       }
     }
     .padding(20)

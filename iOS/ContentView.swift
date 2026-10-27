@@ -162,7 +162,7 @@ struct HistoryHost: View {
       ScrollView {
         VStack(spacing: 0) {
           if syncFailed { SyncFailedCard().padding(.horizontal, 20).padding(.top, 20) }
-          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent, totals: totals,
+          HistoryScreen(records: phone.coachSessions, syncPercent: phone.syncPercent, totals: totals, recoveredIds: phone.recoveredIds,
                         onOpen: { path.append(.detail($0.id)) }, onRawFiles: { path.append(.rawFiles) })
         }
       }
@@ -291,23 +291,50 @@ struct RawFilesHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @State private var share: ShareItem?
   @State private var error: String?
+  @State private var toDelete: SessionSummary?
+
+  private var totalBytes: Int { phone.sessions.reduce(0) { $0 + $1.bytes } }
+
+  private func size(_ bytes: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
 
   var body: some View {
     List {
       if phone.sessions.isEmpty {
         Text("No sessions yet. Finish a recording on the watch and keep this app installed; files arrive in the background.")
           .font(.footnote).foregroundStyle(.secondary)
-      }
-      ForEach(phone.sessions) { s in
-        Button { export(s.id) } label: {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(s.id).font(.subheadline.monospaced())
-            Text("\(s.fileCount) files, \(ByteCountFormatter.string(fromByteCount: Int64(s.bytes), countStyle: .file))"
-                 + (phone.completeIds.contains(s.id) ? "" : "  (incomplete)"))
-              .font(.footnote).foregroundStyle(.secondary)
+      } else {
+        Section {
+          Button { exportAll() } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Export all").font(.headline)
+              Text("\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
+                .font(.footnote).foregroundStyle(.secondary)
+            }
           }
         }
-        .swipeActions { Button("Delete", role: .destructive) { phone.delete(s.id) } }
+      }
+      let watchOnly = phone.watchOnlyIds
+      if !watchOnly.isEmpty {
+        Section("On watch only") {
+          ForEach(watchOnly, id: \.self) { id in
+            VStack(alignment: .leading, spacing: 2) {
+              Text(id).font(.subheadline.monospaced())
+              Text("Not on this phone yet. Keep both apps open.").font(.footnote).foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+      Section {
+        ForEach(phone.sessions) { s in
+          Button { export(s.id) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(s.id).font(.subheadline.monospaced())
+              Text("\(s.fileCount) files, \(size(s.bytes))" + (phone.completeIds.contains(s.id) ? "" : "  (incomplete)"))
+                .font(.footnote).foregroundStyle(.secondary)
+            }
+          }
+          .swipeActions { Button("Delete", role: .destructive) { toDelete = s } }
+        }
       }
       if let error { Text(error).foregroundStyle(.red).font(.footnote) }
     }
@@ -315,11 +342,33 @@ struct RawFilesHost: View {
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { phone.refresh() }
     .sheet(item: $share) { ShareSheet(url: $0.url) }
+    .confirmationDialog(deleteTitle, isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }), titleVisibility: .visible) {
+      Button("Delete", role: .destructive) { if let s = toDelete { phone.delete(s.id) }; toDelete = nil }
+      Button("Cancel", role: .cancel) { toDelete = nil }
+    } message: {
+      Text("This removes it from this phone for good. If you have not exported it, it is gone.")
+    }
+  }
+
+  private var deleteTitle: String {
+    guard let s = toDelete else { return "Delete this session?" }
+    let d = phone.describe(s.id)
+    let when = d.date.map { HistoryFormat.shortDate($0) } ?? s.id
+    return "Delete \([d.athlete, when].compactMap { $0 }.joined(separator: ", ")), \(size(s.bytes))?"
   }
 
   private func export(_ id: String) {
     do {
       share = ShareItem(url: try phone.zip(id))
+      error = nil
+    } catch {
+      self.error = "Export failed: \(error.localizedDescription)"
+    }
+  }
+
+  private func exportAll() {
+    do {
+      share = ShareItem(url: try phone.zipAll())
       error = nil
     } catch {
       self.error = "Export failed: \(error.localizedDescription)"
