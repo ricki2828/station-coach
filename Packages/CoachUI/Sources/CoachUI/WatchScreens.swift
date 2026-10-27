@@ -400,6 +400,7 @@ public struct CoachStepScreen: View {
     }
   }
 
+  @ViewBuilder
   private var stepBody: some View {
     let fg = dimmed ? Theme.background(model.activity) : Theme.text(model.activity)
     // Wrist down, the station colour is only safe for the big numbers: small text goes bone to stay readable on ink.
