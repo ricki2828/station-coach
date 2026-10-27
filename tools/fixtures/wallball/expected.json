@@ -1,0 +1,100 @@
+{
+  "steady": {
+    "note": "10 reps every 3 s",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      20.19,
+      23.19,
+      26.19,
+      29.18,
+      32.19
+    ]
+  },
+  "jog_in": {
+    "note": "arm swing every 0.5 s for 8 s, then 6 reps",
+    "count": 6,
+    "confidence": "high",
+    "repTimes": [
+      13.19,
+      16.19,
+      19.19,
+      22.19,
+      25.19,
+      28.19
+    ]
+  },
+  "sets_with_rests": {
+    "note": "5 reps, 14 s rest, 5 reps",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      31.18,
+      34.19,
+      37.19,
+      40.19,
+      43.18
+    ]
+  },
+  "fast_reps": {
+    "note": "12 reps every 1.9 s",
+    "count": 12,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      7.09,
+      8.98,
+      10.88,
+      12.79,
+      14.68,
+      16.58,
+      18.49,
+      20.39,
+      22.29,
+      24.19,
+      26.08
+    ]
+  },
+  "catch_peaks": {
+    "note": "10 throws every 3 s, each with a catch 1.2 s later",
+    "count": 10,
+    "confidence": "high",
+    "repTimes": [
+      5.19,
+      8.19,
+      11.18,
+      14.18,
+      17.19,
+      20.19,
+      23.19,
+      26.19,
+      29.18,
+      32.19
+    ]
+  },
+  "pickup_bump": {
+    "note": "big ball-pickup bump at 2 s (inside the ignored first 4 s), then 8 reps",
+    "count": 8,
+    "confidence": "high",
+    "repTimes": [
+      7.19,
+      10.19,
+      13.19,
+      16.19,
+      19.19,
+      22.19,
+      25.19,
+      28.19
+    ]
+  }
+}
