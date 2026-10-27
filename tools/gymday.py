@@ -31,6 +31,7 @@ except ImportError:
 PASS, FAIL, NOT_RUN = "PASS", "FAIL", "NOT RUN"
 WB_TOLERANCE = 0.05
 MIN_ATHLETES = 3
+BATTERY_PROJECT_MIN_MINUTES = 20  # a straight-line projection from fewer minutes of coarse readings is too noisy to FAIL on
 BATTERY_FLAT = 5.0  # percent: a last reading at or under this before 90 min counts as the battery running out
 REQUIRED_ATHLETE = "A1"
 THERMAL_ORDER = ["nominal", "fair", "serious", "critical"]
@@ -76,12 +77,15 @@ def coached_checks(folder, manifest, truth):
     # Finish cue: the first cue issued at or after the session ended (the watch offers it after the undo window).
     ended = coach["endedAtEpochMs"]
     by_id = {}
+    salvaged = bool(manifest.get("recovered"))
     for r in m1.read_rows(Path(folder) / "cues.csv"):
         by_id.setdefault(r["cue_id"], []).append(r)
     issued = [(min(int(e["epoch_ms"]) for e in ev if e["event"] == "issued"), cid, ev)
               for cid, ev in by_id.items() if any(e["event"] == "issued" for e in ev)]
     after = [t for t in issued if t[0] >= ended]
-    if not after:
+    if salvaged:
+        checks.append(check("finish cue", NOT_RUN, "session was salvaged from a checkpoint (recovered): no finish cue is expected"))
+    elif not after:
         checks.append(check("finish cue", FAIL, "never issued (no cue at or after the session end)"))
     else:
         _, cid, ev = min(after, key=lambda t: t[0])
@@ -162,10 +166,13 @@ def analyse_session(folder, truth):
     elif not bat["reached"]:
         # Ended before 90 min: a battery that is flat, or on course to be under the mark, is the failure this mark exists to catch.
         gone = bat["last_percent"] <= BATTERY_FLAT
-        low = bat["percent"] < m1.BATTERY_MARK
+        low = bat["percent"] < m1.BATTERY_MARK and bat["session_minutes"] >= BATTERY_PROJECT_MIN_MINUTES
         text = (f"session {bat['session_minutes']:.0f} min, 90 not reached, last {bat['last_percent']:.0f}%, "
                 f"projected {bat['percent']:.0f}% at 90 min")
-        s["mark2"] = {"status": FAIL if gone or low else NOT_RUN, "detail": text + (" (battery ran out)" if gone else "")}
+        s["mark2"] = {"status": FAIL if gone or low else NOT_RUN,
+                      "detail": text + (" (battery ran out)" if gone else
+                                        "" if bat["session_minutes"] >= BATTERY_PROJECT_MIN_MINUTES else
+                                        f" (under {BATTERY_PROJECT_MIN_MINUTES} min: too short to project)")}
     else:
         s["mark2"] = {"status": PASS if bat["percent"] >= m1.BATTERY_MARK else FAIL,
                       "detail": f"{bat['percent']:.0f}% at 90 min (start {bat['start_percent']:.0f}%)"}
@@ -305,6 +312,9 @@ def resolve_truth(truth, folders):
         if len(hits) != 1:
             usage_error(f"--wb-truth {key}: " + ("matches no session" if not hits else f"matches {len(hits)} sessions ({', '.join(hits)})")
                              + f"; sessions found: {', '.join(ids)}")
+        folder = next(f for f, i in zip(folders, ids) if i == hits[0])
+        if not (Path(folder) / "coach.json").exists():
+            usage_error(f"--wb-truth {key}: session {hits[0]} has no coach.json (an uncoached recording has no wall-ball count to compare)")
         resolved[hits[0]] = n
     return resolved
 
