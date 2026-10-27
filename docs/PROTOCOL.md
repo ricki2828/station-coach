@@ -12,7 +12,8 @@ Follow this for every recorded session; it keeps the pass marks about the watch,
 ### Desk test additions
 - Mode B with the AirPods **not** connected: starting a session may show the system audio route picker and wait. Note what happens if you dismiss it (the log should say "NOT activated") and whether cues then speak at all.
 - Mode B, then switch the AirPods off mid-session and on again: `events.csv` should show "headphones lost; will re-activate when a headphone output reappears", then a route change and "reactivating: headphones back" once they return, and cues should resume. While they are off, cues are still attempted (on the speaker or not at all) and the recorder does not pop the route picker.
-- Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start").
+- Force-quit the app mid-session, relaunch, tap "Keep and send", start a new session, and confirm it records (rates.csv rows every minute, no "Could not start"). `tools/desk_check.py` reads this off the new session's folder.
+- **Crash recovery, coached session.** Force-quit mid-coached-session and relaunch: the session resumes at the same step; if it can't, History shows it as ended early. Either way the splits so far must survive. Note which happened, and check the folder has `coach.json` (and `events.csv` `recovered_resume` if it resumed). Not run on a device yet.
 - Compare `headphones` in `cues.csv` with what you heard, cue by cue, in each mode. If the report's "finished and not flagged, any route" line is well above the main figure, the route read is unreliable.
 
 ## Coached session
@@ -32,7 +33,7 @@ Do these on the watch, in order, before the first real session. Note what you se
 1. **Finish and undo.** Hold HOLD TO FINISH for 1 s on the last step: it should finish, not open the Undo/End menu. Then tap UNDO inside the 10 s window and check the wall-ball count carries on from where it was (the count and the +/- correction are kept, and sets already passed are not announced again).
 2. **Wall balls after a jog-in.** Do 20 real wall balls after a 15 s jog-in (NEXT tapped as you start jogging). Compare the watch's count, and any "Set done" it spoke, with the true count. Note phantom reps from the jog or from picking the ball up, and any set cue spoken at the wrong count.
 3. **Corners and clock.** On the wrist, check the screens against the snapshot mask: nothing under the clock, the delta band and the HR chip not clipped, and the bottom NEXT / NOT HEARD buttons not cut by the rounded corners. The mask in the PNGs (44 pt corners, 24 pt top inset) is an estimate.
-4. **Finish cue logged.** After a coached session, open `cues.csv` and confirm the finish cue has both an `issued` and a `finished` row. If it only has `issued`, the writer closed before the speech ended.
+4. **Finish cue logged.** After a coached session, `gymday.py` checks that the finish cue has both an `issued` and a `finished` row in `cues.csv`. If it only has `issued`, the writer closed before the speech ended.
 
 ## During
 - Tap the activity when you start it. Hold the top of the screen to undo a mistaken tap.
@@ -42,4 +43,7 @@ Do these on the watch, in order, before the first real session. Note what you se
 ## After
 - Tap End session. The files move to the phone in the background; wait for "on phone" before deleting from the watch.
 - Note how many cues you heard roughly, which music source was used, and anything odd.
-- Run `python3 tools/m1_report.py <session-folder> ...` on the exported folders.
+- Export each session from the phone (History > Raw files) and get the zips onto the host.
+- `python3 tools/ingest.py <zip|folder> ... --into ~/station-coach-data` files and validates them; it says what it skipped and why.
+- `python3 tools/gymday.py ~/station-coach-data --wb-truth <session>=20 --md verdict.md` gives the M1 verdict per pass mark. `docs/GYMDAY.md` has the rules.
+- `python3 tools/desk_check.py <session-folder>` automates the desk-test reads above. `tools/m1_report.py <session-folder> ...` still prints the full detail for single sessions.

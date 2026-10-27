@@ -5,6 +5,17 @@
   "cueIntervalSec": 10,
   "device": "Synthetic",
   "endedAtEpochMs": 1790000120000,
+  "files": [
+    "accel.csv",
+    "battery.csv",
+    "cues.csv",
+    "events.csv",
+    "hr.csv",
+    "labels.csv",
+    "manifest.json",
+    "motion.csv",
+    "rates.csv"
+  ],
   "formatVersion": 1,
   "motionApi": "CMBatchedSensorManager",
   "osVersion": "watchOS 10",

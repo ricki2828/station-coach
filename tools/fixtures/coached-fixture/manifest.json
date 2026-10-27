@@ -1,0 +1,31 @@
+{
+  "appVersion": "0.1.0",
+  "athlete": "A1",
+  "audioMode": "A",
+  "cueIntervalSec": 0,
+  "device": "Synthetic",
+  "endedAtEpochMs": 1790000188000,
+  "files": [
+    "accel.csv",
+    "battery.csv",
+    "coach.json",
+    "cues.csv",
+    "events.csv",
+    "hr.csv",
+    "labels.csv",
+    "manifest.json",
+    "motion.csv",
+    "rates.csv"
+  ],
+  "formatVersion": 1,
+  "labelSource": "coach",
+  "motionApi": "CMBatchedSensorManager",
+  "osVersion": "watchOS 10",
+  "requestedHz": 800,
+  "sessionId": "coached-fixture",
+  "startedAtEpochMs": 1790000000000,
+  "storeHz": 50,
+  "transitionLabelSeconds": 2,
+  "workoutActivityType": "crossTraining",
+  "wrist": "left"
+}

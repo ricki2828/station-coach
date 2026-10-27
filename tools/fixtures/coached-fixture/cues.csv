@@ -1,0 +1,35 @@
+epoch_ms,cue_id,event,mode,headphones,outputs,phrase,detail,audio_mode
+1790000000000,1,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 1.,,A
+1790000002500,1,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 1.,,A
+1790000008000,2,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 2.,,A
+1790000010500,2,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 2.,,A
+1790000020000,3,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 3.,,A
+1790000022500,3,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 3.,,A
+1790000028000,4,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 4.,,A
+1790000030500,4,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 4.,,A
+1790000040000,5,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 5.,,A
+1790000042500,5,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 5.,,A
+1790000048000,6,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 6.,,A
+1790000050500,6,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 6.,,A
+1790000060000,7,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 7.,,A
+1790000062500,7,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 7.,,A
+1790000068000,8,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 8.,,A
+1790000070500,8,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 8.,,A
+1790000080000,9,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 9.,,A
+1790000082500,9,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 9.,,A
+1790000088000,10,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 10.,,A
+1790000090500,10,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 10.,,A
+1790000100000,11,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 11.,,A
+1790000102500,11,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 11.,,A
+1790000108000,12,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 12.,,A
+1790000110500,12,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 12.,,A
+1790000120000,13,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 13.,,A
+1790000122500,13,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 13.,,A
+1790000128000,14,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 14.,,A
+1790000130500,14,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 14.,,A
+1790000140000,15,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 15.,,A
+1790000142500,15,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 15.,,A
+1790000148000,16,issued,speech,1,BluetoothA2DPOutput/AirPods,Step 16.,,A
+1790000150500,16,finished,speech,1,BluetoothA2DPOutput/AirPods,Step 16.,,A
+1790000188000,17,issued,speech,1,BluetoothA2DPOutput/AirPods,3:08. On target.,,A
+1790000190500,17,finished,speech,1,BluetoothA2DPOutput/AirPods,3:08. On target.,,A
