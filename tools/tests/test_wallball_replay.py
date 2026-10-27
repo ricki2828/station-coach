@@ -57,6 +57,15 @@ class GoldenTests(unittest.TestCase):
         self.assertEqual(EXPECTED["after_big_bump"]["count"], 8)
         self.assertEqual({n for n, w in EXPECTED.items() if w["confidence"] == "low"}, {"uneven", "sub_floor"})  # sub_floor: no reps is low by definition
 
+    def test_smoothing_is_bit_identical_to_swift_expression(self):
+        """Swift: smooth.map { $0 * 0.8 + magnitude * 0.2 }. Compare exactly, not approximately."""
+        c = wb.WallBallCounter()
+        ref = None
+        for t, m in read_samples("steady"):
+            ref = m if ref is None else ref * 0.8 + m * 0.2
+            c.add(t, m)
+            self.assertEqual(c._smooth, ref)
+
     def test_mutants_are_caught(self):
         """Each parameter nudged must change at least one golden, so the fixtures cannot go soft."""
         C = wb.WallBallCounter
@@ -64,7 +73,8 @@ class GoldenTests(unittest.TestCase):
             + [("MIN_THRESHOLD", v) for v in (0.4, 0.8)] + [("ENVELOPE_FRACTION", v) for v in (0.4, 0.6)] \
             + [("JOGGING_HOLD", v) for v in (0.5, 3.0)] + [("JOGGING_PEAKS", v) for v in (3, 5)] \
             + [("JOGGING_WINDOW", v) for v in (1.5, 2.5)] + [("REST_GAP", v) for v in (2.0, 12.0)] \
-            + [("CONF_MAX_CV", v) for v in (0.01, 0.8)] + [("SMOOTH_KEEP", v) for v in (0.6, 0.9)]
+            + [("CONF_MAX_CV", v) for v in (0.01, 0.8)] + [("SMOOTH_KEEP", v) for v in (0.6, 0.9)] \
+            + [("SMOOTH_NEW", v) for v in (0.1, 0.4)]
         data = {n: read_samples(n) for n in EXPECTED}
 
         def outputs():
@@ -247,6 +257,17 @@ class ReplayTests(unittest.TestCase):
             self.assertGreaterEqual(len(reps), 9)  # a few lost samples may cost a rep, never the rest of the file
             self.assertTrue(reps[-1] > T0 + 25_000, "replay continued past the torn rows")
             self.assertRegex(warn[0], r"skipped [3-9] torn")
+
+    def test_recovered_resume_inside_step_warns(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self.make_session(tmp)
+            (tmp / "events.csv").write_text(f"epoch_ms,kind,detail\n{T0 - 90_000},recovered_resume,step=0\n"
+                                            f"{T0 + 15_000},recovered_resume,step=1 splits=2 seq=9\n")
+            _, steps = wb.replay(tmp)
+            joined = " ".join(steps[0]["warnings"])
+            self.assertIn(f"recovered_resume at {T0 + 15_000}", joined)
+            self.assertNotIn(str(T0 - 90_000), joined)  # outside the wall-ball step
 
     def test_rep_ms_rounds_half_away_from_zero(self):
         self.assertEqual(wb.rep_ms(2.5e-3), 3)

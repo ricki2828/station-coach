@@ -36,6 +36,7 @@ class WallBallCounter:
     JOGGING_WINDOW = 2.0
     JOGGING_HOLD = 1.5
     SMOOTH_KEEP = 0.8
+    SMOOTH_NEW = 0.2  # not 1 - SMOOTH_KEEP: that is 0.19999999999999996, and Swift multiplies by the literal 0.2
     ENVELOPE_DECAY = 0.9995
     ENVELOPE_FRACTION = 0.5
     PEAK_DEDUPE = 0.25
@@ -66,7 +67,7 @@ class WallBallCounter:
         """True when this sample completed a rep (the peak is detected one sample late)."""
         if self._first_t is None:
             self._first_t = t
-        s = magnitude if self._smooth is None else self._smooth * self.SMOOTH_KEEP + magnitude * (1 - self.SMOOTH_KEEP)
+        s = magnitude if self._smooth is None else self._smooth * self.SMOOTH_KEEP + magnitude * self.SMOOTH_NEW
         self._smooth = s
         self._envelope = max(s, self._envelope * self.ENVELOPE_DECAY)
         try:
@@ -214,6 +215,24 @@ def paused_intervals(labels_csv, start_ms, end_ms):
     return out, True
 
 
+def resumes(events_csv, start_ms, end_ms):
+    """Epoch ms of `recovered_resume` events in events.csv inside [start_ms, end_ms]. After one the watch counts with
+    a fresh detector (new ignore window, envelope and peak history), which a continuous replay does not model."""
+    out = []
+    try:
+        with open(events_csv, newline="") as f:
+            for r in csv.DictReader(f):
+                try:
+                    ms = int(r["epoch_ms"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if r.get("kind") == "recovered_resume" and start_ms <= ms <= end_ms:
+                    out.append(ms)
+    except (OSError, UnicodeDecodeError, csv.Error):
+        pass
+    return out
+
+
 def corrected_counts(coach, folder):
     """(valid_reps, no_reps) as the app derives them (CoachResult.validReps / noRepCount): the phone's
     phone-correction.json over coach.json, else repTimesMs + repCorrection - noReps, clamped at 0. A legacy bare-Int
@@ -263,6 +282,9 @@ def replay(folder):
         warnings = []
         if not known:
             warnings.append("no labels.csv: an advance-then-undo gap cannot be ruled out, counts may not be comparable")
+        for ms in resumes(folder / "events.csv", start, end):
+            warnings.append(f"recovered_resume at {ms}: the watch restarted its detector there, counts after it may "
+                            "not be comparable")
         replayed = count_reps(motion, start, end, skip, warnings)
         watch = [t for t in watch_times if start <= t <= end]
         out.append({"stepIndex": split["stepIndex"], "startMs": start, "endMs": end, "replayed": replayed,
