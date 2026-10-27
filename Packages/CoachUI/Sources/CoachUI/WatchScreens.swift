@@ -341,7 +341,7 @@ struct EdgeLadder: View {
   var compact = false
 
   var body: some View {
-    let tall: CGFloat = compact ? (ticks.count > 12 ? 5 : 8) : (ticks.count > 12 ? 6 : 9)
+    let tall: CGFloat = compact ? (ticks.count > 12 ? 4 : 8) : (ticks.count > 12 ? 6 : 9)
     VStack(spacing: compact ? 1 : 2) {
       ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
         RoundedRectangle(cornerRadius: 1.5)
