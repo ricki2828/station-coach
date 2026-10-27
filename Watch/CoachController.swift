@@ -156,9 +156,7 @@ final class CoachController: ObservableObject {
     let c = counter
     recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
     active = true
-    if let step = machine?.current {
-      recorder.note("recovered_resume", "step=\(step.index) splits=\(machine?.splits.count ?? 0) seq=\(found.checkpoint.seq)\(found.usedBackup ? " backup" : "")")
-    }
+    recorder.note(CoachCheckpoint.resumeEventKind, CoachCheckpoint.resumeDetail(state: found.checkpoint.state, seq: found.checkpoint.seq, usedBackup: found.usedBackup))
     beginStep(announce: false)
     checkpoint()
     startTicker()

@@ -257,4 +257,20 @@ final class CoachWiringTests: XCTestCase {
     XCTAssertEqual(r.splits.count, 16)
     XCTAssertEqual(r.skippedStationCount, 1, "the left-over station stays skipped")
   }
+
+  // MARK: The resume log line
+
+  func testEveryResumeLogsRecoveredResumeEvenOnTheLeftoverPrompt() {
+    XCTAssertEqual(CoachCheckpoint.resumeEventKind, "recovered_resume")
+    let running = runningState(atStep: 5)
+    XCTAssertEqual(CoachCheckpoint.resumeDetail(state: running, seq: 7, usedBackup: false), "step=5 splits=6 seq=7")
+    XCTAssertEqual(CoachCheckpoint.resumeDetail(state: running, seq: 7, usedBackup: true), "step=5 splits=6 seq=7 backup")
+    let leftover = leftoverState()
+    XCTAssertNil(leftover.machine.current, "no step is running on the prompt")
+    let detail = CoachCheckpoint.resumeDetail(state: leftover, seq: 3, usedBackup: false)
+    XCTAssertEqual(detail, "step=leftover splits=\(leftover.machine.splits.count) seq=3")
+    // The row the desk test and gymday read: kind + detail as events.csv lines.
+    let line = Lines.event(epochMs: 1, kind: CoachCheckpoint.resumeEventKind, detail: detail)
+    XCTAssertTrue(line.hasPrefix("1,recovered_resume,step=leftover"), line)
+  }
 }

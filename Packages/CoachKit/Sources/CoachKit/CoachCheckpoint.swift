@@ -120,6 +120,18 @@ public struct CoachCheckpoint: Codable, Equatable {
     return Resumable(folder: folder, checkpoint: cp, usedBackup: usedBackup)
   }
 
+  // MARK: The resume log line
+
+  public static let resumeEventKind = "recovered_resume"
+
+  /// The `events.csv` detail of a resume: `step=<n>` (or `step=leftover` on the "still to do" prompt, where no step is
+  /// running), the number of splits, the checkpoint's `seq`, and `backup` if the `.prev` copy was used. Every resume logs it,
+  /// whichever screen it lands on: the desk test and gymday rely on the row.
+  public static func resumeDetail(state: CoachSessionState, seq: Int, usedBackup: Bool) -> String {
+    let step = state.machine.current.map { String($0.index) } ?? "leftover"
+    return "step=\(step) splits=\(state.machine.splits.count) seq=\(seq)\(usedBackup ? " backup" : "")"
+  }
+
   // MARK: Giving up on a resume
 
   /// Writes `coach.json` (early) from the checkpoint when the folder has none, then removes the checkpoint.
