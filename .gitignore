@@ -6,6 +6,7 @@ xcuserdata/
 __pycache__/
 *.pyc
 .DS_Store
+.pytest_cache/
 
 # Recordings (heart rate): keep outside the repo
 station-coach-data/
