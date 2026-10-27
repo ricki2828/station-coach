@@ -14,8 +14,8 @@ public struct StepSplit: Codable, Equatable {
 
 /// ready -> step 0 -> step 1 -> ... -> finished. `advance` is the NEXT button or the pinch; `undo` goes
 /// back one step; `end` finishes early. All times are epoch milliseconds passed in, so it is deterministic.
-public struct SessionMachine {
-  public enum Phase: Equatable {
+public struct SessionMachine: Codable, Equatable {
+  public enum Phase: Codable, Equatable {
     case ready
     case running
     case finished(early: Bool)
@@ -98,6 +98,27 @@ public struct SessionMachine {
     splits[splits.count - 1].endMs = ms
     phase = .finished(early: true)
     endMs = ms
+  }
+
+  /// Whether a machine read back from disk can be trusted to index the plan: every split names a real step, only the
+  /// running step is open, and times do not run backwards. A checkpoint that fails this is treated as corrupt.
+  public var isConsistent: Bool {
+    guard !plan.steps.isEmpty else { return false }
+    for (i, s) in splits.enumerated() {
+      guard plan.steps.indices.contains(s.stepIndex) else { return false }
+      if let end = s.endMs, end < s.startMs { return false }
+      if i > 0 {
+        guard let prevEnd = splits[i - 1].endMs, prevEnd <= s.startMs else { return false }
+      }
+    }
+    switch phase {
+    case .ready:
+      return splits.isEmpty
+    case .running:
+      return startMs != nil && splits.first?.startMs == startMs && splits.last?.endMs == nil
+    case .finished:
+      return startMs != nil && endMs != nil && !splits.isEmpty && splits.last?.endMs != nil
+    }
   }
 
   // MARK: Time maths

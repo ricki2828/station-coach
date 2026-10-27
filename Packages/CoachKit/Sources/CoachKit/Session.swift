@@ -48,6 +48,8 @@ public struct SessionManifest: Codable, Equatable {
   public var labelSource: String?
   /// For `labelSource` "coach": a run after a station is labelled `transition` for its first this-many seconds.
   public var transitionLabelSeconds: Int?
+  /// How many times the app was killed and the session carried on (absent = never). Motion and heart-rate files have a gap at each.
+  public var resumed: Int?
 
   public init(
     sessionId: String, startedAtEpochMs: Int64, device: String, osVersion: String, appVersion: String,
@@ -131,13 +133,15 @@ public enum SessionFiles {
     }
     m.endedAtEpochMs = Clock.epochMs(newest)
     m.recovered = true
+    // A coached session that could not be resumed keeps its splits: coach.json (early) from the last checkpoint.
+    CoachCheckpoint.salvage(folder: folder, endedAtEpochMs: m.endedAtEpochMs ?? Clock.epochMs(newest))
     m.files = try list(folder).map(\.name)
     let enc = JSONEncoder()
     enc.outputFormatting = [.prettyPrinted, .sortedKeys]
     try enc.encode(m).write(to: folder.appendingPathComponent("manifest.json"), options: .atomic)
   }
 
-  static func readManifest(_ folder: URL) -> SessionManifest? {
+  public static func readManifest(_ folder: URL) -> SessionManifest? {
     guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")) else { return nil }
     return try? JSONDecoder().decode(SessionManifest.self, from: data)
   }
@@ -176,8 +180,17 @@ public final class AppendWriter {
     if !fm.fileExists(atPath: url.path) {
       guard fm.createFile(atPath: url.path, contents: Data((header + "\n").utf8)) else { throw CocoaError(.fileWriteUnknown) }
     }
+    // A crash can leave a half-written last line. End it, so the first new line starts on its own line.
+    var needsNewline = false
+    if let r = try? FileHandle(forReadingFrom: url) {
+      defer { try? r.close() }
+      if let size = try? r.seekToEnd(), size > 0, (try? r.seek(toOffset: size - 1)) != nil {
+        needsNewline = (try? r.read(upToCount: 1)) != Data([0x0A])
+      }
+    }
     let h = try FileHandle(forWritingTo: url)
     try h.seekToEnd()
+    if needsNewline { try h.write(contentsOf: Data([0x0A])) }
     self.handle = h
   }
 
@@ -232,6 +245,19 @@ public final class SessionWriter {
     self.manifest = manifest
     self.folder = root.appendingPathComponent(manifest.sessionId, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try writeManifest()
+    for stream in SessionStream.allCases {
+      writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
+    }
+  }
+
+  /// Reopens an unfinished session after a relaunch: every stream is appended to, headers are not repeated, and the
+  /// manifest only gains `resumed` (+1). Throws if the folder has no manifest or the session already finished.
+  public init(resuming folder: URL) throws {
+    guard var m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
+    m.resumed = (m.resumed ?? 0) + 1
+    self.manifest = m
+    self.folder = folder
     try writeManifest()
     for stream in SessionStream.allCases {
       writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
