@@ -252,16 +252,21 @@ public final class SessionWriter {
   }
 
   /// Reopens an unfinished session after a relaunch: every stream is appended to, headers are not repeated, and the
-  /// manifest only gains `resumed` (+1). Throws if the folder has no manifest or the session already finished.
+  /// manifest is not touched until `markResumed()`. Throws if the folder has no manifest or the session already finished.
   public init(resuming folder: URL) throws {
-    guard var m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
-    m.resumed = (m.resumed ?? 0) + 1
+    guard let m = SessionFiles.readManifest(folder), m.endedAtEpochMs == nil else { throw CocoaError(.fileReadCorruptFile) }
     self.manifest = m
     self.folder = folder
-    try writeManifest()
     for stream in SessionStream.allCases {
       writers[stream] = try AppendWriter(url: folder.appendingPathComponent(stream.fileName), header: stream.header)
     }
+  }
+
+  /// Counts one resume in the manifest (`resumed`). Call it once the workout session has really been reattached, so a
+  /// resume that fails part way leaves the manifest as it was.
+  public func markResumed() throws {
+    manifest.resumed = (manifest.resumed ?? 0) + 1
+    try writeManifest()
   }
 
   public func append(_ stream: SessionStream, _ line: String) { writers[stream]?.append(line) }

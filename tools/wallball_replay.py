@@ -274,8 +274,8 @@ def replay(folder):
     out = []
     for split in splits:
         step = steps.get(split.get("stepIndex"))
-        if not step or step.get("activity") != "wall_balls":
-            continue
+        if not step or step.get("activity") != "wall_balls" or split.get("skipped"):
+            continue  # a skipped or moved attempt is not a wall-ball window
         start = split["startMs"]
         end = split.get("endMs") or coach.get("endedAtEpochMs") or float("inf")
         skip, known = paused_intervals(folder / "labels.csv", start, end)

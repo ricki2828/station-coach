@@ -57,6 +57,8 @@ final class RecorderController: ObservableObject {
   static let hrMissedKey = "hrMissedLastSession"
   private var minuteTimer: Timer?
   private var alarmTimer: Timer?
+  /// Once the athlete taps OK, the same fault does not come back as a full-screen alarm (see AlarmGate).
+  private var alarmGate = AlarmGate()
   private var watchdogTimer: Timer?
   private var watchdogTotal = 0
   private var watchdogSince = Date()
@@ -154,6 +156,7 @@ final class RecorderController: ObservableObject {
 
   /// Everything after the workout session is up: heart rate, motion, cues, the timers. Shared by a fresh start and a resume.
   private func beginRuntime(writer: SessionWriter, motion: MotionRecorder, coach: Bool) async {
+    alarmGate.reset()
     hrWatch.start(at: clock)
     hrOff = false
     heartRate = nil
@@ -200,6 +203,8 @@ final class RecorderController: ObservableObject {
       WatchTransfer.shared.pauseForRecording()
       wire(writer: writer, motion: motion)
       try await workout.recover(expectedStartMs: writer.manifest.startedAtEpochMs)
+      // Counted only now that the workout session is really back; a failed resume leaves the manifest as it was.
+      do { try writer.markResumed() } catch { log("manifest_error", "\(error)") }
       unfinished.removeAll { $0 == writer.manifest.sessionId }
       await beginRuntime(writer: writer, motion: motion, coach: true)
       return true
@@ -270,6 +275,9 @@ final class RecorderController: ObservableObject {
     phase = .idle
   }
 
+  /// A short notice over the running screen (3 s for the skip notices, 4 s otherwise).
+  func notify(_ text: String) { flash(text) }
+
   /// A short-lived notice over the running screen.
   private func flash(_ text: String) {
     toast = text
@@ -325,18 +333,33 @@ final class RecorderController: ObservableObject {
   }
 
   func dismissAlarm() {
-    alarm = nil
     alarmTimer?.invalidate()
     alarmTimer = nil
+    alarm = nil
+    // A fault that arrived while this one was up is shown now, not lost.
+    if let next = alarmGate.dismiss() { showAlarm(next) }
+  }
+
+  private func showAlarm(_ message: String) {
+    alarm = message
+    WKInterfaceDevice.current().play(.failure)
+    alarmTimer?.invalidate()
+    alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
   }
 
   private func raiseAlarm(_ message: String) {
     guard phase == .running else { return }
-    log("alarm", message)
-    guard alarm == nil else { return }
-    alarm = message
-    WKInterfaceDevice.current().play(.failure)
-    alarmTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in WKInterfaceDevice.current().play(.failure) }
+    log("alarm", message) // every raise is logged, whatever the gate then decides
+    switch alarmGate.raise(message, at: clock) {
+    case .alarm:
+      showAlarm(message)
+    case .toast:
+      // Already acknowledged and still true: a short note in the band and one buzz, never the full-screen alarm again.
+      WKInterfaceDevice.current().play(.failure)
+      flash(message)
+    case .ignore:
+      break
+    }
   }
 
   func flagMissedCue() {
@@ -398,6 +421,7 @@ final class RecorderController: ObservableObject {
     if !sawFirstSample {
       if total > 0 {
         sawFirstSample = true
+        alarmGate.clear("Motion never started")
         watchdogTotal = total
         watchdogSince = Date()
         log("first_motion_sample", String(format: "delay=%.1fs", motion.firstSampleDelay ?? -1))
@@ -409,6 +433,7 @@ final class RecorderController: ObservableObject {
     if total != watchdogTotal {
       watchdogTotal = total
       watchdogSince = Date()
+      alarmGate.clear("No motion samples for \(Int(Self.stallSeconds)) s") // flowing again: a later stall alarms afresh
     } else if Date().timeIntervalSince(watchdogSince) >= Self.stallSeconds {
       raiseAlarm("No motion samples for \(Int(Self.stallSeconds)) s")
     }

@@ -12,7 +12,8 @@ public struct SessionRecord: Equatable, Identifiable {
 
   public var date: Date { Date(timeIntervalSince1970: Double(result.startedAtEpochMs) / 1000) }
   public var type: SessionType { result.plan.type }
-  public var isComplete: Bool { !result.early }
+  /// Ran to the end with nothing skipped: only such a session is comparable (a best, a fade, a target line, a ghost).
+  public var isComplete: Bool { !result.early && result.skippedStationCount == 0 }
   public var fade: Int? { RunFade.fade(result) }
 
   /// Newest first.
@@ -58,6 +59,8 @@ public enum RunFade {
 
   /// One entry per completed run 2..N, in order. Empty when run 1 or the run is not done.
   public static func slowdowns(_ result: CoachResult) -> [Slowdown] {
+    // A session with a skipped station has no fade: "the run after the row" measures nothing when no row was done.
+    guard result.skippedStationCount == 0 else { return [] }
     let rows = result.rows
     guard let first = rows.first(where: { $0.step.isRun })?.actualSeconds else { return [] }
     var out: [Slowdown] = []

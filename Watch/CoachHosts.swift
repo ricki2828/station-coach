@@ -41,7 +41,10 @@ struct CoachRunningHost: View {
 
   var body: some View {
     Group {
-      if let model = coach.screen {
+      if let step = coach.leftover {
+        CoachLeftoverScreen(title: CoachCopy.leftoverTitle(step), activity: step.activity,
+                            onNow: { coach.doLeftover() }, onWithout: { coach.finishWithoutLeftover() }, onUndo: { coach.undo() })
+      } else if let model = coach.screen {
         CoachStepScreen(
           model: model,
           onNext: { coach.advance() },
@@ -57,8 +60,19 @@ struct CoachRunningHost: View {
     }
     // 1.5 s: longer than the 1.0 s HOLD TO FINISH, so holding FINISH can never open the menu first.
     .onLongPressGesture(minimumDuration: 1.5) { coach.showMenu = true }
-    .sheet(isPresented: $coach.showMenu) {
-      CoachMenuScreen(onUndo: { coach.undo() }, onEnd: { coach.endEarly() }, onCancel: { coach.showMenu = false })
+    // One sheet for the menu and "Skip Row?": opening the second from the first never dismisses and re-presents.
+    .sheet(isPresented: Binding(
+      get: { coach.showMenu || coach.showSkipConfirm },
+      set: { if !$0 { coach.showMenu = false; coach.showSkipConfirm = false } })
+    ) {
+      if coach.showSkipConfirm, let step = coach.skipStep {
+        CoachSkipConfirmScreen(title: CoachCopy.skipTitle(step), activity: step.activity, canLater: coach.canDoItLater,
+                               onLater: { coach.skip(later: true) }, onSkip: { coach.skip(later: false) },
+                               onBack: { coach.showSkipConfirm = false })
+      } else {
+        CoachMenuScreen(canSkip: coach.canSkipHere, onUndo: { coach.undo() }, onSkip: { coach.requestSkip() },
+                        onEnd: { coach.endEarly() }, onCancel: { coach.showMenu = false })
+      }
     }
   }
 }

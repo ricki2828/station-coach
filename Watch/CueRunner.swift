@@ -204,13 +204,22 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     speak(phrase)
   }
 
-  /// Any cue: a haptic and the phrase, logged to cues.csv like the test cues.
+  /// Any cue: the default notification haptic and the phrase, logged to cues.csv like the test cues.
   func speak(_ phrase: String) {
+    issue(phrase, haptic: nil)
+  }
+
+  /// A coached cue: its own haptic pattern (`CueHaptic.for(kind)`) and the phrase.
+  func speak(_ phrase: String, haptic: HapticKind) {
+    issue(phrase, haptic: haptic)
+  }
+
+  private func issue(_ phrase: String, haptic: HapticKind?) {
     nextId += 1
     let id = nextId
     lastCueId = id
     lastCueAt = Date()
-    WKInterfaceDevice.current().play(.notification)
+    play(haptic)
 
     // Speech is always attempted. The route is read after activation and only logged, never used to skip.
     var problem: String?
@@ -261,6 +270,25 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
   }
 
   // MARK: Helpers
+
+  /// Plays a cue's haptic; `nil` is the plain notification buzz of the M1 test cues.
+  private func play(_ haptic: HapticKind?) {
+    let device = WKInterfaceDevice.current()
+    guard let haptic else { device.play(.notification); return }
+    let type: WKHapticType
+    switch haptic.motion {
+    case .tap: type = .click
+    case .up: type = .directionUp
+    case .down: type = .directionDown
+    case .start: type = .start
+    case .success: type = .success
+    case .retry: type = .retry
+    }
+    device.play(type)
+    for n in 1..<max(haptic.pulses, 1) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 * Double(n)) { device.play(type) }
+    }
+  }
 
   private func emit(_ id: Int, _ kind: CueEvent.Kind, mode: CueEvent.Mode, headphones: Bool, outputs: [String], phrase: String, detail: String) {
     onCue?(CueEvent(epochMs: Clock.epochMs(), cueId: id, kind: kind, mode: mode, headphones: headphones, outputs: outputs, phrase: phrase, detail: detail, audioMode: audioMode.rawValue))

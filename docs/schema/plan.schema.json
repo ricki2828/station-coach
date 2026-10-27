@@ -8,10 +8,11 @@
   "required": ["division", "type", "raceTargetSeconds", "steps", "transitionSeconds"],
   "properties": {
     "division": { "enum": ["open_men", "open_women", "pro_men", "pro_women"] },
-    "type": { "enum": ["full_sim", "half_sim", "wall_ball_focus"] },
+    "type": { "enum": ["full_sim", "half_sim", "wall_ball_focus", "race_day"] },
     "raceTargetSeconds": { "type": "integer", "minimum": 0 },
     "transitionSeconds": { "type": "integer", "minimum": 0 },
-    "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
+    "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } },
+    "ghostSplits": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Seconds each step took in the session being raced (the ghost), one per step. Absent = race the plan." }
   },
   "definitions": {
     "step": {

@@ -20,17 +20,28 @@ public struct SetupModel: Equatable {
   /// Reps per round of the wall-ball focus session.
   public var wallBallReps: Int
   public var send: SendState
+  /// The last comparable session, or why there is none. Filled by the host from History.
+  public var ghost: GhostOffer
+  /// "Race against: last session" chosen. Off by default: the plan is the reference (it is tied to the race target).
+  public var useGhost: Bool
 
   public init(division: Division = .openMen, targetSeconds: Int = 5400, type: SessionType = .fullSim,
-              wallBallReps: Int = PlanBuilder.defaultFocusReps, send: SendState = .idle) {
+              wallBallReps: Int = PlanBuilder.defaultFocusReps, send: SendState = .idle,
+              ghost: GhostOffer = .none, useGhost: Bool = false) {
     self.division = division
     self.targetSeconds = targetSeconds
     self.type = type
     self.wallBallReps = wallBallReps
     self.send = send
+    self.ghost = ghost
+    self.useGhost = useGhost
   }
 
-  public var plan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type, wallBallReps: wallBallReps) }
+  /// The plan from the targets alone; the ghost offer is made for this one.
+  public var basePlan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type, wallBallReps: wallBallReps) }
+
+  /// What goes to the watch: the base plan, carrying the ghost's splits when the ghost is chosen and available.
+  public var plan: SessionPlan { Ghost.plan(basePlan, racing: ghost, race: useGhost) }
 }
 
 /// Bars whose widths follow their weights. Explicit widths: layout priorities do not do this.
@@ -83,6 +94,7 @@ public struct SetupScreen: View {
   var onTargetStep: (Int) -> Void = { _ in }
   var onType: (SessionType) -> Void = { _ in }
   var onWallBallReps: (Int) -> Void = { _ in }
+  var onReference: (Bool) -> Void = { _ in }
   var onSend: () -> Void = {}
   let notify: NotifySettingState?
   let onNotifyToggle: (Bool) -> Void
@@ -91,7 +103,7 @@ public struct SetupScreen: View {
   public init(model: SetupModel, notify: NotifySettingState? = nil, onNotifyToggle: @escaping (Bool) -> Void = { _ in },
               onDivision: @escaping (Division) -> Void = { _ in }, onTargetStep: @escaping (Int) -> Void = { _ in },
               onType: @escaping (SessionType) -> Void = { _ in }, onWallBallReps: @escaping (Int) -> Void = { _ in },
-              onSend: @escaping () -> Void = {}) {
+              onReference: @escaping (Bool) -> Void = { _ in }, onSend: @escaping () -> Void = {}) {
     self.model = model
     self.notify = notify
     self.onNotifyToggle = onNotifyToggle
@@ -99,6 +111,7 @@ public struct SetupScreen: View {
     self.onTargetStep = onTargetStep
     self.onType = onType
     self.onWallBallReps = onWallBallReps
+    self.onReference = onReference
     self.onSend = onSend
   }
 
@@ -145,7 +158,13 @@ public struct SetupScreen: View {
           }
         }
       }
-      splitSummary
+      // Race day is always against the plan (no ghost), and shows its split targets instead of the training summary.
+      if model.type == .raceDay {
+        raceSplits
+      } else {
+        referenceCard
+        splitSummary
+      }
       sendArea
       if let notify { MondaySummaryCard(state: notify, onToggle: onNotifyToggle) }
     }
@@ -161,6 +180,62 @@ public struct SetupScreen: View {
     }.buttonStyle(.plain).accessibilityLabel(a11y)
   }
 
+  /// "Race against": the plan (default) or the last comparable session. One reference for the whole session.
+  private var referenceCard: some View {
+    let racing = model.useGhost && model.ghost.available
+    return PhoneCard {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Race against").phoneKicker()
+        referenceOption(title: "Plan", sub: "Targets from \(Fmt.clock(model.basePlan.plannedSeconds))", selected: !racing, enabled: true) { onReference(false) }
+        referenceOption(title: model.ghost.title, sub: model.ghost.sub, selected: racing, enabled: model.ghost.available) { onReference(true) }
+      }
+    }
+  }
+
+  private func referenceOption(title: String, sub: String, selected: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(selected ? Theme.bone : PhoneTheme.inkText)
+        Text(sub).font(.system(size: 13)).foregroundStyle(selected ? Theme.bone.opacity(0.85) : PhoneTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+      .padding(.horizontal, 14).padding(.vertical, 8)
+      .background(selected ? PhoneTheme.inkText : PhoneTheme.paper, in: RoundedRectangle(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.clear : PhoneTheme.hairline, lineWidth: 1))
+      .opacity(enabled ? 1 : 0.45)
+    }
+    .buttonStyle(.plain)
+    .disabled(!enabled)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  /// Race day: every segment's target split, flagged as an estimate.
+  private var raceSplits: some View {
+    let plan = model.basePlan
+    return PhoneCard {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Text("Target splits").phoneKicker()
+          Text("ESTIMATE").font(.system(size: 11, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
+            .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
+        }
+        Text(RacePlan.estimateNote).font(.system(size: 13)).foregroundStyle(PhoneTheme.muted)
+        ForEach(RacePlan.segments(plan)) { seg in
+          HStack(spacing: 8) {
+            Circle().fill(PhoneTheme.stationColor(seg.activity)).frame(width: 10, height: 10)
+            Text(seg.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
+            Spacer(minLength: 8)
+            Text(Fmt.clock(seg.targetSeconds)).font(.system(size: 17, weight: .semibold)).monospacedDigit().foregroundStyle(PhoneTheme.inkText)
+          }
+          .accessibilityElement(children: .combine)
+        }
+        Text("Total \(Fmt.clock(plan.plannedSeconds)). \(RacePlan.footnote(plan))").font(.system(size: 13)).foregroundStyle(PhoneTheme.muted)
+      }
+    }
+  }
+
   private var splitSummary: some View {
     let plan = model.plan
     let run = plan.steps.first { $0.isRun }?.targetSeconds ?? 0
@@ -171,7 +246,7 @@ public struct SetupScreen: View {
           Text("ESTIMATE").font(.system(size: 11, weight: .heavy)).foregroundStyle(PhoneTheme.inkText)
             .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.amber, in: Capsule())
         }
-        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) including transitions")
+        Text("\(plan.steps.filter(\.isRun).count) runs at \(Fmt.clock(run)) including changeovers")
           .font(.system(size: 17, weight: .semibold)).foregroundStyle(PhoneTheme.inkText)
         ProportionalStrip(items: plan.steps.filter { !$0.isRun }.map { (PhoneTheme.stationColor($0.activity), Double($0.targetSeconds)) }, height: 14)
         Text("Total \(Fmt.clock(plan.plannedSeconds)). Default split: runs about half, stations by typical shares.")

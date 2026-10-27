@@ -31,6 +31,7 @@ except ImportError:
 PASS, FAIL, NOT_RUN = "PASS", "FAIL", "NOT RUN"
 WB_TOLERANCE = 0.05
 MIN_ATHLETES = 3
+BATTERY_PROJECT_MIN_MINUTES = 20  # a straight-line projection from fewer minutes of coarse readings is too noisy to FAIL on
 BATTERY_FLAT = 5.0  # percent: a last reading at or under this before 90 min counts as the battery running out
 REQUIRED_ATHLETE = "A1"
 THERMAL_ORDER = ["nominal", "fair", "serious", "critical"]
@@ -55,6 +56,8 @@ def wall_ball_windows(coach):
     plan = {s["index"]: s for s in coach["plan"]["steps"]}
     out = []
     for sp in coach["splits"]:
+        if sp.get("skipped"):
+            continue  # an abandoned attempt (skipped or moved): its reps are not wall-ball reps
         if plan.get(sp["stepIndex"], {}).get("activity") == "wall_balls":
             out.append((sp["startMs"], sp.get("endMs") or coach["endedAtEpochMs"]))
     return out
@@ -81,7 +84,12 @@ def coached_checks(folder, manifest, truth):
     issued = [(min(int(e["epoch_ms"]) for e in ev if e["event"] == "issued"), cid, ev)
               for cid, ev in by_id.items() if any(e["event"] == "issued" for e in ev)]
     after = [t for t in issued if t[0] >= ended]
-    if not after:
+    # Salvaged = closed from a checkpoint: recovered and either ended early or no finish cue ever followed.
+    # A recovered session that finished normally (crash after FINISH) is still checked.
+    salvaged = bool(manifest.get("recovered")) and (bool(coach.get("early")) or not after)
+    if salvaged:
+        checks.append(check("finish cue", NOT_RUN, "session was salvaged from a checkpoint (recovered): no finish cue is expected"))
+    elif not after:
         checks.append(check("finish cue", FAIL, "never issued (no cue at or after the session end)"))
     else:
         _, cid, ev = min(after, key=lambda t: t[0])
@@ -92,9 +100,12 @@ def coached_checks(folder, manifest, truth):
 
     # Splits.
     steps = coach["plan"]["steps"]
-    done = {s["stepIndex"] for s in coach["splits"] if s.get("endMs") is not None}
+    done = {s["stepIndex"] for s in coach["splits"] if s.get("endMs") is not None and not s.get("skipped")}
     missing = [s["index"] for s in steps if s["index"] not in done]
-    if not missing:
+    skipped = sorted({s["stepIndex"] for s in coach["splits"] if s.get("skipped")} - done)
+    if skipped and not coach.get("early"):
+        checks.append(check("splits", FAIL, f"stations skipped (not a full session): {skipped}"))
+    elif not missing:
         checks.append(check("splits", PASS, f"all {len(steps)} steps have a split"))
     elif coach.get("early"):
         checks.append(check("splits", PASS, f"early: {len(steps) - len(missing)}/{len(steps)} steps finished"))
@@ -162,10 +173,13 @@ def analyse_session(folder, truth):
     elif not bat["reached"]:
         # Ended before 90 min: a battery that is flat, or on course to be under the mark, is the failure this mark exists to catch.
         gone = bat["last_percent"] <= BATTERY_FLAT
-        low = bat["percent"] < m1.BATTERY_MARK
+        low = bat["percent"] < m1.BATTERY_MARK and bat["session_minutes"] >= BATTERY_PROJECT_MIN_MINUTES
         text = (f"session {bat['session_minutes']:.0f} min, 90 not reached, last {bat['last_percent']:.0f}%, "
                 f"projected {bat['percent']:.0f}% at 90 min")
-        s["mark2"] = {"status": FAIL if gone or low else NOT_RUN, "detail": text + (" (battery ran out)" if gone else "")}
+        s["mark2"] = {"status": FAIL if gone or low else NOT_RUN,
+                      "detail": text + (" (battery ran out)" if gone else
+                                        "" if bat["session_minutes"] >= BATTERY_PROJECT_MIN_MINUTES else
+                                        f" (under {BATTERY_PROJECT_MIN_MINUTES} min: too short to project)")}
     else:
         s["mark2"] = {"status": PASS if bat["percent"] >= m1.BATTERY_MARK else FAIL,
                       "detail": f"{bat['percent']:.0f}% at 90 min (start {bat['start_percent']:.0f}%)"}
@@ -305,6 +319,9 @@ def resolve_truth(truth, folders):
         if len(hits) != 1:
             usage_error(f"--wb-truth {key}: " + ("matches no session" if not hits else f"matches {len(hits)} sessions ({', '.join(hits)})")
                              + f"; sessions found: {', '.join(ids)}")
+        folder = next(f for f, i in zip(folders, ids) if i == hits[0])
+        if not (Path(folder) / "coach.json").exists():
+            usage_error(f"--wb-truth {key}: session {hits[0]} has no coach.json (an uncoached recording has no wall-ball count to compare)")
         resolved[hits[0]] = n
     return resolved
 

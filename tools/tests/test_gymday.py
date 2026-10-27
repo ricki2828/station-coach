@@ -272,6 +272,33 @@ class VerdictTests(Base):
         self.assertIn("watch counted 20 (corrected 18 valid)", out)
 
 
+class SkippedStationTests(Base):
+    def skip_split(self, folder, step_index):
+        p = Path(folder) / "coach.json"
+        c = json.loads(p.read_text())
+        for sp in c["splits"]:
+            if sp["stepIndex"] == step_index:
+                sp["skipped"] = True
+        p.write_text(json.dumps(c))
+
+    def test_a_skipped_station_does_not_count_as_a_recorded_activity(self):
+        root = self.data_dir()
+        self.skip_split(root / "A2" / "a2-session", 9)  # the Row: labelled for 12 s, then skipped
+        code, out = self.run_gymday(root)
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"Mark 4  FAIL")
+        self.assertIn("A2 missing row", out)
+
+    def test_wall_ball_window_skips_an_abandoned_attempt(self):
+        c = json.loads((COACHED / "coach.json").read_text())
+        full = gymday.wall_ball_windows(c)
+        for sp in c["splits"]:
+            if sp["stepIndex"] == 15:
+                sp["skipped"] = True
+        self.assertEqual(len(full), 1)
+        self.assertEqual(gymday.wall_ball_windows(c), [])
+
+
 class TornRowTests(Base):
     """After a crash-resume a CSV can hold a short or garbled row mid-file; every reader must skip it and say so."""
 
@@ -345,6 +372,95 @@ class TornRowTests(Base):
         rows, skipped = m1_report.parse_csv(cues)
         self.assertEqual(skipped, 1)
         self.assertEqual(len(rows), len(lines) - 1)
+
+
+class RoundTwoTests(Base):
+    def test_wb_truth_on_an_uncoached_session_is_an_error(self):
+        root = self.data_dir()
+        self.session(root, "A4", "plain-one", source=INTERVAL)
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            gymday.main([str(root), "--min-minutes", "1", "--wb-truth", "plain-one=20"])
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_quoted_newline_is_one_row(self):
+        s = self.session(self.tmp, "A1")
+        ev = s / "events.csv"
+        ev.write_text(ev.read_text() + '1790000030000,error,"line one\nline two, with comma"\n1790000031000,thermal,fair\n')
+        rows, skipped = m1_report.parse_csv(ev)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(rows[-2]["detail"], "line one\nline two, with comma")
+        self.assertEqual(rows[-1]["kind"], "thermal")
+
+    def test_quoted_newline_at_end_of_file_and_torn_quote_before_a_row(self):
+        s = self.session(self.tmp, "A1")
+        ev = s / "events.csv"
+        base = ev.read_text()
+        ev.write_text(base + '1790000030000,error,"cut off\n1790000031000,thermal,fair\n')
+        rows, skipped = m1_report.parse_csv(ev)
+        self.assertEqual(skipped, 1)
+        self.assertEqual(rows[-1]["kind"], "thermal")
+        ev.write_text(base + '1790000030000,error,"never closed')
+        self.assertEqual(m1_report.parse_csv(ev)[1], 1)
+
+    def test_salvaged_session_finish_cue_is_not_run(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(recovered=True))
+        cues = d / "cues.csv"
+        cues.write_text("".join(cues.read_text().splitlines(keepends=True)[:-2]))
+        _, out = self.run_gymday(root)
+        self.assertIn("finish cue NOT RUN: session was salvaged", out)
+
+    def test_recovered_session_that_finished_normally_is_still_checked(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(recovered=True))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue PASS", out)
+        # the kill cut the finish cue off: issued, never finished
+        cues = d / "cues.csv"
+        cues.write_text("".join(cues.read_text().splitlines(keepends=True)[:-1]))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue FAIL", out)
+
+    def test_recovered_early_session_is_not_run_even_with_a_later_cue(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(recovered=True))
+        self.edit_json(d / "coach.json", lambda c: c.update(early=True))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue NOT RUN", out)
+
+    def test_resumed_but_finished_session_still_checks_the_finish_cue(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(resumed=1))
+        cues = d / "cues.csv"
+        cues.write_text("".join(cues.read_text().splitlines(keepends=True)[:-2]))
+        _, out = self.run_gymday(root)
+        self.assertIn("finish cue FAIL", out)
+
+    def _short_battery_session(self, minutes, levels):
+        d = self.session(self.tmp / f"d{minutes}", "A1")
+        start = 1_790_000_000_000
+        self.edit_json(d / "manifest.json", lambda m: m.update(endedAtEpochMs=start + minutes * 60_000))
+        (d / "battery.csv").write_text("epoch_ms,level,state\n" + "".join(
+            f"{start + i * 60_000},{lv:.2f},unplugged\n" for i, lv in enumerate(levels)))
+        with mock.patch.object(m1_report, "BATTERY_MINUTES", 90):
+            return gymday.analyse_session(d, None)["mark2"]
+
+    def test_projection_needs_twenty_minutes(self):
+        # 1%/min projects to 10% at 90 min: FAIL from a 30-minute session, NOT RUN from a 10-minute one.
+        long_ = self._short_battery_session(30, [1 - 0.01 * i for i in range(31)])
+        self.assertEqual(long_["status"], "FAIL")
+        short = self._short_battery_session(10, [1 - 0.01 * i for i in range(11)])
+        self.assertEqual(short["status"], "NOT RUN")
+        self.assertIn("too short to project", short["detail"])
+
+    def test_flat_battery_fails_even_in_a_short_session(self):
+        m = self._short_battery_session(10, [1.0, 0.5, 0.2, 0.05, 0.03])
+        self.assertEqual(m["status"], "FAIL")
+        self.assertIn("ran out", m["detail"])
 
 
 class IngestTests(Base):

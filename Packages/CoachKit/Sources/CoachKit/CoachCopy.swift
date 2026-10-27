@@ -10,9 +10,10 @@ public enum CoachCopy {
 
   /// Said once during a run's last `transitionSeconds` (the walk-in allowance at its end), when a station follows
   /// and has a target to jog towards. A cue of its own at the lowest priority, so the gap rules decide when.
-  public static func jogInDue(run: PlanStep, next: PlanStep?, elapsedSeconds: Int, transitionSeconds: Int) -> Bool {
+  /// Racing a ghost, `referenceSeconds` is the ghost's time for this run and replaces the plan target in the timing.
+  public static func jogInDue(run: PlanStep, next: PlanStep?, elapsedSeconds: Int, transitionSeconds: Int, referenceSeconds: Int? = nil) -> Bool {
     guard run.isRun, let next, !next.isRun, next.targetSeconds > 0, transitionSeconds > 0 else { return false }
-    return elapsedSeconds >= max(0, run.targetSeconds - transitionSeconds)
+    return elapsedSeconds >= max(0, (referenceSeconds ?? run.targetSeconds) - transitionSeconds)
   }
 
   public static func stationIntro(_ step: PlanStep) -> String {
@@ -34,13 +35,17 @@ public enum CoachCopy {
   }
 
   /// Said once, halfway through a station's target time. Nil for wall balls (set cues instead).
-  public static func midStation(_ step: PlanStep) -> String? {
+  /// Racing a ghost the pace is the ghost's (`referenceSeconds`): "Last time 2:05 per 500."
+  public static func midStation(_ step: PlanStep, reference: DeltaReference = .plan, referenceSeconds: Int? = nil) -> String? {
+    let half = Fmt.clock((referenceSeconds ?? step.targetSeconds) / 2)
+    let hold: String
+    if case .last = reference, referenceSeconds != nil { hold = "Last time \(half) per 500." } else { hold = "Hold \(half) per 500." }
     switch step.activity {
-    case .skierg: return "Hold \(Fmt.clock(step.targetSeconds / 2)) per 500. Build the last 200."
+    case .skierg: return "\(hold) Build the last 200."
     case .sledPush: return "Short fast steps. Don't stop. 2 lengths left."
     case .sledPull: return "Sit back, drive with the legs. 2 lengths left."
     case .burpeeBroadJump: return "One every 5 seconds. Keep the rhythm, don't chase distance."
-    case .row: return "Hold \(Fmt.clock(step.targetSeconds / 2)) per 500. This is not a rest."
+    case .row: return "\(hold) This is not a rest."
     case .farmersCarry: return "Quick steps. Don't put them down. 100 to go."
     case .sandbagLunges: return "One lunge every 2 seconds. Knee down. 50 metres left."
     default: return nil
@@ -48,8 +53,15 @@ public enum CoachCopy {
   }
 
   /// "30 seconds up on plan." (ahead) / "20 seconds down, stay calm." (behind) / "On plan."
-  public static func planCheck(deltaSeconds: Int) -> String {
+  /// Against the ghost: "Twelve seconds up on your last sim." / "Twenty seconds down on your last sim. Stay calm." /
+  /// "Level with your last sim."
+  public static func planCheck(deltaSeconds: Int, reference: DeltaReference = .plan) -> String {
     let b = DeltaMath.spokenBucket(deltaSeconds)
+    if case .last = reference {
+      if b == 0 { return "Level with \(reference.phrase)." }
+      let line = b < 0 ? "\(Fmt.spoken(-b)) up on \(reference.phrase)." : "\(Fmt.spoken(b)) down on \(reference.phrase). Stay calm."
+      return line.prefix(1).uppercased() + line.dropFirst()
+    }
     if b == 0 { return "On plan." }
     let line = b < 0 ? "\(Fmt.spoken(-b)) up on plan." : "\(Fmt.spoken(b)) down, stay calm."
     return line.prefix(1).uppercased() + line.dropFirst()
@@ -57,15 +69,75 @@ public enum CoachCopy {
 
   /// Said as a run begins. After a heavy station it carries the legs line; after any station a plan check.
   /// The spoken target is the kilometre alone: the plan's run target also holds two changeover allowances.
-  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0) -> String {
+  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0,
+                              reference: DeltaReference = .plan, referenceSeconds: Int? = nil) -> String {
     var parts: [String] = []
-    if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds)) }
+    if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds, reference: reference)) }
     if let station, heavyLegs.contains(station.activity) {
       parts.append("Legs feel heavy for 200 metres. Short quick steps.")
     }
-    parts.append("Target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds))) for this kilometre.")
+    if case .last = reference, let referenceSeconds {
+      // One reference: against a ghost the kilometre is the ghost's, not the plan's.
+      parts.append("Last time \(Fmt.clock(max(0, referenceSeconds - 2 * transitionSeconds))) for this kilometre.")
+    } else {
+      parts.append("Target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds))) for this kilometre.")
+    }
     return parts.joined(separator: " ")
   }
+
+  // MARK: Race day (split calls only)
+
+  /// "Race day. Target 80 minutes. Run 1, 4:48 for the kilometre."
+  public static func raceStart(plan: SessionPlan, run: PlanStep) -> String {
+    "Race day. Target \(Fmt.spoken(plan.plannedSeconds)). Run \(run.runNumber ?? 1), \(Fmt.clock(max(0, run.targetSeconds - 2 * plan.transitionSeconds))) for the kilometre."
+  }
+
+  /// "Sled push. Target 4:02." No technique line.
+  public static func raceStation(_ step: PlanStep) -> String {
+    "\(Stations.name(step.activity)). Target \(Fmt.clock(step.targetSeconds))."
+  }
+
+  /// "4:10. 8 seconds down. Run 4, target 5:05." The split just done, the delta, the next kilometre. The legs line
+  /// stays after the heavy stations: it is an instruction.
+  public static func raceRunStart(stationSeconds: Int, deltaSeconds: Int, after station: PlanStep, run: PlanStep, transitionSeconds: Int) -> String {
+    let d: String
+    if DeltaBandWords.isLevel(deltaSeconds) {
+      d = "On plan."
+    } else {
+      d = "\(Fmt.spoken(abs(deltaSeconds))) \(deltaSeconds > 0 ? "down" : "up")."
+    }
+    var s = "\(Fmt.clock(stationSeconds)). \(d)"
+    if heavyLegs.contains(station.activity) { s += " Short quick steps." }
+    s += " Run \(run.runNumber ?? 1), target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds)))."
+    return s
+  }
+
+  /// Race-day wall-ball set call: no "Breathe".
+  public static func raceWallBallSet(nextSet: Int?) -> String {
+    guard let n = nextSet else { return "Set done. Last one done." }
+    return "Set done. Next \(Fmt.word(n))."
+  }
+
+  // MARK: Skipping a station
+
+  /// "Skip Row?"
+  public static func skipTitle(_ step: PlanStep) -> String { "Skip \(Stations.name(step.activity))?" }
+
+  /// The toast after "Skip it": "Row skipped. Not counted."
+  public static func skippedToast(_ step: PlanStep) -> String { "\(Stations.name(step.activity)) skipped. Not counted." }
+
+  /// The toast after "Do it later": "Row moved after Carry." / "Row moved to the end."
+  public static func movedToast(_ step: PlanStep, after other: PlanStep?) -> String {
+    let name = Stations.name(step.activity)
+    guard let other else { return "\(name) moved to the end." }
+    return "\(name) moved after \(Stations.name(other.activity))."
+  }
+
+  /// The leftover screen's title: "Row still to do".
+  public static func leftoverTitle(_ step: PlanStep) -> String { "\(Stations.name(step.activity)) still to do" }
+
+  /// "1 station skipped." / "2 stations skipped."
+  public static func skippedCount(_ n: Int) -> String { "\(n) station\(n == 1 ? "" : "s") skipped." }
 
   /// Spoken on the first NO REP tap only.
   public static let noRepNoted = "No rep noted."
@@ -76,10 +148,23 @@ public enum CoachCopy {
   }
 
   /// "1:18:42. 1:18 under target. Best: Row, 0:25 under. Worst: Sled pull, 0:41 over."
-  public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool) -> String {
+  /// Racing a ghost (`reference` is `.last`), the gap is to its finish time, not the target: "0:48 faster than your last full sim."
+  public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool,
+                            reference: DeltaReference = .plan, referenceTotalSeconds: Int? = nil, sessionName: String = "sim",
+                            comparedSeconds: Int? = nil, skipped: Int = 0) -> String {
     let d = totalSeconds - plannedSeconds
     var s = "\(Fmt.clock(totalSeconds))."
-    if !early { s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target." }
+    if skipped > 0 {
+      // The total is not comparable with the target or a ghost: no under/over claim.
+      s += " \(skippedCount(skipped))"
+    } else if !early {
+      if case .last = reference, let ghostTotal = referenceTotalSeconds {
+        let g = (comparedSeconds ?? totalSeconds) - ghostTotal // like with like: whole-second steps on both sides
+        s += DeltaBandWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."
+      } else {
+        s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target."
+      }
+    }
     if let best, best.1 < 0 { s += " Best: \(best.0), \(Fmt.gap(best.1)) under." }
     if let worst, worst.1 > 0 { s += " Worst: \(worst.0), \(Fmt.gap(worst.1)) over." }
     return s
@@ -87,18 +172,19 @@ public enum CoachCopy {
 
   /// Said once at START. Number first, one short line. The first session sets the baseline; later ones go out steady.
   public static func sessionStart(plan: SessionPlan, isFirst: Bool) -> String {
-    let target = Fmt.clock(plan.plannedSeconds)
-    return isFirst ? "\(target) target. Start easy, run 1 sets your baseline." : "\(target) target. Hold run 1 back."
+    let target = "Target \(Fmt.spoken(plan.plannedSeconds))."
+    return isFirst ? "\(target) Start easy, run 1 sets your baseline." : "\(target) Hold run 1 back."
   }
 
-  /// One line after the numbers, chosen by outcome: ended early, first session, under, over, on target.
+  /// One line after `finish`, chosen by outcome: ended early, first session, under, over, on target. It never repeats a time or
+  /// the target gap that `finish` just spoke, and it claims a save only when `saved` (the file really was written).
   /// Reads the result only; no live-measurement or "AI" claims.
-  public static func finishPersonality(totalSeconds: Int, plannedSeconds: Int, isFirst: Bool, early: Bool) -> String {
-    if early { return "Ended early. Everything up to here is saved." }
-    if isFirst { return "First session logged. This time is your baseline." }
+  public static func finishPersonality(totalSeconds: Int, plannedSeconds: Int, isFirst: Bool, early: Bool, saved: Bool) -> String {
+    if early { return saved ? "Ended early. Everything up to here is saved." : "Ended early." }
+    if isFirst { return saved ? "First session logged. This time is your baseline." : "First session. This time is your baseline." }
     let d = totalSeconds - plannedSeconds
-    if d == 0 { return "On target. Exactly the plan." }
-    return d < 0 ? "\(Fmt.gap(d)) under target. Hold that next time." : "\(Fmt.gap(d)) over target. Start with your slowest station."
+    if d == 0 { return "Exactly the plan." }
+    return d < 0 ? "Hold that next time." : "Start with your slowest station."
   }
 
   /// The History tag for a session that did not run start to finish. A recovered session (resumed after the app stopped,

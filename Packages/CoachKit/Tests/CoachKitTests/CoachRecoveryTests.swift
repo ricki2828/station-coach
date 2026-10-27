@@ -396,11 +396,14 @@ final class CoachRecoveryTests: XCTestCase {
       let body = try text(w.folder.appendingPathComponent(stream.fileName))
       XCTAssertEqual(body.components(separatedBy: stream.header).count, 2, "\(stream) header appears once")
     }
+    XCTAssertEqual(SessionFiles.readManifest(w.folder), manifestBefore, "reopening alone does not count a resume")
+    try r.markResumed()
     var expected = manifestBefore
     expected.resumed = 1 // the only change: one resume is counted
     XCTAssertEqual(SessionFiles.readManifest(w.folder), expected)
     XCTAssertEqual(r.manifest.sessionId, "ap1")
     let again = try SessionWriter(resuming: w.folder)
+    try again.markResumed()
     XCTAssertEqual(again.manifest.resumed, 2)
     try again.finish(endedAtEpochMs: 9_000)
     XCTAssertEqual(SessionFiles.readManifest(w.folder)?.resumed, 2, "survives the finish rewrite")

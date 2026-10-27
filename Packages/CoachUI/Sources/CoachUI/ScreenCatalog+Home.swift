@@ -88,6 +88,20 @@ extension ScreenCatalog {
     ]
   }
 
+  /// `record` with its Row skipped: no seconds for it, a "skipped" flag on its split.
+  private static func skippedRecord(_ record: SessionRecord) -> SessionRecord {
+    var r = record.result
+    if let i = r.splits.firstIndex(where: { r.plan.steps[$0.stepIndex].activity == .row }) { r.splits[i].skipped = true }
+    return SessionRecord(id: record.id + "-skipped", result: r)
+  }
+
+  /// `record` as if it had raced a ghost that was 6 s slower on every step.
+  private static func ghostRaced(_ record: SessionRecord) -> SessionRecord {
+    var r = record.result
+    r.plan.ghostSplits = Ghost.stepSeconds(r)?.map { $0 + 6 }
+    return SessionRecord(id: record.id, result: r)
+  }
+
   public static var homeScreens: [CatalogEntry] {
     let list = HistorySamples.list
     let detailFull = list[0]
@@ -100,6 +114,9 @@ extension ScreenCatalog {
       phoneW("history-list", HistoryScreen(records: list)),
       phoneW("history-syncing", HistoryScreen(records: Array(list.prefix(2)), syncPercent: 42)),
       phoneW("detail-full", SessionDetailScreen(record: detailFull)),
+      phoneW("detail-skipped", SessionDetailScreen(record: skippedRecord(detailFull))),
+      phoneW("history-skipped", HistoryScreen(records: [skippedRecord(detailFull)] + Array(list.dropFirst().prefix(2)))),
+      phoneW("detail-ghost", SessionDetailScreen(record: ghostRaced(detailFull))),
       phoneW("detail-partial", SessionDetailScreen(record: detailPartial)),
       phoneW("detail-no-reps", SessionDetailScreen(record: detailNoReps, onSaveCount: { _ in true })),
       phoneW("detail-edit-count", WallBallEditSheet(initial: WallBallCountAdapter.initial(for: detailNoReps))),

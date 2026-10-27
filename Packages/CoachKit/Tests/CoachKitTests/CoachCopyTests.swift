@@ -100,22 +100,43 @@ final class CoachCopyTests: XCTestCase {
   private func words(_ line: String) -> Int { line.split(separator: " ").count }
 
   func testSessionStartLines() {
-    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: true), "1:20:00 target. Start easy, run 1 sets your baseline.")
-    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: false), "1:20:00 target. Hold run 1 back.")
+    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: true), "Target 80 minutes. Start easy, run 1 sets your baseline.")
+    XCTAssertEqual(CoachCopy.sessionStart(plan: plan, isFirst: false), "Target 80 minutes. Hold run 1 back.")
+    XCTAssertFalse(CoachCopy.sessionStart(plan: plan, isFirst: true).contains("1:20"), "spoken with Fmt.spoken, not a clock reading")
   }
 
   func testFinishPersonalityEveryBranch() {
-    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 2000, plannedSeconds: 4800, isFirst: true, early: true), "Ended early. Everything up to here is saved.")
-    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4900, plannedSeconds: 4800, isFirst: true, early: false), "First session logged. This time is your baseline.")
-    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4722, plannedSeconds: 4800, isFirst: false, early: false), "1:18 under target. Hold that next time.")
-    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4900, plannedSeconds: 4800, isFirst: false, early: false), "1:40 over target. Start with your slowest station.")
-    XCTAssertEqual(CoachCopy.finishPersonality(totalSeconds: 4800, plannedSeconds: 4800, isFirst: false, early: false), "On target. Exactly the plan.")
+    func p(_ t: Int, first: Bool, early: Bool, saved: Bool = true) -> String {
+      CoachCopy.finishPersonality(totalSeconds: t, plannedSeconds: 4800, isFirst: first, early: early, saved: saved)
+    }
+    XCTAssertEqual(p(2000, first: true, early: true), "Ended early. Everything up to here is saved.")
+    XCTAssertEqual(p(4900, first: true, early: false), "First session logged. This time is your baseline.")
+    XCTAssertEqual(p(4722, first: false, early: false), "Hold that next time.")
+    XCTAssertEqual(p(4900, first: false, early: false), "Start with your slowest station.")
+    XCTAssertEqual(p(4800, first: false, early: false), "Exactly the plan.")
+  }
+
+  func testPersonalityNeverClaimsASaveThatFailed() {
+    for (first, early) in [(true, true), (true, false), (false, true), (false, false)] {
+      let line = CoachCopy.finishPersonality(totalSeconds: 4900, plannedSeconds: 4800, isFirst: first, early: early, saved: false)
+      XCTAssertFalse(line.lowercased().contains("saved"), line)
+      XCTAssertFalse(line.lowercased().contains("logged"), line)
+    }
+  }
+
+  func testPersonalityDoesNotRepeatWhatFinishSpoke() {
+    for total in [4722, 4900, 4800] {
+      let spoken = CoachCopy.finish(totalSeconds: total, plannedSeconds: 4800, best: nil, worst: nil, early: false)
+      let line = CoachCopy.finishPersonality(totalSeconds: total, plannedSeconds: 4800, isFirst: false, early: false, saved: true)
+      XCTAssertFalse(line.contains(":"), "no clock reading in \(line)")
+      XCTAssertFalse(line.lowercased().contains("target"), "\(line) repeats the gap already in: \(spoken)")
+    }
   }
 
   func testNewLinesStayShortAndClean() {
     var lines = [CoachCopy.sessionStart(plan: plan, isFirst: true), CoachCopy.sessionStart(plan: plan, isFirst: false)]
     for (t, e, f) in [(2000, true, true), (4900, false, true), (4722, false, false), (5800, false, false), (4800, false, false)] {
-      lines.append(CoachCopy.finishPersonality(totalSeconds: t, plannedSeconds: 4800, isFirst: f, early: e))
+      lines.append(CoachCopy.finishPersonality(totalSeconds: t, plannedSeconds: 4800, isFirst: f, early: e, saved: true))
     }
     for line in lines {
       XCTAssertLessThanOrEqual(words(line), 12, line)

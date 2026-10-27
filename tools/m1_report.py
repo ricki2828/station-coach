@@ -13,6 +13,7 @@ Needs only the stdlib and numpy.
 """
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -45,23 +46,51 @@ def _number(text):
         return False
 
 
+ROW_START = re.compile(r"^-?\d{9,}(,|$)")  # a data row begins with an epoch timestamp
+
+
+def logical_lines(f):
+    """Lines of an open CSV, with a quoted field that holds a newline kept as one record. A record with an odd
+    number of quotes is continued on the next line unless that line starts like a new data row (an unterminated
+    quote in a torn row must not swallow the rows after it). Yields (record, ok); ok is False for such a torn record."""
+    buf = None
+    for raw in f:
+        line = raw.rstrip("\r\n")
+        if buf is not None:
+            if ROW_START.match(line):
+                yield buf, False  # the open quote was a torn row, not a multi-line field
+                buf = None
+            else:
+                buf += "\n" + line
+                if buf.count('"') % 2 == 0:
+                    yield buf, True
+                    buf = None
+                continue
+        if line.count('"') % 2:
+            buf = line
+        else:
+            yield line, True
+    if buf is not None:
+        yield buf, False
+
+
 def parse_csv(path):
     """(rows as dicts, number of skipped rows). A row is skipped when it is short or long for the header or a
     timestamp / numeric column does not parse: after a crash-resume a torn row can sit mid-file, not only at
-    the end. Parsed line by line so an unclosed quote in a torn row cannot swallow the rows after it."""
+    the end. Quoted fields with newlines are one row."""
     p = Path(path)
     if not p.exists():
         return [], 0
     rows, skipped = [], 0
     with p.open(newline="", errors="replace") as f:
-        header = next(csv.reader([f.readline()]), [])
+        lines = logical_lines(f)
+        header = next(csv.reader([next(lines, ("", True))[0]]), [])
         numeric = [i for i, h in enumerate(header) if h in NUMERIC.get(p.name, ())]
-        for line in f:
-            line = line.rstrip("\r\n")
+        for line, whole in lines:
             if not line:
                 continue
             fields = next(csv.reader([line]), [])
-            if len(fields) != len(header) or not fields[0].strip().lstrip("-").isdigit() or not all(_number(fields[i]) for i in numeric):
+            if not whole or len(fields) != len(header) or not fields[0].strip().lstrip("-").isdigit() or not all(_number(fields[i]) for i in numeric):
                 skipped += 1
                 continue
             rows.append(dict(zip(header, fields)))
@@ -251,6 +280,41 @@ def label_minutes(rows, start_ms, end_ms):
     return minutes
 
 
+def skipped_windows(folder):
+    """(start_ms, end_ms) of every skipped split in the folder's coach.json (a skipped or moved station). [] when there is none."""
+    try:
+        coach = json.loads((Path(folder) / "coach.json").read_text())
+        ended = coach.get("endedAtEpochMs")
+        return [(sp["startMs"], sp.get("endMs") or ended) for sp in coach["splits"] if sp.get("skipped") and (sp.get("endMs") or ended)]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def label_minutes_net_of_skips(folder, rows, start_ms, end_ms):
+    """`label_minutes`, minus the time labelled inside skipped splits: the coach writes a station's label when the station
+    starts, so a station stood at for 20 s and then skipped must not count as a recorded activity (mark 4)."""
+    minutes = label_minutes(rows, start_ms, end_ms)
+    windows = skipped_windows(folder)
+    if not windows:
+        return minutes
+    stack = []
+    for r in sorted(rows, key=lambda r: int(r["epoch_ms"])):
+        t = int(r["epoch_ms"])
+        if r["event"] == "set":
+            if not stack or stack[-1][0] != r["activity"]:
+                stack.append((r["activity"], t))
+        elif r["event"] == "undo" and stack:
+            stack.pop()
+    for i, (act, t) in enumerate(stack):
+        nxt = stack[i + 1][1] if i + 1 < len(stack) else end_ms
+        for a, b in windows:
+            overlap = max(0, min(nxt, b) - max(t, a))
+            if overlap:
+                minutes[act] = max(0.0, minutes.get(act, 0.0) - overlap / 60_000)
+                minutes["_unlabelled"] = minutes.get("_unlabelled", 0.0) + overlap / 60_000
+    return minutes
+
+
 def athlete_minutes(folders):
     """Per athlete code (sessions with no code are '?'): session count, wrists, labelled minutes per activity."""
     groups = {}
@@ -262,7 +326,7 @@ def athlete_minutes(folders):
         g = groups.setdefault(manifest.get("athlete") or "?", {"sessions": 0, "wrists": set(), "minutes": {}})
         g["sessions"] += 1
         g["wrists"].add(manifest.get("wrist") or "?")
-        for act, mins in label_minutes(read_rows(Path(folder) / "labels.csv"), start, end).items():
+        for act, mins in label_minutes_net_of_skips(folder, read_rows(Path(folder) / "labels.csv"), start, end).items():
             if act in ACTIVITIES:
                 g["minutes"][act] = g["minutes"].get(act, 0.0) + mins
     return groups
@@ -369,7 +433,7 @@ def report(folder):
         hz_parts.append(f"raw peak {best:.0f} Hz")
     lines.append(f"3. Motion rate (stored): {'; '.join(hz_parts)}  {flag(hz_ok)} (mark {HZ_MARK:.0f} Hz)")
 
-    mins = label_minutes(read_rows(folder / "labels.csv"), start, end)
+    mins = label_minutes_net_of_skips(folder, read_rows(folder / "labels.csv"), start, end)
     missing = missing_activities(mins)
     lines.append("4. Labelled minutes:")
     for a in ACTIVITIES + ["rest"]:

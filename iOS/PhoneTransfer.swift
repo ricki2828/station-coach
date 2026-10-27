@@ -274,6 +274,7 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     let result = await Task.detached(priority: .userInitiated) { Result { try Self.buildZip(of: source, named: name) } }.value
     exporting = false
     arrivals.open()
+    reapplyStaged() // files a killed run left in staging waited while the zip ran
     return try result.get()
   }
 
@@ -294,7 +295,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     try? fm.removeItem(at: exportsDir)
     let tmp = fm.temporaryDirectory
     for name in (try? fm.contentsOfDirectory(atPath: tmp.path)) ?? [] where name.hasSuffix(".zip") {
-      if name.hasPrefix("station-coach-") || name.contains("Z-") { try? fm.removeItem(at: tmp.appendingPathComponent(name)) }
+      if name.range(of: #"^(station-coach-\d{4}-\d{2}-\d{2}|\d{8}T\d{6}Z-[0-9a-f]{6})\.zip$"#, options: .regularExpression) != nil {
+        try? fm.removeItem(at: tmp.appendingPathComponent(name))
+      }
     }
   }
 

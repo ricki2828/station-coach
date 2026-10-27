@@ -5,48 +5,6 @@ import Foundation
 import SwiftUI
 import WatchKit
 
-/// Wall-ball rep counter shared with the motion thread.
-final class LockedCounter {
-  private let lock = NSLock()
-  private var counter = WallBallCounter()
-  private var enabled = false
-  /// Rep times (s) counted before a relaunch, which the detector itself no longer holds.
-  private var carried: [Double] = []
-  private var owner: Int?
-
-  /// Start counting `step`. `fresh` starts from zero. Otherwise the earlier count carries on: from the detector when it
-  /// still holds that step (undo back into it), else from `earlier` (after a relaunch, or an undo across steps).
-  func begin(step: Int, fresh: Bool, earlier: [Double]) {
-    lock.lock(); defer { lock.unlock() }
-    if fresh {
-      counter = WallBallCounter()
-      carried = []
-      owner = step
-    } else if owner != step {
-      counter = WallBallCounter()
-      carried = earlier
-      owner = step
-    }
-    enabled = true
-  }
-
-  func pause() {
-    lock.lock(); defer { lock.unlock() }
-    enabled = false
-  }
-
-  func feed(_ t: Double, _ magnitude: Double) {
-    lock.lock(); defer { lock.unlock() }
-    guard enabled else { return }
-    counter.add(t: t, magnitude: magnitude)
-  }
-
-  func snapshot() -> (count: Int, confidence: WallBallCounter.Confidence, times: [Double]) {
-    lock.lock(); defer { lock.unlock() }
-    return (carried.count + counter.count, counter.confidence, carried + counter.repTimes)
-  }
-}
-
 /// Runs a coached session on top of the M1 recorder: the plan drives the screens and the cues, and each
 /// phase change writes the M1 label, so the recorder's files and pass marks work as before.
 @MainActor
@@ -55,6 +13,10 @@ final class CoachController: ObservableObject {
   @Published private(set) var finish: FinishScreenModel?
   @Published private(set) var active = false
   @Published var showMenu = false
+  /// "Skip Row?" is up (opened from the menu's Skip station row).
+  @Published var showSkipConfirm = false
+  /// A moved station is still undone after the last step: the leftover screen shows instead of a step.
+  @Published private(set) var leftover: PlanStep?
   /// From the audio route after the session was activated in the chosen mode. Nil until known.
   @Published private(set) var headphones: Bool?
 
@@ -67,7 +29,7 @@ final class CoachController: ObservableObject {
     set { if let newValue { state?.machine = newValue } }
   }
   private var scheduler = CueScheduler()
-  private let counter = LockedCounter()
+  private let counter = WallBallTally()
   private var ticker: Timer?
   private var midCueDone: Set<Int> {
     get { state?.midCueDone ?? [] }
@@ -96,9 +58,12 @@ final class CoachController: ObservableObject {
     get { state?.noRepAnnounced ?? false }
     set { state?.noRepAnnounced = newValue }
   }
-  private var checkpointSeq = 0
-  private var checkpointedReps = -1
-  private var checkpointFailed = false
+  private var checkpointer = CoachCheckpointer()
+  /// Coached sessions finished on this watch: the first one gets the baseline lines.
+  /// Per athlete code (athletes share a watch on gym day). Only a session that ran to the end counts: one ended early
+  /// never says the baseline line, so it must not use the first-session status up.
+  private var finishedKey: String { recorder.athlete.isEmpty ? "coachedSessionsFinished" : "coachedSessionsFinished." + recorder.athlete }
+  private var isFirstSession: Bool { UserDefaults.standard.integer(forKey: finishedKey) == 0 }
   private var lastLabel: Activity?
   private var finishTask: Task<Void, Never>?
   private var finishCueText = ""
@@ -129,9 +94,11 @@ final class CoachController: ObservableObject {
     if plan.type == .fullSim, level >= 0, level < 0.6 {
       battery = "Battery \(Int((level * 100).rounded()))%. A full sim needs about 60%."
     }
+    // Racing a ghost: the target line is its finish time and the title says so.
+    let racing = plan.validGhostSplits != nil
     return .ready(ReadyInfo(
-      sessionName: plan.title, targetText: Fmt.clock(plan.plannedSeconds),
-      chips: chips, batteryLine: battery))
+      sessionName: racing ? "\(plan.title) \u{00B7} vs last" : plan.title, targetText: Fmt.clock(plan.referenceTotalSeconds),
+      chips: chips, batteryLine: battery, line: plan.type == .raceDay ? "Splits are estimates" : nil))
   }
 
   // MARK: Session
@@ -144,16 +111,23 @@ final class CoachController: ObservableObject {
     var fresh = CoachSessionState(plan: plan)
     fresh.machine.start(at: nowMs)
     state = fresh
-    checkpointSeq = 0
-    checkpointedReps = -1
-    checkpointFailed = false
+    checkpointer = CoachCheckpointer()
     scheduler = CueScheduler()
     noRepRest = NoRepRest()
     lastLabel = nil
     let c = counter
     recorder.onMotionMagnitude = { t, mag in c.feed(t, mag) }
     active = true
-    beginStep()
+    beginStep(announce: false)
+    // One line at START: the target and what to do with run 1, then run 1's own target.
+    if let m = machine, let first = m.current {
+      if plan.type == .raceDay {
+        offer(.planAndRun, CoachCopy.raceStart(plan: plan, run: first))
+      } else {
+        offer(.planAndRun, CoachCopy.sessionStart(plan: plan, isFirst: isFirstSession) + " "
+          + CoachCopy.runStart(run: first, after: nil, deltaSeconds: 0, transitionSeconds: plan.transitionSeconds))
+      }
+    }
     checkpoint()
     startTicker()
     refresh()
@@ -174,9 +148,7 @@ final class CoachController: ObservableObject {
           let found = CoachCheckpoint.latestResumable(in: root, nowMs: nowMs) else { return false }
     guard await recorder.resume(folder: found.folder) else { return false }
     state = found.checkpoint.state
-    checkpointSeq = found.checkpoint.seq + 1
-    checkpointedReps = -1
-    checkpointFailed = false
+    checkpointer = CoachCheckpointer(startingSeq: found.checkpoint.seq + 1)
     scheduler = CueScheduler()
     noRepRest = NoRepRest()
     lastLabel = nil
@@ -209,9 +181,85 @@ final class CoachController: ObservableObject {
       leaveStep(before)
       WKInterfaceDevice.current().play(.click)
       finishSession(early: false)
+    case .leftover:
+      leaveStep(before)
+      showLeftover()
     case .ignored, .notRunning:
       break // a double fire inside 3 s changes nothing
     }
+    refresh()
+  }
+
+  // MARK: Skipping
+
+  /// A station is in progress: the menu offers "Skip station" (never on a run).
+  var canSkipHere: Bool { active && machine?.current.map { !$0.isRun } == true }
+
+  /// "Do it later" is a training option; race order is fixed.
+  var canDoItLater: Bool { machine?.plan.type.allowsDoItLater ?? false }
+
+  var skipStep: PlanStep? { machine?.current }
+
+  func requestSkip() {
+    guard canSkipHere else { return }
+    showMenu = false
+    showSkipConfirm = true
+  }
+
+  /// Skips the station, or moves it after the next one (`later`, training only). A skip never produces a full set of splits.
+  func skip(later: Bool) {
+    showSkipConfirm = false
+    guard var m = machine, active, let step = m.current, !step.isRun else { return }
+    if later && !m.plan.type.allowsDoItLater { return }
+    // For "moved after Carry": the station that will come before the moved one.
+    let after: PlanStep? = m.order.dropFirst(m.pos + 1).map { m.plan.steps[$0] }.first { !$0.isRun }
+    let result = m.skip(later: later, at: nowMs)
+    machine = m
+    switch result {
+    case .started:
+      leaveStep(step)
+      WKInterfaceDevice.current().play(.click)
+      beginStep()
+      checkpoint()
+      recorder.notify(later ? CoachCopy.movedToast(step, after: after) : CoachCopy.skippedToast(step))
+    case .finished:
+      leaveStep(step)
+      finishSession(early: false)
+    case .leftover:
+      leaveStep(step)
+      showLeftover()
+      recorder.notify(CoachCopy.movedToast(step, after: nil))
+    case .ignored, .notRunning:
+      break
+    }
+    refresh()
+  }
+
+  /// Every step is done or skipped and a moved station is still undone.
+  private func showLeftover() {
+    recorder.tap(.rest, haptic: false)
+    lastLabel = .rest
+    checkpoint()
+  }
+
+  /// "Do it now": the left-over station becomes the last step.
+  func doLeftover() {
+    guard var m = machine, active else { return }
+    guard case .started = m.doLeftover(at: nowMs) else { return }
+    machine = m
+    WKInterfaceDevice.current().play(.click)
+    beginStep()
+    checkpoint()
+    refresh()
+  }
+
+  /// "Finish without it": the left-over station stays skipped.
+  func finishWithoutLeftover() {
+    guard var m = machine, active else { return }
+    guard m.finishWithoutLeftover(at: nowMs) == .finished else { return }
+    machine = m
+    WKInterfaceDevice.current().play(.click)
+    finishSession(early: false)
     refresh()
   }
 
@@ -281,7 +329,7 @@ final class CoachController: ObservableObject {
   /// Banks the wall-ball reps of the step just left and stops counting.
   private func leaveStep(_ step: PlanStep?) {
     guard let step, step.activity == .wallBalls else { return }
-    state?.bank(step: step, repTimesMs: Self.repTimesMs(counter.snapshot().times))
+    state?.bank(step: step, repTimesMs: WallBallTally.milliseconds(counter.snapshot().times))
     noRepRest.hide()
     scheduler.drop(.noRep)
     counter.pause()
@@ -292,7 +340,8 @@ final class CoachController: ObservableObject {
     scheduler.drop(.jogIn) // still waiting out the cue gap when the athlete moved on: no use now
     applyLabel()
     if step.activity == .wallBalls {
-      let fresh = state?.enterWallBalls(step) ?? true
+      // A station moved to later and now done afresh starts from nothing; undo or a relaunch into the same attempt carries on.
+      let fresh = state?.enterWallBalls(step, splitStartMs: m.splits.last?.startMs ?? 0) ?? true
       let earlier = (state?.repsByStep[step.index] ?? []).map { Double($0) / 1000 }
       counter.begin(step: step.index, fresh: fresh, earlier: earlier)
       noRepRest.reset(count: counter.snapshot().count, nowMs: nowMs)
@@ -302,11 +351,21 @@ final class CoachController: ObservableObject {
       counter.pause()
     }
     guard announce else { return }
+    // The step this one follows, as done (a skipped one is not a split to call out).
+    let previous = m.splits.count >= 2 ? m.splits[m.splits.count - 2] : nil
+    let before = previous.map { m.plan.steps[$0.stepIndex] }
     if step.isRun {
-      let before = step.index > 0 ? m.plan.steps[step.index - 1] : nil
-      offer(.planAndRun, CoachCopy.runStart(run: step, after: before, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds))
+      if m.plan.type == .raceDay, let previous, let before, !before.isRun, !previous.isSkipped, let end = previous.endMs {
+        // Race day: the split just done, the delta, the next kilometre.
+        offer(.planAndRun, CoachCopy.raceRunStart(stationSeconds: Int((end - previous.startMs) / 1000), deltaSeconds: m.deltaSeconds(at: nowMs),
+                                                  after: before, run: step, transitionSeconds: m.plan.transitionSeconds))
+      } else {
+        let station = (before?.isRun == false && previous?.isSkipped != true) ? before : nil
+        offer(.planAndRun, CoachCopy.runStart(run: step, after: station, deltaSeconds: m.deltaSeconds(at: nowMs), transitionSeconds: m.plan.transitionSeconds,
+                                              reference: m.plan.reference, referenceSeconds: m.plan.referenceSeconds(at: step.index)))
+      }
     } else {
-      offer(.stationIntro, CoachCopy.stationIntro(step))
+      offer(.stationIntro, m.plan.type == .raceDay ? CoachCopy.raceStation(step) : CoachCopy.stationIntro(step))
     }
   }
 
@@ -323,21 +382,24 @@ final class CoachController: ObservableObject {
     if active, let m = machine, let step = m.current {
       applyLabel()
       let elapsed = m.stepElapsedSeconds(at: nowMs)
-      if !step.isRun, step.activity != .wallBalls, !midCueDone.contains(step.index), elapsed * 2 >= step.targetSeconds,
-         let text = CoachCopy.midStation(step) {
+      // Racing a ghost, the pace and the jog-in timing are the ghost's for this step.
+      let refSeconds = m.plan.referenceSeconds(at: step.index)
+      if !step.isRun, step.activity != .wallBalls, !midCueDone.contains(step.index), elapsed * 2 >= refSeconds,
+         let text = CoachCopy.midStation(step, reference: m.plan.reference, referenceSeconds: m.plan.validGhostSplits != nil ? refSeconds : nil) {
         midCueDone.insert(step.index)
         offer(.midStation, text)
         checkpoint()
       }
       if step.isRun, !jogInDone.contains(step.index),
-         CoachCopy.jogInDue(run: step, next: m.next, elapsedSeconds: elapsed, transitionSeconds: m.plan.transitionSeconds) {
+         CoachCopy.jogInDue(run: step, next: m.next, elapsedSeconds: elapsed, transitionSeconds: m.plan.transitionSeconds,
+                           referenceSeconds: m.plan.validGhostSplits != nil ? refSeconds : nil) {
         jogInDone.insert(step.index)
         offer(.jogIn, CoachCopy.jogIn)
         checkpoint()
       }
       if step.activity == .wallBalls {
         announceSets(step)
-        if counter.snapshot().count != checkpointedReps { checkpoint() } // a rep was counted: at most one write per rep
+        if checkpointer.repCountChanged(counter.snapshot().count) { checkpoint() } // a rep was counted: at most one write per rep
       }
       refresh()
     }
@@ -348,22 +410,12 @@ final class CoachController: ObservableObject {
     state?.repsDone(step, counted: counter.snapshot().count) ?? 0
   }
 
-  private static func repTimesMs(_ seconds: [Double]) -> [Int64] { seconds.map { Int64(($0 * 1000).rounded()) } }
-
   /// Writes `coach-checkpoint.json` (atomic). Called on every change that matters, never on the 1 s tick itself.
   private func checkpoint() {
-    guard active, var s = state, let folder = recorder.sessionFolder, let step = s.machine.current else { return }
+    guard active, let s = state, let folder = recorder.sessionFolder else { return }
     let snap = counter.snapshot()
-    s.bank(step: step, repTimesMs: Self.repTimesMs(snap.times)) // provisional times of the step in progress
-    checkpointedReps = snap.count
-    let cp = CoachCheckpoint(sessionId: folder.lastPathComponent, savedAtEpochMs: nowMs, seq: checkpointSeq, state: s)
-    checkpointSeq += 1
-    do {
-      try CoachCheckpoint.write(cp, to: folder)
-    } catch {
-      guard !checkpointFailed else { return }
-      checkpointFailed = true
-      recorder.note("checkpoint_error", "\(error)")
+    if let failure = checkpointer.save(s, liveRepTimesMs: WallBallTally.milliseconds(snap.times), liveCount: snap.count, folder: folder, nowMs: nowMs) {
+      recorder.note("checkpoint_error", failure)
     }
   }
 
@@ -371,31 +423,37 @@ final class CoachController: ObservableObject {
   private func announceSets(_ step: PlanStep) {
     let trusted = counter.snapshot().confidence == .high
     for done in state?.newlyDoneSets(step, repsDone: repsDone(step)) ?? [] where trusted {
-      offer(.wallBallSet, CoachCopy.wallBallSetDone(nextSet: done.next))
+      offer(.wallBallSet, machine?.plan.type == .raceDay ? CoachCopy.raceWallBallSet(nextSet: done.next) : CoachCopy.wallBallSetDone(nextSet: done.next))
     }
   }
 
   private func offer(_ kind: CoachCueKind, _ text: String) {
-    scheduler.offer(CoachCue(kind: kind, text: text, createdAt: clock))
+    // Race day is quiet: split calls only (no pace instruction mid-station, no jog-in).
+    if machine?.plan.type.silences(kind) == true { return }
+    // The buzz is chosen now, from the same delta as the words, so a cue that waits in the queue still matches itself.
+    let haptic = CueHaptic.for(kind, deltaSeconds: machine?.deltaSeconds(at: nowMs) ?? 0)
+    scheduler.offer(CoachCue(kind: kind, text: text, createdAt: clock, haptic: haptic))
     pump()
   }
 
   private func pump() {
     guard recorder.phase == .running, let cue = scheduler.next(at: clock, speaking: recorder.cues.isSpeaking) else { return }
-    recorder.cues.speak(cue.text)
+    recorder.cues.speak(cue.text, haptic: cue.haptic ?? CueHaptic.for(cue.kind, deltaSeconds: 0))
   }
 
   // MARK: Screen
 
   private func refresh() {
+    leftover = active ? machine?.leftoverStep : nil
     guard active, let m = machine, let step = m.current else { screen = nil; return }
     let now = nowMs
     let delta = m.deltaSeconds(at: now)
     let elapsed = m.stepElapsedSeconds(at: now)
     let next = m.next.map { "Next: \($0.name)" } ?? "Next: Finish"
+    let ladder = LadderTick.ladder(for: m.plan, done: m.doneSteps, current: step.index)
     let common = (hr: recorder.hrOff ? nil : recorder.heartRate, toast: recorder.toast, alarm: recorder.alarm)
-    let target = "/ \(Fmt.clock(step.targetSeconds))"
-    let targetLabel = "Target \(Fmt.spoken(step.targetSeconds))"
+    // One reference on the watch: racing a ghost, the secondary is the ghost's time for this step, not the plan's target.
+    let (target, targetLabel) = Ghost.targetLine(plan: m.plan, stepIndex: step.index)
     if step.activity == .wallBalls {
       let total = step.reps ?? 100
       let done = repsDone(step)
@@ -409,21 +467,25 @@ final class CoachController: ObservableObject {
         if done < cumulative { setNo = k + 1; setSize = size; break }
       }
       let approx = snap.count >= 3 && snap.confidence == .low
-      screen = StepScreenModel(
+      var model = StepScreenModel(
         kind: .reps, activity: .wallBalls, title: step.name, dominant: "\(left)",
         dominantLabel: "Reps left, \(left)", secondary: left == 0 ? "Done" : "Set \(setNo) \u{00B7} \(setSize)",
         secondaryLabel: left == 0 ? "All reps done" : "Set \(setNo) of \(step.sets.count), \(setSize) reps",
-        next: next, isLast: m.next == nil, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
+        next: next, isLast: m.isLastStep, deltaSeconds: delta, hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast,
         alarm: common.alarm, approximate: approx, noRepVisible: noRepShown, noRepCount: noRepLog.count(inStep: step.index),
-        noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)))
+        noRepUndo: noRepRest.undoVisible(nowMs: now, taps: noRepLog.count(inStep: step.index)), reference: m.plan.reference)
+      model.ladder = ladder
+      screen = model
       return
     }
     let transition = m.label(at: now) == .transition
-    screen = StepScreenModel(
-      kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Transition" : nil,
+    var model = StepScreenModel(
+      kind: step.isRun ? .run : .time, activity: step.activity, title: step.name, badge: transition ? "Changeover" : nil,
       dominant: Fmt.clock(elapsed), dominantLabel: "\(step.isRun ? "Run" : "Station") time, \(Fmt.spoken(elapsed))",
-      secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.next == nil, deltaSeconds: delta,
-      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm)
+      secondary: target, secondaryLabel: targetLabel, next: next, isLast: m.isLastStep, deltaSeconds: delta,
+      hrBpm: common.hr, hrOff: recorder.hrOff, toast: common.toast, alarm: common.alarm, reference: m.plan.reference)
+    model.ladder = ladder
+    screen = model
   }
 
   private func updateNoRepRest(_ step: PlanStep, count: Int, done: Int) {
@@ -445,15 +507,30 @@ final class CoachController: ObservableObject {
     let total = result.totalSeconds
     let planned = result.plan.plannedSeconds
     let d = total - planned
+    let reference = result.plan.reference
+    let referenceTotal = result.plan.referenceTotalSeconds
+    let compared = Ghost.comparedSeconds(result) ?? total
+    let g = compared - referenceTotal
     let endName = m.splits.last.map { m.plan.steps[$0.stepIndex].name } ?? ""
-    let line = early
-      ? "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
-      : (d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target")
+    let skipped = result.skippedStationCount
+    let line: String
+    if early {
+      line = "Ended at \(endName). \(result.completedStationCount) of \(m.plan.stationCount) stations."
+    } else if skipped > 0 {
+      line = String(CoachCopy.skippedCount(skipped).dropLast()) // a skip makes the total incomparable: no under/over claim
+    } else if case .last(let name) = reference {
+      line = DeltaBandWords.isLevel(g) ? "Level with last \(name)" : "\(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than last \(name)"
+    } else {
+      line = d == 0 ? "On target" : "\(Fmt.gap(d)) \(d < 0 ? "under" : "over") target"
+    }
     let missing = m.plan.stationCount - result.completedStationCount
     // The cooldown is not the last station: label it rest until the files close (undo re-labels the step).
     recorder.tap(.rest, haptic: false)
     lastLabel = .rest
-    finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early)
+    finishCueText = CoachCopy.finish(totalSeconds: total, plannedSeconds: planned, best: best.best, worst: best.worst, early: early,
+                                     reference: reference, referenceTotalSeconds: referenceTotal, sessionName: result.plan.type.title.lowercased(),
+                                     comparedSeconds: compared, skipped: skipped)
+      + (skipped > 0 ? "" : " " + CoachCopy.finishPersonality(totalSeconds: reference == .plan ? total : compared, plannedSeconds: referenceTotal, isFirst: isFirstSession, early: early, saved: saved))
     finish = FinishScreenModel(
       mode: saved ? .saved : .saveFailed(missing: max(missing, 1)), totalText: Fmt.clock(total), line: line, early: early,
       best: best.best.map { "\($0.0) \(Fmt.delta($0.1))" }, worst: best.worst.map { "\($0.0) \(Fmt.delta($0.1))" },
@@ -515,6 +592,7 @@ final class CoachController: ObservableObject {
     }
     try? await Task.sleep(nanoseconds: 300_000_000) // the delegate's finished event arrives on the main queue
     recorder.onMotionMagnitude = nil
+    if finish?.early == false { UserDefaults.standard.set(UserDefaults.standard.integer(forKey: finishedKey) + 1, forKey: finishedKey) }
     // Clean finish: coach.json is the record. The checkpoint must not travel to the phone in the file list.
     if let folder = recorder.sessionFolder { CoachCheckpoint.remove(from: folder) }
     await recorder.stop()
