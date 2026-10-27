@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://station-coach.invalid/schema/phone-correction.schema.json",
+  "title": "WallBallCorrection (phone-correction.json)",
+  "description": "Phone-only sidecar next to coach.json: the Edit count sheet's final wall-ball counts. The watch never sends it. The phone clamps validReps to 0...300 and noReps to 0...100 when it writes it. Keep in step with WallBallCorrection in CoachResult.swift.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["validReps", "noReps"],
+  "properties": {
+    "validReps": { "type": "integer", "minimum": 0, "maximum": 300 },
+    "noReps": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}
