@@ -1,5 +1,9 @@
 {
   "division": "open_men",
+  "ghostSplits": [
+    290,
+    250
+  ],
   "raceTargetSeconds": 5400,
   "steps": [
     {

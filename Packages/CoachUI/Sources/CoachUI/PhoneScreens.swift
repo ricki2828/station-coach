@@ -20,17 +20,28 @@ public struct SetupModel: Equatable {
   /// Reps per round of the wall-ball focus session.
   public var wallBallReps: Int
   public var send: SendState
+  /// The last comparable session, or why there is none. Filled by the host from History.
+  public var ghost: GhostOffer
+  /// "Race against: last session" chosen. Off by default: the plan is the reference (it is tied to the race target).
+  public var useGhost: Bool
 
   public init(division: Division = .openMen, targetSeconds: Int = 5400, type: SessionType = .fullSim,
-              wallBallReps: Int = PlanBuilder.defaultFocusReps, send: SendState = .idle) {
+              wallBallReps: Int = PlanBuilder.defaultFocusReps, send: SendState = .idle,
+              ghost: GhostOffer = .none, useGhost: Bool = false) {
     self.division = division
     self.targetSeconds = targetSeconds
     self.type = type
     self.wallBallReps = wallBallReps
     self.send = send
+    self.ghost = ghost
+    self.useGhost = useGhost
   }
 
-  public var plan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type, wallBallReps: wallBallReps) }
+  /// The plan from the targets alone; the ghost offer is made for this one.
+  public var basePlan: SessionPlan { PlanBuilder.build(division: division, target: targetSeconds, type: type, wallBallReps: wallBallReps) }
+
+  /// What goes to the watch: the base plan, carrying the ghost's splits when the ghost is chosen and available.
+  public var plan: SessionPlan { Ghost.plan(basePlan, racing: ghost, race: useGhost) }
 }
 
 /// Bars whose widths follow their weights. Explicit widths: layout priorities do not do this.
@@ -83,6 +94,7 @@ public struct SetupScreen: View {
   var onTargetStep: (Int) -> Void = { _ in }
   var onType: (SessionType) -> Void = { _ in }
   var onWallBallReps: (Int) -> Void = { _ in }
+  var onReference: (Bool) -> Void = { _ in }
   var onSend: () -> Void = {}
   let notify: NotifySettingState?
   let onNotifyToggle: (Bool) -> Void
@@ -91,7 +103,7 @@ public struct SetupScreen: View {
   public init(model: SetupModel, notify: NotifySettingState? = nil, onNotifyToggle: @escaping (Bool) -> Void = { _ in },
               onDivision: @escaping (Division) -> Void = { _ in }, onTargetStep: @escaping (Int) -> Void = { _ in },
               onType: @escaping (SessionType) -> Void = { _ in }, onWallBallReps: @escaping (Int) -> Void = { _ in },
-              onSend: @escaping () -> Void = {}) {
+              onReference: @escaping (Bool) -> Void = { _ in }, onSend: @escaping () -> Void = {}) {
     self.model = model
     self.notify = notify
     self.onNotifyToggle = onNotifyToggle
@@ -99,6 +111,7 @@ public struct SetupScreen: View {
     self.onTargetStep = onTargetStep
     self.onType = onType
     self.onWallBallReps = onWallBallReps
+    self.onReference = onReference
     self.onSend = onSend
   }
 
@@ -145,6 +158,7 @@ public struct SetupScreen: View {
           }
         }
       }
+      referenceCard
       splitSummary
       sendArea
       if let notify { MondaySummaryCard(state: notify, onToggle: onNotifyToggle) }
@@ -159,6 +173,37 @@ public struct SetupScreen: View {
       Text(symbol).font(.system(size: 30, weight: .heavy)).foregroundStyle(Theme.bone)
         .frame(width: 52, height: 52).background(PhoneTheme.inkText, in: Circle())
     }.buttonStyle(.plain).accessibilityLabel(a11y)
+  }
+
+  /// "Race against": the plan (default) or the last comparable session. One reference for the whole session.
+  private var referenceCard: some View {
+    let racing = model.useGhost && model.ghost.available
+    return PhoneCard {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Race against").phoneKicker()
+        referenceOption(title: "Plan", sub: "Targets from \(Fmt.clock(model.basePlan.plannedSeconds))", selected: !racing, enabled: true) { onReference(false) }
+        referenceOption(title: model.ghost.title, sub: model.ghost.sub, selected: racing, enabled: model.ghost.available) { onReference(true) }
+      }
+    }
+  }
+
+  private func referenceOption(title: String, sub: String, selected: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(selected ? Theme.bone : PhoneTheme.inkText)
+        Text(sub).font(.system(size: 13)).foregroundStyle(selected ? Theme.bone.opacity(0.85) : PhoneTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+      .padding(.horizontal, 14).padding(.vertical, 8)
+      .background(selected ? PhoneTheme.inkText : PhoneTheme.paper, in: RoundedRectangle(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.clear : PhoneTheme.hairline, lineWidth: 1))
+      .opacity(enabled ? 1 : 0.45)
+    }
+    .buttonStyle(.plain)
+    .disabled(!enabled)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
   private var splitSummary: some View {

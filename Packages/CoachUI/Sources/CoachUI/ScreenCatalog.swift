@@ -92,6 +92,7 @@ public enum ScreenCatalog {
     var over = run
     over.deltaSeconds = 32
     over.dominant = "5:41"
+    let last = DeltaReference.last(name: "sim")
     var sled = step(.time, .sledPull, "Sled pull", dominant: "1:48", dominantLabel: "Station time 1 minute 48", secondary: "/ 4:25",
                     secondaryLabel: "Target 4 minutes 25", next: "Next: Run 4", delta: 8)
     sled.hrBpm = 171
@@ -105,6 +106,19 @@ public enum ScreenCatalog {
         batteryLine: "Battery 54%. A full sim needs about 60%.")))),
       watch("run", CoachStepScreen(model: run, onMissed: {})),
       watch("run-over", CoachStepScreen(model: over, onMissed: {})),
+      // The delta in words, against the plan (the default) and against a ghost (your last session).
+      watch("run-plan-words", CoachStepScreen(model: run, onMissed: {})),
+      watch("run-plan-over-words", CoachStepScreen(model: over, onMissed: {})),
+      watch("run-ghost-ahead", CoachStepScreen(model: { var m = run; m.reference = last; m.deltaSeconds = -12; return m }(), onMissed: {})),
+      watch("run-ghost-behind", CoachStepScreen(model: { var m = run; m.reference = last; m.deltaSeconds = 20; return m }(), onMissed: {})),
+      watch("station-ghost-level", CoachStepScreen(model: { var m = station; m.reference = last; m.deltaSeconds = 1; return m }(), onMissed: {})),
+      watch("ready-ghost", CoachReadyScreen(model: .ready(ReadyInfo(sessionName: "Half sim \u{00B7} vs last", targetText: "41:12")))),
+      watch("finish-ghost-faster", CoachFinishScreen(model: FinishScreenModel(
+        mode: .saved, totalText: "1:18:42", line: "0:48 faster than last sim", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        totalSeconds: 4722, stations: allStations), animate: false)),
+      watch("finish-ghost-slower", CoachFinishScreen(model: FinishScreenModel(
+        mode: .saved, totalText: "1:19:38", line: "0:48 slower than last sim", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",
+        totalSeconds: 4778, stations: allStations), animate: false)),
       watch("run-changeover-wide", CoachStepScreen(model: { var m = run; m.badge = "Changeover"; m.dominant = "10:41"; m.deltaSeconds = 641; m.hrBpm = 171; m.ladder = ladder(6); m.next = "Next: Sled push"; return m }(), onMissed: {})),
       watch("run-over-dimmed", CoachStepScreen(model: over, onMissed: {}), dimmed: true),
       watch("run-transition", CoachStepScreen(model: { var m = run; m.badge = "Transition"; m.dominant = "0:12"; m.deltaSeconds = -14; m.next = "Next: Sled push"; return m }(), onMissed: {})),
@@ -145,12 +159,20 @@ public enum ScreenCatalog {
     ]
   }
 
+  /// A last half sim to race: Sat 24 Oct, 41:12 (an even pace over the plan's steps).
+  private static var ghostOffer: GhostOffer {
+    let base = PlanBuilder.build(division: .openMen, target: 5400, type: .halfSim)
+    return GhostOffer(available: true, title: "Last half sim", sub: "Sat 24 Oct \u{00B7} 41:12", splits: base.steps.map(\.targetSeconds))
+  }
+
   public static var phoneScreens: [CatalogEntry] {
     [
       phone("setup-first-launch", SetupScreen(model: SetupModel()).frame(width: Theme.phone.width)),
       // After onboarding's "Build my first session": the recommended half sim is preset.
       phone("setup-onboarding-preset", SetupScreen(model: SetupModel(type: .halfSim)).frame(width: Theme.phone.width)),
       phone("setup-wall-ball-focus", SetupScreen(model: SetupModel(type: .wallBallFocus, wallBallReps: 75)).frame(width: Theme.phone.width)),
+      phone("setup-ghost-picker", SetupScreen(model: SetupModel(type: .halfSim, ghost: ghostOffer, useGhost: false)).frame(width: Theme.phone.width)),
+      phone("setup-ghost-none", SetupScreen(model: SetupModel(type: .halfSim, ghost: Ghost.offer(for: PlanBuilder.build(division: .openMen, target: 5400, type: .halfSim), records: []))).frame(width: Theme.phone.width)),
       phone("setup-sending", SetupScreen(model: SetupModel(send: .sending(watchName: "Apple Watch"))).frame(width: Theme.phone.width)),
       phone("setup-sent", SetupScreen(model: SetupModel(division: .proWomen, targetSeconds: 4500, type: .halfSim, send: .sent)).frame(width: Theme.phone.width)),
       phone("setup-watch-app-missing", SetupScreen(model: SetupModel(send: .watchAppMissing)).frame(width: Theme.phone.width)),

@@ -48,8 +48,15 @@ public enum CoachCopy {
   }
 
   /// "30 seconds up on plan." (ahead) / "20 seconds down, stay calm." (behind) / "On plan."
-  public static func planCheck(deltaSeconds: Int) -> String {
+  /// Against the ghost: "Twelve seconds up on your last sim." / "Twenty seconds down on your last sim. Stay calm." /
+  /// "Level with your last sim."
+  public static func planCheck(deltaSeconds: Int, reference: DeltaReference = .plan) -> String {
     let b = DeltaMath.spokenBucket(deltaSeconds)
+    if case .last = reference {
+      if b == 0 { return "Level with \(reference.phrase)." }
+      let line = b < 0 ? "\(Fmt.spoken(-b)) up on \(reference.phrase)." : "\(Fmt.spoken(b)) down on \(reference.phrase). Stay calm."
+      return line.prefix(1).uppercased() + line.dropFirst()
+    }
     if b == 0 { return "On plan." }
     let line = b < 0 ? "\(Fmt.spoken(-b)) up on plan." : "\(Fmt.spoken(b)) down, stay calm."
     return line.prefix(1).uppercased() + line.dropFirst()
@@ -57,9 +64,10 @@ public enum CoachCopy {
 
   /// Said as a run begins. After a heavy station it carries the legs line; after any station a plan check.
   /// The spoken target is the kilometre alone: the plan's run target also holds two changeover allowances.
-  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0) -> String {
+  public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0,
+                              reference: DeltaReference = .plan) -> String {
     var parts: [String] = []
-    if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds)) }
+    if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds, reference: reference)) }
     if let station, heavyLegs.contains(station.activity) {
       parts.append("Legs feel heavy for 200 metres. Short quick steps.")
     }
@@ -76,10 +84,19 @@ public enum CoachCopy {
   }
 
   /// "1:18:42. 1:18 under target. Best: Row, 0:25 under. Worst: Sled pull, 0:41 over."
-  public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool) -> String {
+  /// Racing a ghost (`reference` is `.last`), the gap is to its finish time, not the target: "0:48 faster than your last full sim."
+  public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool,
+                            reference: DeltaReference = .plan, referenceTotalSeconds: Int? = nil, sessionName: String = "sim") -> String {
     let d = totalSeconds - plannedSeconds
     var s = "\(Fmt.clock(totalSeconds))."
-    if !early { s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target." }
+    if !early {
+      if case .last = reference, let ghostTotal = referenceTotalSeconds {
+        let g = totalSeconds - ghostTotal
+        s += DeltaBandWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."
+      } else {
+        s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target."
+      }
+    }
     if let best, best.1 < 0 { s += " Best: \(best.0), \(Fmt.gap(best.1)) under." }
     if let worst, worst.1 > 0 { s += " Worst: \(worst.0), \(Fmt.gap(worst.1)) over." }
     return s

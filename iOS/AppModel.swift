@@ -61,6 +61,7 @@ final class AppModel: ObservableObject {
   /// Home's CTA and the onboarding result: preset the Plan tab with this session type and open it.
   func start(_ type: SessionType) {
     setup.type = type
+    setup.useGhost = false
     setup.send = .idle
     setupChanged()
     tab = .plan

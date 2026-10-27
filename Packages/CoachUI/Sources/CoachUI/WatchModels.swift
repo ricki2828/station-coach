@@ -52,11 +52,14 @@ public struct StepScreenModel: Equatable {
   public var noRepUndo: Bool
   /// The edge progress ladder. Nil keeps it off until the coach fills it.
   public var ladder: [LadderTick]?
+  /// What `deltaSeconds` is measured against: the band's tag and the words after it.
+  public var reference: DeltaReference
 
   public init(kind: Kind, activity: Activity, title: String, badge: String? = nil, dominant: String, dominantLabel: String,
               secondary: String, secondaryLabel: String, next: String, isLast: Bool = false, deltaSeconds: Int,
               hrBpm: Int? = nil, hrOff: Bool = false, toast: String? = nil, alarm: String? = nil, approximate: Bool = false,
-              noRepVisible: Bool = false, noRepCount: Int = 0, noRepUndo: Bool = false, ladder: [LadderTick]? = nil) {
+              noRepVisible: Bool = false, noRepCount: Int = 0, noRepUndo: Bool = false, ladder: [LadderTick]? = nil,
+              reference: DeltaReference = .plan) {
     self.kind = kind
     self.activity = activity
     self.title = title
@@ -77,6 +80,7 @@ public struct StepScreenModel: Equatable {
     self.noRepCount = noRepCount
     self.noRepUndo = noRepUndo
     self.ladder = ladder
+    self.reference = reference
   }
 }
 
