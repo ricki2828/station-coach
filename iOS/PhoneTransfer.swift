@@ -16,6 +16,9 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
   /// Training load for every complete session, from `coach.json` and `hr.csv`. Rebuilt whenever the sessions change.
   @Published private(set) var loadSummary = TrainingLoad.summarise([], now: Date())
   @Published private(set) var watchAppInstalled = false
+  /// Sessions resumed after the app stopped, or closed from a checkpoint (manifest `resumed` > 0 or `recovered`). Read defensively:
+  /// `resumed` may not exist in older folders or builds, in which case it counts as not resumed.
+  @Published private(set) var recoveredIds: Set<String> = []
   /// Percent of the newest not-yet-complete transfer, if one is in flight.
   @Published private(set) var syncPercent: Int?
 
@@ -95,6 +98,8 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
       }
     }
     let sorted = SessionRecord.sorted(records)
+    let recovered = Set(sorted.map(\.id).filter { Self.wasRecovered(root.appendingPathComponent($0)) })
+    if recovered != recoveredIds { recoveredIds = recovered }
     if sorted != coachSessions {
       coachSessions = sorted
       rebuildLoad(sorted, root: root)
@@ -169,6 +174,31 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
 
   func resetSendState() { if sendState != .idle { sendState = .idle } }
 
+  /// Sessions the watch has announced that have no folder on the phone yet: they exist on the watch only.
+  var watchOnlyIds: [String] {
+    let here = Set(sessions.map(\.id))
+    return watchdog.pending.filter { !here.contains($0) }.sorted(by: >)
+  }
+
+  private static func manifestJSON(_ folder: URL) -> [String: Any]? {
+    guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+  }
+
+  private static func wasRecovered(_ folder: URL) -> Bool {
+    guard let m = manifestJSON(folder) else { return false }
+    if let n = m["resumed"] as? Int, n > 0 { return true }
+    if let b = m["resumed"] as? Bool, b { return true }
+    return m["recovered"] as? Bool == true
+  }
+
+  /// Athlete code and start time for the delete confirmation. Either can be missing.
+  func describe(_ id: String) -> (athlete: String?, date: Date?) {
+    guard let root = Self.root, let m = Self.manifestJSON(root.appendingPathComponent((id as NSString).lastPathComponent)) else { return (nil, nil) }
+    let date = (m["startedAtEpochMs"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+    return (m["athlete"] as? String, date)
+  }
+
   func delete(_ id: String) {
     guard let root = Self.root else { return }
     try? FileManager.default.removeItem(at: root.appendingPathComponent(id))
@@ -199,6 +229,30 @@ final class PhoneTransfer: NSObject, ObservableObject, WCSessionDelegate {
     var result: Result<URL, Error> = .failure(CocoaError(.fileWriteUnknown))
     NSFileCoordinator().coordinate(readingItemAt: folder, options: [.forUploading], error: &coordinationError) { zipped in
       let dest = FileManager.default.temporaryDirectory.appendingPathComponent(id + ".zip")
+      do {
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.copyItem(at: zipped, to: dest)
+        result = .success(dest)
+      } catch {
+        result = .failure(error)
+      }
+    }
+    if let coordinationError { throw coordinationError }
+    return try result.get()
+  }
+
+  /// One zip of the whole Sessions folder (every complete session and any partial folder, plus the phone's correction files),
+  /// named `station-coach-<date>.zip`, in the temp directory for the share sheet. Nothing is sent anywhere else.
+  func zipAll(now: Date = Date()) throws -> URL {
+    guard let root = Self.root else { throw CocoaError(.fileNoSuchFile) }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd"
+    let name = "station-coach-\(f.string(from: now)).zip"
+    var coordinationError: NSError?
+    var result: Result<URL, Error> = .failure(CocoaError(.fileWriteUnknown))
+    NSFileCoordinator().coordinate(readingItemAt: root, options: [.forUploading], error: &coordinationError) { zipped in
+      let dest = FileManager.default.temporaryDirectory.appendingPathComponent(name)
       do {
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.copyItem(at: zipped, to: dest)
