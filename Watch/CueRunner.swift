@@ -282,6 +282,7 @@ final class CueRunner: NSObject, AVSpeechSynthesizerDelegate {
     case .down: type = .directionDown
     case .start: type = .start
     case .success: type = .success
+    case .retry: type = .retry
     }
     device.play(type)
     for n in 1..<max(haptic.pulses, 1) {

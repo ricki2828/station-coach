@@ -3,7 +3,7 @@ import Foundation
 /// How the wrist can tell cues apart with the audio off. The watch app maps `motion` to a `WKHapticType`
 /// and plays it `pulses` times; this file stays free of WatchKit so it is unit-tested on the host.
 public enum HapticKind: CaseIterable, Equatable {
-  case stationIntro, setDone, planBehind, jogIn, finish
+  case stationIntro, setDone, planBehind, planAhead, jogIn, finish
 
   public enum Motion: Equatable {
     /// A short click.
@@ -16,6 +16,8 @@ public enum HapticKind: CaseIterable, Equatable {
     case start
     /// The system "success" pattern.
     case success
+    /// The system "retry" pattern: a quick double tap, unlike the rising or falling ones.
+    case retry
   }
 
   public struct Signature: Hashable {
@@ -28,6 +30,7 @@ public enum HapticKind: CaseIterable, Equatable {
     case .stationIntro: return .start
     case .setDone: return .tap
     case .planBehind: return .down
+    case .planAhead: return .retry
     case .jogIn: return .up
     case .finish: return .success
     }
@@ -37,7 +40,7 @@ public enum HapticKind: CaseIterable, Equatable {
   public var pulses: Int {
     switch self {
     case .stationIntro: return 2
-    case .setDone, .planBehind, .jogIn: return 1
+    case .setDone, .planBehind, .planAhead, .jogIn: return 1
     case .finish: return 3
     }
   }
@@ -46,13 +49,16 @@ public enum HapticKind: CaseIterable, Equatable {
 }
 
 public enum CueHaptic {
-  /// The haptic for each spoken cue. `midStation` and `planAndRun` carry the plan check, so they share the plan
-  /// pattern; the no-rep acknowledgement is a set-sized tap. Five patterns for seven kinds.
-  public static func `for`(_ kind: CoachCueKind) -> HapticKind {
+  /// The haptic for each spoken cue. `midStation` and `planAndRun` carry the plan check, so their pattern follows the
+  /// plan delta (`deltaSeconds`, positive = behind): falling when behind, rising twice when ahead, a plain tap when on plan
+  /// (inside the 10 s the speech also calls on plan). The no-rep acknowledgement is a set-sized tap.
+  public static func `for`(_ kind: CoachCueKind, deltaSeconds: Int) -> HapticKind {
     switch kind {
     case .stationIntro: return .stationIntro
     case .wallBallSet, .noRep: return .setDone
-    case .midStation, .planAndRun: return .planBehind
+    case .midStation, .planAndRun:
+      let b = DeltaMath.spokenBucket(deltaSeconds)
+      return b > 0 ? .planBehind : (b < 0 ? .planAhead : .setDone)
     case .jogIn: return .jogIn
     case .finish: return .finish
     }

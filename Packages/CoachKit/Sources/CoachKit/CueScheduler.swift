@@ -12,10 +12,13 @@ public struct CoachCue: Equatable {
   public let kind: CoachCueKind
   public let text: String
   public let createdAt: TimeInterval
-  public init(kind: CoachCueKind, text: String, createdAt: TimeInterval) {
+  /// Chosen when the cue is offered, from the same plan delta as its text, so the buzz always matches the words.
+  public let haptic: HapticKind?
+  public init(kind: CoachCueKind, text: String, createdAt: TimeInterval, haptic: HapticKind? = nil) {
     self.kind = kind
     self.text = text
     self.createdAt = createdAt
+    self.haptic = haptic
   }
 }
 

@@ -87,18 +87,19 @@ public enum CoachCopy {
 
   /// Said once at START. Number first, one short line. The first session sets the baseline; later ones go out steady.
   public static func sessionStart(plan: SessionPlan, isFirst: Bool) -> String {
-    let target = Fmt.clock(plan.plannedSeconds)
-    return isFirst ? "\(target) target. Start easy, run 1 sets your baseline." : "\(target) target. Hold run 1 back."
+    let target = "Target \(Fmt.spoken(plan.plannedSeconds))."
+    return isFirst ? "\(target) Start easy, run 1 sets your baseline." : "\(target) Hold run 1 back."
   }
 
-  /// One line after the numbers, chosen by outcome: ended early, first session, under, over, on target.
+  /// One line after `finish`, chosen by outcome: ended early, first session, under, over, on target. It never repeats a time or
+  /// the target gap that `finish` just spoke, and it claims a save only when `saved` (the file really was written).
   /// Reads the result only; no live-measurement or "AI" claims.
-  public static func finishPersonality(totalSeconds: Int, plannedSeconds: Int, isFirst: Bool, early: Bool) -> String {
-    if early { return "Ended early. Everything up to here is saved." }
-    if isFirst { return "First session logged. This time is your baseline." }
+  public static func finishPersonality(totalSeconds: Int, plannedSeconds: Int, isFirst: Bool, early: Bool, saved: Bool) -> String {
+    if early { return saved ? "Ended early. Everything up to here is saved." : "Ended early." }
+    if isFirst { return saved ? "First session logged. This time is your baseline." : "First session. This time is your baseline." }
     let d = totalSeconds - plannedSeconds
-    if d == 0 { return "On target. Exactly the plan." }
-    return d < 0 ? "\(Fmt.gap(d)) under target. Hold that next time." : "\(Fmt.gap(d)) over target. Start with your slowest station."
+    if d == 0 { return "Exactly the plan." }
+    return d < 0 ? "Hold that next time." : "Start with your slowest station."
   }
 
   /// The History tag for a session that did not run start to finish. A recovered session (resumed after the app stopped,
