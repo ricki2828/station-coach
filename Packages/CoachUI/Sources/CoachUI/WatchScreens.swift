@@ -360,8 +360,11 @@ public struct CoachStepScreen: View {
     let c = compact
     // The Next line is regular-layout only: the compact step screen has no spare row.
     let showNext = !c && model.kind != .reps && !model.next.isEmpty && !model.noRepVisible && !model.noRepUndo
-    VStack(spacing: 2) {
-      DeltaBand(seconds: model.deltaSeconds, height: c ? 22 : 24)
+    // The NO REP rest row is a fourth row on a compact screen; every other row gives up a few points for it (40 mm had 16 too many).
+    let tight = c && model.noRepVisible
+    let button: CGFloat = c ? (tight ? 40 : 44) : 48
+    VStack(spacing: tight ? 1 : 2) {
+      DeltaBand(seconds: model.deltaSeconds, height: tight ? 20 : (c ? 22 : 24))
       HStack(spacing: 4) {
         // The title scales down (never "WALL BA\u{2026}"); the LEFT badge and heart chip keep their full width.
         Text(model.title.uppercased()).font(Theme.label(c ? 15 : Theme.Size.label)).lineLimit(1).minimumScaleFactor(0.5)
@@ -385,7 +388,7 @@ public struct CoachStepScreen: View {
         }
       }
       .foregroundStyle(fg)
-      .frame(height: c ? 18 : 20)
+      .frame(height: tight ? 16 : (c ? 18 : 20))
       dominantRow(fg, compact: c)
       if model.noRepVisible {
         HStack(spacing: 6) {
@@ -419,25 +422,25 @@ public struct CoachStepScreen: View {
       Spacer(minLength: 0)
       if let onMissed {
         SplitRow {
-          NextButton(activity: model.activity, isLast: model.isLast, height: c ? 44 : 48, outlined: dimmed, action: onNext)
+          NextButton(activity: model.activity, isLast: model.isLast, height: button, outlined: dimmed, action: onNext)
           Button(action: onMissed) {
             Text("NOT\nHEARD").font(.system(size: c ? 12 : 13, weight: .semibold)).multilineTextAlignment(.center)
               .lineLimit(2).minimumScaleFactor(0.8)
               .foregroundStyle(Theme.ink)
               .frame(maxWidth: .infinity)
-              .frame(height: c ? 44 : 48)
+              .frame(height: button)
               .background(Theme.amber, in: RoundedRectangle(cornerRadius: 14))
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Didn't hear the last cue")
         }
       } else {
-        NextButton(activity: model.activity, isLast: model.isLast, height: c ? 44 : 48, outlined: dimmed, action: onNext)
+        NextButton(activity: model.activity, isLast: model.isLast, height: button, outlined: dimmed, action: onNext)
       }
     }
     .padding(.horizontal, Theme.Space.watchEdge)
-    .padding(.top, 2)
-    .padding(.bottom, 4)
+    .padding(.top, c ? 1 : 2)
+    .padding(.bottom, c ? 3 : 4)
     .background((dimmed ? Theme.ink : Theme.background(model.activity)).ignoresSafeArea())
     .overlay(alignment: .trailing) {
       if let ladder = model.ladder, !ladder.isEmpty { EdgeLadder(ticks: ladder, outline: fg) }
@@ -455,7 +458,7 @@ public struct CoachStepScreen: View {
 
   @ViewBuilder
   private func dominantRow(_ fg: Color, compact c: Bool) -> some View {
-    let height: CGFloat = c ? 44 : (model.noRepVisible ? 48 : 52)
+    let height: CGFloat = c ? (model.noRepVisible ? 40 : 44) : (model.noRepVisible ? 48 : 52)
     let clock: (value: String, unit: String?) = dimmed && model.kind != .reps ? DimClock.parts(model.dominant) : (value: model.dominant, unit: nil)
     // 0.9 keeps the digits at 40 pt of ink or more; a wider time such as 10:41 on 40 mm shrinks this far, never to "10:\u{2026}".
     let digits = Text(clock.value)
@@ -602,6 +605,10 @@ public struct CoachFinishScreen: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.watchCompact) private var envCompact
   private var compact: Bool { resolveWatchCompact(envCompact) }
+  private var isSaveFailure: Bool {
+    if case .saveFailed = model.mode { return true }
+    return false
+  }
 
   public init(model: FinishScreenModel, animate: Bool = true, onDone: @escaping () -> Void = {}, onUndo: @escaping () -> Void = {}) {
     self.model = model
@@ -616,24 +623,24 @@ public struct CoachFinishScreen: View {
   public var body: some View {
     ZStack {
       (model.early ? Theme.finishMomentEarly : Theme.finishMoment).ignoresSafeArea()
-      VStack(spacing: compact ? 2 : 4) {
+      VStack(spacing: compact ? 2 : 3) {
         Spacer(minLength: 0)
         total
-          .font(Theme.number(compact ? 48 : Theme.Size.dominant)).condensed()
+          .font(Theme.number(compact ? 44 : 52)).condensed()
           .lineLimit(1).minimumScaleFactor(0.55)
           .opacity(reduceMotion ? fade : 1)
           .accessibilityLabel("Total time \(model.totalText)")
-        if !model.stations.isEmpty {
+        if !model.stations.isEmpty, !(compact && isSaveFailure) {
           FinishStrip(stations: model.stations, fill: reduceMotion ? 1 : fill).opacity(reduceMotion ? fade : 1)
         }
         Text(model.line)
           .font(.system(size: compact ? 16 : 20, weight: .heavy)).multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.7)
         if case .saveFailed(let missing) = model.mode {
           Text("Saved what we could. \(missing) station\(missing == 1 ? "" : "s") missing.")
-            .font(.system(size: 15, weight: .semibold)).multilineTextAlignment(.center)
+            .font(.system(size: compact ? 13 : 14, weight: .semibold)).multilineTextAlignment(.center)
         } else if !compact, model.undoSecondsLeft == nil, let best = model.best, let worst = model.worst {
-          Text("Best \(best)").font(.system(size: 15, weight: .semibold))
-          Text("Worst \(worst)").font(.system(size: 15, weight: .semibold))
+          Text("Best \(best)").font(.system(size: 14, weight: .semibold))
+          Text("Worst \(worst)").font(.system(size: 14, weight: .semibold))
         }
         Spacer(minLength: 0)
         if let left = model.undoSecondsLeft {
@@ -648,15 +655,15 @@ public struct CoachFinishScreen: View {
         if model.undoSecondsLeft == nil, !model.saving {
           Button(action: onDone) {
             Text("DONE").font(.system(size: 20, weight: .heavy)).foregroundStyle(Theme.bone)
-              .frame(maxWidth: .infinity, minHeight: 44)
+              .frame(maxWidth: .infinity, minHeight: compact ? 40 : 44)
               .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
           }.buttonStyle(.plain)
         }
       }
       .foregroundStyle(Theme.ink)
       .padding(.horizontal, Theme.Space.watchEdge)
-      .padding(.top, 4)
-      .padding(.bottom, 10)
+      .padding(.top, 2)
+      .padding(.bottom, 4)
     }
     .onAppear {
       guard animate else { return }

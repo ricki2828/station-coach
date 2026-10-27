@@ -176,7 +176,13 @@ final class LayoutTests: XCTestCase {
                            chips: ["No headphones: cues by vibration", "Heart rate off. The coach still works."],
                            batteryLine: "Battery 54%. A full sim needs about 60%.")
     fits("ready", CoachReadyScreen(model: .ready(ready)))
-    fits("ready warnings", CoachReadyScreen(model: .ready(warned)))
+    // With both warnings the Ready screen is taller than any case: IdleHost puts it in a ScrollView at 232 pt minimum,
+    // so START scrolls into view. It must not outgrow that frame.
+    for size in WatchSizes.all {
+      let h = naturalHeight(CoachReadyScreen(model: .ready(warned)), size.points)
+      note("height \(size.mm) mm ready warnings (scrolls, IdleHost minHeight 232): \(h)")
+      XCTAssertLessThanOrEqual(h, 232, "ready warnings at \(size.mm) mm")
+    }
     fits("ready no plan", CoachReadyScreen(model: .noPlan))
     fits("menu", CoachMenuScreen())
   }
