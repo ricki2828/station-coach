@@ -150,8 +150,9 @@ final class LayoutTests: XCTestCase {
     toast.toast = "Headphones lost, vibrating instead"
     var alarm = model(.run, .run, dominant: "3:12")
     alarm.alarm = "Workout session ended"
-    var changeover = model(.run, .run, dominant: "0:12", badge: "Changeover")
-    changeover.deltaSeconds = -14
+    var changeover = model(.run, .run, dominant: "10:41", badge: "Changeover", hr: 171)
+    changeover.deltaSeconds = 641
+    changeover.ladder = ladder(6)
     let cases: [(String, StepScreenModel)] = [
       ("toast", toast), ("alarm", alarm), ("changeover", changeover),
       ("run", model(.run, .run, dominant: "3:12")), ("station", model(.time, .skierg, dominant: "2:10")),
@@ -194,6 +195,13 @@ final class LayoutTests: XCTestCase {
                          batteryLine: "Battery 54%. A full sim needs about 60%.")
     XCTAssertEqual(CoachReadyScreen.warningLine(info)?.short, "No headphones \u{00B7} Heart rate off \u{00B7} Battery 54%")
     XCTAssertNil(CoachReadyScreen.warningLine(ReadyInfo(sessionName: "Full sim", targetText: "1:20:00")))
+  }
+
+  func testDimmedDeltaDropsItsSeconds() {
+    XCTAssertEqual(DeltaBand(seconds: 32, dimmed: true).bandText, "+1 min")
+    XCTAssertEqual(DeltaBand(seconds: -20, dimmed: true).bandText, "\u{2212}0 min".replacingOccurrences(of: "\u{2212}0", with: "0"))
+    XCTAssertEqual(DeltaBand(seconds: -125, dimmed: true).bandText, "\u{2212}2 min")
+    XCTAssertEqual(DeltaBand(seconds: 32).bandText, "+0:32")
   }
 
   func testNextLineShowsOnRegularStationScreensOnly() {
