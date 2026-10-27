@@ -20,6 +20,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_INTO = Path("~/station-coach-data").expanduser()
+MAX_UNCOMPRESSED = 2 * 1024**3  # per zip; real 90-minute exports are tens of MB
 SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 HEADERS = {
@@ -38,6 +39,9 @@ def safe_extract(archive, dest):
     """Unzip, refusing any member that would land outside `dest` (zip-slip)."""
     root = dest.resolve()
     with zipfile.ZipFile(archive) as z:
+        total = sum(i.file_size for i in z.infolist())
+        if total > MAX_UNCOMPRESSED:
+            raise ValueError(f"zip expands to {total / 1024**3:.1f} GB, over the {MAX_UNCOMPRESSED / 1024**3:.0f} GB cap")
         for info in z.infolist():
             target = (dest / info.filename).resolve()
             if target != root and root not in target.parents:
@@ -53,6 +57,9 @@ def find_sessions(root):
 def validate(folder):
     """Return (manifest, problems). No problems means the session is fit to file."""
     problems = []
+    links = [p.name for p in folder.rglob("*") if p.is_symlink()]
+    if links:
+        return {}, [f"contains symlinks ({', '.join(links[:3])}); not followed"]
     try:
         manifest = json.loads((folder / "manifest.json").read_text())
     except (OSError, ValueError) as e:
@@ -129,7 +136,7 @@ def ingest(inputs, into):
                 sid = manifest["sessionId"]
                 dest = into / (manifest.get("athlete") or "unknown") / sid
                 if any(into.glob(f"*/{sid}")):
-                    skipped.append(f"{name}: duplicate sessionId {sid} already filed")
+                    skipped.append(f"{name}: duplicate sessionId {sid} already filed (first copy kept, this one not compared)")
                     continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(folder, dest)

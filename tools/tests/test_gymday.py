@@ -65,6 +65,7 @@ class VerdictTests(Base):
         code, out = self.run_gymday(self.data_dir(), "--wb-truth", "a1-session=20")
         self.assertEqual(code, 0, out)
         self.assertIn("M1 gym-day verdict: PASS", out)
+        self.assertIn("Coached checks (not M1 gates):", out)
         for n in "1234":
             self.assertRegex(out, rf"Mark {n}  PASS")
         self.assertIn("finish cue PASS", out)
@@ -91,16 +92,32 @@ class VerdictTests(Base):
         self.assertEqual(code, 1)
         self.assertIn("A3 missing row", out)
 
-    def test_finish_cue_never_finished_fails(self):
+    def test_finish_cue_never_issued_fails(self):
         root = self.data_dir()
         cues = root / "A1" / "a1-session" / "cues.csv"
         lines = cues.read_text().splitlines(keepends=True)
-        assert "On target" in lines[-1] and "finished" in lines[-1]
-        cues.write_text("".join(lines[:-1]))
-        code, out = self.run_gymday(root)
-        self.assertEqual(code, 1)
+        assert "On target" in lines[-1] and "On target" in lines[-2]
+        cues.write_text("".join(lines[:-2]))  # the finish cue's issued and finished rows
+        _, out = self.run_gymday(root)
+        self.assertIn("finish cue FAIL", out)
+        self.assertIn("never issued", out)
+
+    def test_finish_cue_issued_but_not_finished_fails(self):
+        root = self.data_dir()
+        cues = root / "A1" / "a1-session" / "cues.csv"
+        lines = cues.read_text().splitlines(keepends=True)
+        cues.write_text("".join(lines[:-1]))  # drops the finished row of the finish cue
+        _, out = self.run_gymday(root)
         self.assertIn("finish cue FAIL", out)
         self.assertIn("never finished", out)
+
+    def test_coached_failures_do_not_gate_the_verdict(self):
+        root = self.data_dir()
+        self.edit_json(root / "A1" / "a1-session" / "coach.json", lambda d: d.update(repTimesMs=d["repTimesMs"][:17]))
+        code, out = self.run_gymday(root, "--wb-truth", "a1-session=20")
+        self.assertEqual(code, 0, out)
+        self.assertIn("M1 gym-day verdict: PASS", out)
+        self.assertIn("wall-ball count FAIL", out)
 
     def test_start_at_85_percent_is_not_comparable(self):
         root = self.data_dir()
@@ -123,8 +140,7 @@ class VerdictTests(Base):
     def test_wall_balls_17_vs_20_fails(self):
         root = self.data_dir()
         self.edit_json(root / "A1" / "a1-session" / "coach.json", lambda d: d.update(repTimesMs=d["repTimesMs"][:17]))
-        code, out = self.run_gymday(root, "--wb-truth", "a1-session=20")
-        self.assertEqual(code, 1)
+        _, out = self.run_gymday(root, "--wb-truth", "a1-session=20")
         self.assertIn("wall-ball count FAIL", out)
         self.assertIn("watch counted 17 vs true 20", out)
 
@@ -138,16 +154,14 @@ class VerdictTests(Base):
         root = self.data_dir()
         self.edit_json(root / "A1" / "a1-session" / "coach.json",
                        lambda d: d.update(repTimesMs=[d["startedAtEpochMs"] + 3000] + d["repTimesMs"]))
-        code, out = self.run_gymday(root)
-        self.assertEqual(code, 1)
+        _, out = self.run_gymday(root)
         self.assertIn("1 rep(s) outside the wall-ball steps", out)
 
     def test_early_session_with_unfinished_steps_is_ok_but_not_early_is_not(self):
         root = self.data_dir()
         path = root / "A1" / "a1-session" / "coach.json"
         self.edit_json(path, lambda d: d["splits"][-1].pop("endMs"))
-        code, out = self.run_gymday(root)
-        self.assertEqual(code, 1)
+        _, out = self.run_gymday(root)
         self.assertIn("splits FAIL", out)
         self.edit_json(path, lambda d: d.update(early=True))
         _, out = self.run_gymday(root)
@@ -158,6 +172,43 @@ class VerdictTests(Base):
         code, out = self.run_gymday(self.data_dir())
         self.assertEqual(code, 0, out)
         self.assertIn("wall-ball count NOT RUN", out)
+
+    def test_battery_dying_before_90_minutes_fails_mark_2(self):
+        # A 70-minute session that falls to 2% must FAIL, even though another session passes.
+        root = self.data_dir()
+        d = root / "A2" / "a2-session"
+        start = 1_790_000_000_000
+        self.edit_json(d / "manifest.json", lambda m: m.update(endedAtEpochMs=start + 70 * 60_000))
+        (d / "battery.csv").write_text("epoch_ms,level,state\n" + "".join(
+            f"{start + m * 60_000},{max(0.02, 1 - 0.014 * m):.2f},unplugged\n" for m in range(0, 71)))
+        with mock.patch.object(m1_report, "BATTERY_MINUTES", 90):
+            sessions = [gymday.analyse_session(f, None) for f in gymday.find_sessions(root)]
+        a2 = next(s for s in sessions if s["athlete"] == "A2")
+        self.assertEqual(a2["mark2"]["status"], "FAIL")
+        self.assertIn("battery ran out", a2["mark2"]["detail"])
+        v = gymday.verdict(sessions, 1, root)
+        self.assertEqual(v["marks"][2]["status"], "FAIL")
+        self.assertEqual(v["overall"], "FAIL")
+
+    def test_short_session_projected_ok_stays_not_run(self):
+        d = self.session(self.tmp / "data", "A1")
+        with mock.patch.object(m1_report, "BATTERY_MINUTES", 90):
+            s = gymday.analyse_session(d, None)
+        self.assertEqual(s["mark2"]["status"], "NOT RUN")  # 0.5%/min over 3 min projects to ~55%
+
+    def test_unmatched_or_ambiguous_wb_truth_is_an_error(self):
+        root = self.data_dir()
+        for key in ("nope=20", "a=20"):
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+                gymday.main([str(root), "--min-minutes", "1", "--wb-truth", key])
+            self.assertEqual(cm.exception.code, 2)
+
+    def test_missing_ended_at_is_not_run_not_a_crash(self):
+        root = self.data_dir()
+        self.edit_json(root / "A1" / "a1-session" / "coach.json", lambda d: (d.pop("endedAtEpochMs"), d["splits"][-1].pop("endMs")))
+        code, out = self.run_gymday(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn("coached checks NOT RUN: coach.json has no endedAtEpochMs", out)
 
     def test_motion_gap_fails_mark_3(self):
         root = self.data_dir()
@@ -260,6 +311,19 @@ class IngestTests(Base):
         with self.assertRaises(SystemExit):
             ingest.ingest([COACHED], TOOLS.parent / "leaked-data")
 
+    def test_symlink_in_folder_input_is_skipped(self):
+        src = self.session(self.tmp / "src", "A2", "sid-link")
+        (src / "notes.txt").symlink_to(self.tmp / "secret.txt")
+        filed, skipped = ingest.ingest([src], self.tmp / "out")
+        self.assertEqual(filed, [])
+        self.assertIn("symlinks", skipped[0])
+
+    def test_oversized_zip_is_refused(self):
+        z = self.make_zip(self.session(self.tmp / "src", "A2", "sid-big"), "big.zip")
+        with mock.patch.object(ingest, "MAX_UNCOMPRESSED", 1000):
+            _, skipped = ingest.ingest([z], self.tmp / "out")
+        self.assertIn("over the", skipped[0])
+
     def test_zip_slip_is_refused(self):
         z = self.tmp / "evil.zip"
         with zipfile.ZipFile(z, "w") as zf:
@@ -289,7 +353,7 @@ class DeskCheckTests(Base):
         r = self.results(COACHED)
         self.assertEqual({k: v[0] for k, v in r.items()},
                          {"mode=speech": "PASS", "A2DP output": "PASS", "headphones lost -> reactivated": "PASS",
-                          "rates.csv every minute": "PASS", "no 'Could not start'": "PASS"})
+                          "rates.csv every minute": "PASS"})
 
     def test_haptic_only_cue_fails_speech_mode(self):
         self.assertEqual(self.results(INTERVAL)["mode=speech"][0], "FAIL")
@@ -313,12 +377,6 @@ class DeskCheckTests(Base):
         s = self.session(self.tmp, "A1")
         self.edit_json(s / "manifest.json", lambda d: d.update(recovered=True))
         self.assertEqual(self.results(s)["rates.csv every minute"][0], "NOT RUN")
-
-    def test_could_not_start_fails(self):
-        s = self.session(self.tmp, "A1")
-        with (s / "events.csv").open("a") as f:
-            f.write("1790000001000,error,Could not start: nope\n")
-        self.assertEqual(self.results(s)["no 'Could not start'"][0], "FAIL")
 
     def test_cli_exit_code(self):
         run = lambda p: subprocess.run([sys.executable, str(TOOLS / "desk_check.py"), str(p)], capture_output=True, text=True).returncode

@@ -10,3 +10,4 @@ __pycache__/
 # Recordings (heart rate): keep outside the repo
 station-coach-data/
 *.zip
+verdict.*

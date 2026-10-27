@@ -10,9 +10,10 @@ Marks (docs/GYMDAY.md has the rules in full):
   2. >= 30% battery at 90 minutes, in every comparable session (start >= 95%) that reached 90 minutes
   3. motion stored at >= 50 Hz for >= 95% of session seconds, in every session
   4. at least 3 athlete codes including A1, each with all 10 activities
-Coached sessions (coach.json) also get the PROTOCOL checks: finish cue spoken to the end, splits complete or
-early, wall-ball count against --wb-truth (+-5%), phantom reps outside the wall-ball steps.
-Exit code 0 only when all four marks PASS and no coached check FAILs.
+Coached sessions (coach.json) also get the PROTOCOL checks, printed apart as "Coached checks (not M1 gates)":
+finish cue spoken to the end, splits complete or early, wall-ball count against --wb-truth (+-5%), phantom reps
+outside the wall-ball steps. They never change the M1 verdict or the exit code.
+Exit code 0 only when all four marks PASS; 2 on bad input.
 """
 import argparse
 import json
@@ -30,6 +31,7 @@ except ImportError:
 PASS, FAIL, NOT_RUN = "PASS", "FAIL", "NOT RUN"
 WB_TOLERANCE = 0.05
 MIN_ATHLETES = 3
+BATTERY_FLAT = 5.0  # percent: a last reading at or under this before 90 min counts as the battery running out
 REQUIRED_ATHLETE = "A1"
 THERMAL_ORDER = ["nominal", "fair", "serious", "critical"]
 
@@ -67,17 +69,22 @@ def coached_checks(folder, manifest, truth):
         coach["plan"]["steps"], coach["splits"]
     except (ValueError, KeyError, TypeError) as e:
         return [check("coach.json", FAIL, f"unreadable ({e})")]
+    if not isinstance(coach.get("endedAtEpochMs"), int):
+        return [check("coached checks", NOT_RUN, "coach.json has no endedAtEpochMs (session not closed cleanly?)")]
     checks = []
 
-    # Finish cue: the last cue issued is the finish line; it must have been spoken to the end.
+    # Finish cue: the first cue issued at or after the session ended (the watch offers it after the undo window).
+    ended = coach["endedAtEpochMs"]
     by_id = {}
     for r in m1.read_rows(Path(folder) / "cues.csv"):
         by_id.setdefault(r["cue_id"], []).append(r)
-    issued = [(int(ev[0]["epoch_ms"]), cid, ev) for cid, ev in by_id.items() if any(e["event"] == "issued" for e in ev)]
-    if not issued:
-        checks.append(check("finish cue", FAIL, "no cues logged"))
+    issued = [(min(int(e["epoch_ms"]) for e in ev if e["event"] == "issued"), cid, ev)
+              for cid, ev in by_id.items() if any(e["event"] == "issued" for e in ev)]
+    after = [t for t in issued if t[0] >= ended]
+    if not after:
+        checks.append(check("finish cue", FAIL, "never issued (no cue at or after the session end)"))
     else:
-        _, cid, ev = max(issued, key=lambda t: t[0])
+        _, cid, ev = min(after, key=lambda t: t[0])
         kinds = {e["event"] for e in ev}
         ok = "finished" in kinds
         checks.append(check("finish cue", PASS if ok else FAIL,
@@ -144,8 +151,12 @@ def analyse_session(folder, truth):
     elif bat["start_percent"] < m1.BATTERY_START_MIN:
         s["mark2"] = {"status": NOT_RUN, "detail": f"battery start {bat['start_percent']:.0f}% < {m1.BATTERY_START_MIN:.0f}%: mark not comparable"}
     elif not bat["reached"]:
-        s["mark2"] = {"status": NOT_RUN, "detail": f"session {bat['session_minutes']:.0f} min, 90 not reached "
-                      f"(projected {bat['percent']:.0f}%)"}
+        # Ended before 90 min: a battery that is flat, or on course to be under the mark, is the failure this mark exists to catch.
+        gone = bat["last_percent"] <= BATTERY_FLAT
+        low = bat["percent"] < m1.BATTERY_MARK
+        text = (f"session {bat['session_minutes']:.0f} min, 90 not reached, last {bat['last_percent']:.0f}%, "
+                f"projected {bat['percent']:.0f}% at 90 min")
+        s["mark2"] = {"status": FAIL if gone or low else NOT_RUN, "detail": text + (" (battery ran out)" if gone else "")}
     else:
         s["mark2"] = {"status": PASS if bat["percent"] >= m1.BATTERY_MARK else FAIL,
                       "detail": f"{bat['percent']:.0f}% at 90 min (start {bat['start_percent']:.0f}%)"}
@@ -206,7 +217,7 @@ def verdict(sessions, min_minutes, data_dir):
     marks[4] = {"status": PASS if ok else FAIL, "reasons": reasons}
 
     coached_fail = [(s["sessionId"], c) for s in used for c in s.get("checks", []) if c["status"] == FAIL]
-    all_pass = all(m["status"] == PASS for m in marks.values()) and not coached_fail
+    all_pass = all(m["status"] == PASS for m in marks.values())
     return {"dataDir": str(data_dir), "overall": PASS if all_pass else FAIL, "marks": marks,
             "coachedFailures": [f"{sid}: {c['name']}: {c['detail']}" for sid, c in coached_fail],
             "sessions": used, "ignored": [{"sessionId": s["sessionId"], "reason": s.get("ignored") or f"under {min_minutes:g} min"} for s in ignored]}
@@ -234,12 +245,11 @@ def render_text(v):
         out.append(f"     1 {PASS if s['mark1']['ok'] else FAIL}: {s['mark1']['detail']}")
         out.append(f"     2 {s['mark2']['status']}: {s['mark2']['detail']}")
         out.append(f"     3 {PASS if s['mark3']['ok'] else FAIL}: {s['mark3']['detail']}")
-        for c in s.get("checks", []):
-            out.append(f"     coached {c['name']} {c['status']}: {c['detail']}")
     if v["ignored"]:
         out.append("Ignored: " + "; ".join(f"{i['sessionId']} ({i['reason']})" for i in v["ignored"]))
-    if v["coachedFailures"]:
-        out += ["", "Coached check failures:"] + [f"  {f}" for f in v["coachedFailures"]]
+    out += ["", "Coached checks (not M1 gates):"]
+    coached = [(s, c) for s in v["sessions"] for c in s.get("checks", [])]
+    out += [f"  {s['sessionId']}  {c['name']} {c['status']}: {c['detail']}" for s, c in coached] or ["  none (no coach.json)"]
     return "\n".join(out)
 
 
@@ -252,11 +262,16 @@ def render_md(v):
     for s in v["sessions"]:
         out.append(f"- `{s['sessionId']}` {s['athlete']}, {s['minutes']:.0f} min"
                    + (f", thermal worst {s['thermal']}" if s.get("thermal") else "") + (", recovered" if s["recovered"] else ""))
-        for c in s.get("checks", []):
-            out.append(f"  - {c['name']}: {c['status']} ({c['detail']})")
+    out += ["", "## Coached checks (not M1 gates)", ""]
+    out += [f"- `{s['sessionId']}` {c['name']}: {c['status']} ({c['detail']})" for s in v["sessions"] for c in s.get("checks", [])] or ["- none"]
     if v["ignored"]:
         out += ["", "Ignored: " + "; ".join(f"`{i['sessionId']}` ({i['reason']})" for i in v["ignored"])]
     return "\n".join(out) + "\n"
+
+
+def usage_error(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(2)
 
 
 def parse_truth(items):
@@ -264,16 +279,22 @@ def parse_truth(items):
     for item in items or []:
         key, _, val = item.rpartition("=")
         if not key or not val.isdigit() or int(val) <= 0:
-            raise SystemExit(f"--wb-truth wants <session>=<positive count>, got {item!r}")
+            usage_error(f"--wb-truth wants <session>=<positive count>, got {item!r}")
         out[key] = int(val)
     return out
 
 
-def truth_for(session_id, truth):
+def resolve_truth(truth, folders):
+    """Map each --wb-truth key to exactly one session id (exact match, else a unique prefix). Exit 2 otherwise."""
+    ids = [m1.load_manifest(f).get("sessionId", f.name) for f in folders]
+    resolved = {}
     for key, n in truth.items():
-        if session_id == key or session_id.startswith(key):
-            return n
-    return None
+        hits = [i for i in ids if i == key] or [i for i in ids if i.startswith(key)]
+        if len(hits) != 1:
+            usage_error(f"--wb-truth {key}: " + ("matches no session" if not hits else f"matches {len(hits)} sessions ({', '.join(hits)})")
+                             + f"; sessions found: {', '.join(ids)}")
+        resolved[hits[0]] = n
+    return resolved
 
 
 def main(argv=None):
@@ -289,10 +310,11 @@ def main(argv=None):
     if not folders:
         print(f"no sessions under {args.data_dir}")
         return 2
+    truth = resolve_truth(truth, folders)
     sessions = []
     for f in folders:
         sid = m1.load_manifest(f).get("sessionId", f.name)
-        sessions.append(analyse_session(f, truth_for(sid, truth)))
+        sessions.append(analyse_session(f, truth.get(sid)))
     v = verdict(sessions, args.min_minutes, args.data_dir)
     print(render_text(v))
     if args.json:

@@ -5,6 +5,8 @@
 
 Each check prints PASS, FAIL or NOT RUN (the test it needs was not done in that session). Exit code 1 if any
 check FAILs. Checks follow docs/PROTOCOL.md "Desk test additions".
+Not checked: "Could not start". The watch only shows it on screen (a failed start leaves no events.csv row), so
+a check on the files could only ever pass; read the watch screen instead.
 """
 import sys
 from pathlib import Path
@@ -72,14 +74,9 @@ def rates_every_minute(folder):
         (PASS, f"rates.csv has a row per stream for each of {minutes} minutes")
 
 
-def could_not_start(folder):
-    hits = [r for r in m1.read_rows(Path(folder) / "events.csv") if "Could not start" in r["detail"] or "Could not start" in r["kind"]]
-    return (FAIL, f"'Could not start' logged: {hits[0]['detail']}") if hits else (PASS, "no 'Could not start' in events.csv")
-
-
 CHECKS = [("mode=speech", speech_mode), ("A2DP output", a2dp_output),
           ("headphones lost -> reactivated", headphones_lost_sequence),
-          ("rates.csv every minute", rates_every_minute), ("no 'Could not start'", could_not_start)]
+          ("rates.csv every minute", rates_every_minute)]
 
 
 def run(folder):
