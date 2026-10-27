@@ -104,7 +104,7 @@ struct HomeHost: View {
             InstallWatchCard(onDismiss: { app.dismissWatchNudge() }).padding(.horizontal, 20).padding(.top, syncFailed ? 0 : 20)
           }
           HomeScreen(model: HomeModel(records: phone.coachSessions, setup: app.raceSetup),
-                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()),
+                     week: WeekCardModel.make(phone.loadSummary.sessions, now: Date(), calendar: LoadHistory.calendar()), recoveredIds: phone.recoveredIds,
                      onStart: { phone.resetSendState(); app.start($0) }, onOpenLast: { path.append(.detail($0.id)) }, onOpenPlan: { app.tab = .plan },
                      onOpenWeek: { openSummary() })
         }
@@ -239,11 +239,12 @@ struct SessionDetailHost: View {
   @EnvironmentObject var phone: PhoneTransfer
   @State private var share: ShareItem?
   @State private var shareError = false
+  @State private var exportedZip: URL?
 
   var body: some View {
     ScrollView {
       if let record = phone.coachSessions.first(where: { $0.id == id }) {
-        SessionDetailScreen(record: record,
+        SessionDetailScreen(record: record, recovered: phone.recoveredIds.contains(id),
                             onSaveCount: { phone.saveCorrection(WallBallCorrection(validReps: $0.validReps, noReps: $0.noReps), for: id) },
                             onShare: { makeCard(record) }, onExport: { export() })
       } else {
@@ -253,7 +254,7 @@ struct SessionDetailHost: View {
     }
     .background(PhoneTheme.paper)
     .navigationBarTitleDisplayMode(.inline)
-    .sheet(item: $share) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
     .alert("Couldn't make the card", isPresented: $shareError) { Button("OK", role: .cancel) {} } message: { Text("Try again.") }
   }
 
@@ -262,8 +263,11 @@ struct SessionDetailHost: View {
   }
 
   private func export() {
-    guard let url = try? phone.zip(id) else { return }
-    share = ShareItem(url: url)
+    Task {
+      guard let url = try? await phone.exportZip(sessionId: id) else { return }
+      exportedZip = url
+      share = ShareItem(url: url)
+    }
   }
 }
 
@@ -292,6 +296,7 @@ struct RawFilesHost: View {
   @State private var share: ShareItem?
   @State private var error: String?
   @State private var toDelete: SessionSummary?
+  @State private var exportedZip: URL?
 
   private var totalBytes: Int { phone.sessions.reduce(0) { $0 + $1.bytes } }
 
@@ -306,11 +311,15 @@ struct RawFilesHost: View {
         Section {
           Button { exportAll() } label: {
             VStack(alignment: .leading, spacing: 2) {
-              Text("Export all").font(.headline)
-              Text("\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
+              HStack(spacing: 8) {
+                Text(phone.exporting ? "Preparing zip\u{2026}" : "Export all").font(.headline)
+                if phone.exporting { ProgressView() }
+              }
+              Text(phone.exporting ? "Files arriving from the watch wait until this is done." : "\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
                 .font(.footnote).foregroundStyle(.secondary)
             }
           }
+          .disabled(phone.exporting)
         }
       }
       let watchOnly = phone.watchOnlyIds
@@ -319,7 +328,7 @@ struct RawFilesHost: View {
           ForEach(watchOnly, id: \.self) { id in
             VStack(alignment: .leading, spacing: 2) {
               Text(id).font(.subheadline.monospaced())
-              Text("Not on this phone yet. Keep both apps open.").font(.footnote).foregroundStyle(.secondary)
+              Text("Waiting for the watch. Not on this phone yet; keep both apps open.").font(.footnote).foregroundStyle(.secondary)
             }
           }
         }
@@ -333,6 +342,7 @@ struct RawFilesHost: View {
                 .font(.footnote).foregroundStyle(.secondary)
             }
           }
+          .disabled(phone.exporting)
           .swipeActions { Button("Delete", role: .destructive) { toDelete = s } }
         }
       }
@@ -341,7 +351,7 @@ struct RawFilesHost: View {
     .navigationTitle("Raw files")
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { phone.refresh() }
-    .sheet(item: $share) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
     .confirmationDialog(deleteTitle, isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }), titleVisibility: .visible) {
       Button("Delete", role: .destructive) { if let s = toDelete { phone.delete(s.id) }; toDelete = nil }
       Button("Cancel", role: .cancel) { toDelete = nil }
@@ -357,21 +367,22 @@ struct RawFilesHost: View {
     return "Delete \([d.athlete, when].compactMap { $0 }.joined(separator: ", ")), \(size(s.bytes))?"
   }
 
-  private func export(_ id: String) {
-    do {
-      share = ShareItem(url: try phone.zip(id))
-      error = nil
-    } catch {
-      self.error = "Export failed: \(error.localizedDescription)"
-    }
-  }
+  private func export(_ id: String) { run { try await phone.exportZip(sessionId: id) } }
 
-  private func exportAll() {
-    do {
-      share = ShareItem(url: try phone.zipAll())
-      error = nil
-    } catch {
-      self.error = "Export failed: \(error.localizedDescription)"
+  private func exportAll() { run { try await phone.exportZip() } }
+
+  private func run(_ make: @escaping () async throws -> URL) {
+    Task {
+      do {
+        let url = try await make()
+        exportedZip = url
+        share = ShareItem(url: url)
+        error = nil
+      } catch PhoneTransfer.ExportError.busy {
+        // One zip at a time: the button is disabled, so this is a double tap. Ignore it.
+      } catch {
+        self.error = "Export failed: \(error.localizedDescription)"
+      }
     }
   }
 }

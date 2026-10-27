@@ -1,5 +1,6 @@
 import CoachKit
 import SwiftUI
+import WatchConnectivity
 
 struct HomeView: View {
   @EnvironmentObject var recorder: RecorderController
@@ -41,19 +42,21 @@ struct HomeView: View {
 struct SessionsView: View {
   @ObservedObject private var transfer = WatchTransfer.shared
   @State private var confirmDelete = false
+  /// The sent sessions the dialog was opened for. Deleting exactly these, not whatever is acked at the tap, keeps the count honest.
+  @State private var toDelete: [String] = []
 
-  private var sentCount: Int {
-    guard let root = try? SessionFiles.defaultRoot() else { return 0 }
-    return SessionFiles.summaries(in: root).filter { transfer.isAcked($0.id) }.count
+  private func sentIds() -> [String] {
+    guard let root = try? SessionFiles.defaultRoot() else { return [] }
+    return SessionFiles.summaries(in: root).map(\.id).filter { transfer.isAcked($0) }
   }
 
   var body: some View {
     let sessions = SessionFiles.summaries(in: (try? SessionFiles.defaultRoot()) ?? URL(fileURLWithPath: "/"))
     List {
       Button("Send unsent") { transfer.sendUnsent() }
-      Button("Delete sent", role: .destructive) { confirmDelete = true }
-        .confirmationDialog("Delete \(sentCount) sent \(sentCount == 1 ? "session" : "sessions") from the watch?", isPresented: $confirmDelete, titleVisibility: .visible) {
-          Button("Delete \(sentCount)", role: .destructive) { transfer.deleteAcked() }
+      Button("Delete sent", role: .destructive) { toDelete = sentIds(); confirmDelete = true }
+        .confirmationDialog("Delete \(toDelete.count) sent \(toDelete.count == 1 ? "session" : "sessions") from the watch?", isPresented: $confirmDelete, titleVisibility: .visible) {
+          Button("Delete \(toDelete.count)", role: .destructive) { deleteSent(toDelete) }
           Button("Cancel", role: .cancel) {}
         }
       ForEach(sessions) { s in
@@ -65,5 +68,16 @@ struct SessionsView: View {
       }
     }
     .navigationTitle("Sessions")
+  }
+
+  /// Same effect as `WatchTransfer.deleteAcked()`, limited to the ids shown in the dialog. A session acked after the dialog opened stays.
+  private func deleteSent(_ ids: [String]) {
+    guard let root = try? SessionFiles.defaultRoot() else { return }
+    let still = ids.filter { transfer.isAcked($0) }
+    for id in still { try? FileManager.default.removeItem(at: root.appendingPathComponent(id)) }
+    if !still.isEmpty, WCSession.isSupported(), WCSession.default.activationState == .activated {
+      WCSession.default.transferUserInfo(["gone": still]) // the phone clears anything it was waiting for
+    }
+    transfer.objectWillChange.send()
   }
 }
