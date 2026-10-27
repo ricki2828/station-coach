@@ -27,7 +27,7 @@ Athlete codes (A1, A2, ...) are labels typed on the watch home screen before rec
 | 4 Coverage | At least 3 athlete codes including A1, each with all 10 activities across their sessions. |
 
 Coached sessions (`coach.json`) also get these checks, printed in a separate "Coached checks (not M1 gates)" section. They do not change the verdict or exit code; read them anyway:
-- finish cue: the first cue issued at or after `coach.json` `endedAtEpochMs` must exist and have a `finished` row ("never issued" is a FAIL). A session salvaged from a checkpoint (`recovered: true`) reads NOT RUN: no finish cue is expected.
+- finish cue: the first cue issued at or after `coach.json` `endedAtEpochMs` must exist and have a `finished` row ("never issued" is a FAIL). A session salvaged from a checkpoint (`recovered: true` and either `early` or no cue after the end) reads NOT RUN: no finish cue is expected. A recovered session that finished normally is still checked.
 - splits: every plan step has an end, or the session is `early`.
 - phantom reps: counted reps outside the wall-ball steps.
 - wall-ball count: the watch's uncorrected count against `--wb-truth <sessionId or unique prefix>=N`, +-5%. Without the flag it prints the count and is NOT RUN. A key that matches no session, more than one, or a session without `coach.json` is an error (exit 2).

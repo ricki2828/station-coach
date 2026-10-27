@@ -384,6 +384,26 @@ class RoundTwoTests(Base):
         _, out = self.run_gymday(root)
         self.assertIn("finish cue NOT RUN: session was salvaged", out)
 
+    def test_recovered_session_that_finished_normally_is_still_checked(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(recovered=True))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue PASS", out)
+        # the kill cut the finish cue off: issued, never finished
+        cues = d / "cues.csv"
+        cues.write_text("".join(cues.read_text().splitlines(keepends=True)[:-1]))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue FAIL", out)
+
+    def test_recovered_early_session_is_not_run_even_with_a_later_cue(self):
+        root = self.data_dir()
+        d = root / "A1" / "a1-session"
+        self.edit_json(d / "manifest.json", lambda m: m.update(recovered=True))
+        self.edit_json(d / "coach.json", lambda c: c.update(early=True))
+        _, out = self.run_gymday(root)
+        self.assertIn("a1-session  finish cue NOT RUN", out)
+
     def test_resumed_but_finished_session_still_checks_the_finish_cue(self):
         root = self.data_dir()
         d = root / "A1" / "a1-session"

@@ -77,12 +77,14 @@ def coached_checks(folder, manifest, truth):
     # Finish cue: the first cue issued at or after the session ended (the watch offers it after the undo window).
     ended = coach["endedAtEpochMs"]
     by_id = {}
-    salvaged = bool(manifest.get("recovered"))
     for r in m1.read_rows(Path(folder) / "cues.csv"):
         by_id.setdefault(r["cue_id"], []).append(r)
     issued = [(min(int(e["epoch_ms"]) for e in ev if e["event"] == "issued"), cid, ev)
               for cid, ev in by_id.items() if any(e["event"] == "issued" for e in ev)]
     after = [t for t in issued if t[0] >= ended]
+    # Salvaged = closed from a checkpoint: recovered and either ended early or no finish cue ever followed.
+    # A recovered session that finished normally (crash after FINISH) is still checked.
+    salvaged = bool(manifest.get("recovered")) and (bool(coach.get("early")) or not after)
     if salvaged:
         checks.append(check("finish cue", NOT_RUN, "session was salvaged from a checkpoint (recovered): no finish cue is expected"))
     elif not after:
