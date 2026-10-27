@@ -12,7 +12,7 @@ from .store import Store
 
 def run(settings: Settings | None = None, now: datetime | None = None) -> dict:
     s = settings or Settings.from_env()
-    return Store(s.db_path).purge_expired(now or datetime.now(timezone.utc), s.retention_days)
+    return Store(s.db_path, s.ip_secret.encode()).purge_expired(now or datetime.now(timezone.utc), s.retention_days)
 
 
 if __name__ == "__main__":

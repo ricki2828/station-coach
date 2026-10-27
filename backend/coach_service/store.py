@@ -4,6 +4,7 @@ Timestamps are stored at day precision (D11): the server does not keep when in t
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
 import sqlite3
@@ -38,7 +39,8 @@ def _hash(token: str) -> str:
 
 
 class Store:
-    def __init__(self, path: str):
+    def __init__(self, path: str, ip_secret: bytes = b""):
+        self._ip_key = ip_secret or secrets.token_bytes(32)   # no key given: a per-process random one (dev only)
         self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None, timeout=10)
         self._db.row_factory = sqlite3.Row
         self._lock = threading.RLock()
@@ -80,16 +82,20 @@ class Store:
         with self._lock:
             self._db.execute("UPDATE devices SET last_seen=? WHERE install_id=?", (day(now), install_id))
 
+    def _ip(self, ip: str) -> str:
+        """Keyed hash: an unkeyed hash of an IPv4 address can be brute-forced back to the address."""
+        return hmac.new(self._ip_key, ip.encode(), hashlib.sha256).hexdigest()
+
     # registrations (rate limits)
     def note_registration(self, ip: str, now: datetime) -> None:
         with self._lock:
-            self._db.execute("INSERT INTO registrations (day, ip_hash) VALUES (?,?)", (day(now), _hash("ip:" + ip)))
+            self._db.execute("INSERT INTO registrations (day, ip_hash) VALUES (?,?)", (day(now), self._ip(ip)))
 
     def registrations_today(self, now: datetime, ip: str | None = None) -> int:
         q, args = "SELECT COUNT(*) FROM registrations WHERE day=?", [day(now)]
         if ip is not None:
             q += " AND ip_hash=?"
-            args.append(_hash("ip:" + ip))
+            args.append(self._ip(ip))
         with self._lock:
             return self._db.execute(q, args).fetchone()[0]
 

@@ -52,9 +52,12 @@ rewritten for the debrief rules). No code is shared across repos at runtime.
 ## Deploy blockers (do not deploy before these)
 1. **App Attest (or Sign in with Apple) in the `Attestor`.** Without it anyone can mint installs and spend the cap.
    The in-app limits above only bound the damage.
-2. **Edge rate limit on `/v1/register` and `/v1/coach`.** The per-address limit sees the proxy's address behind a
-   reverse proxy, so a real limit must also live at the edge.
-3. **One worker only.** The store is SQLite behind an in-process lock; spend checks use `BEGIN IMMEDIATE`, but nothing else
+2. **Edge rate limit on `/v1/register` and `/v1/coach`, and proxy headers.** Behind a reverse proxy every client shares
+   one per-address bucket unless uvicorn runs with `--proxy-headers --forwarded-allow-ips=<proxy address>`. A real limit
+   must also live at the edge.
+3. **`COACH_IP_SECRET`.** The address hash is an HMAC with this key; the service refuses to start without it unless
+   `COACH_DEV_MODE=1`. Generate it on the host; it is not in the repo.
+4. **One worker only.** The store is SQLite behind an in-process lock; spend checks use `BEGIN IMMEDIATE`, but nothing else
    is multi-process safe.
 
 ## Where this needs the owner before it can go live
@@ -66,6 +69,11 @@ rewritten for the debrief rules). No code is shared across repos at runtime.
 4. **Sign in with Apple and the App Attest app IDs.** The per-device daily cap can still be reset by reinstalling.
 5. **Lawyer-approved consent text**, then bump `COACH_CONSENT_VERSION` if it changes.
 6. **The feature flag.** Stays off in the phone app until he turns it on.
+
+## Cases for the eval pass on real replies
+Generic "run" counted as naming a second station; "the first 2 sets" (a count not in the facts); everyday exertion words the
+medical-language rule lets through ("dizzy", "short of breath", "pace collapsed"), which must still read as ordinary debrief
+text and carry no advice; a skipped station; an early session; a first-ever session with no history.
 
 ## Not covered
 Backups, logging/monitoring, and any real model output. The reply rules are tested against scripted replies only: expect
