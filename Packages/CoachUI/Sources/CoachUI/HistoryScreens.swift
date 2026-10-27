@@ -109,13 +109,15 @@ public struct SessionDetailScreen: View {
   let onShare: () -> Void
   let onExport: () -> Void
   let onSaveCount: ((WallBallEdit) -> Bool)?
+  let recovered: Bool
   @State private var editing = false
   @State private var saveFailed = false
 
   /// `onSaveCount` non-nil shows the "Edit count" link; the no-rep count comes from `record.result`.
-  public init(record: SessionRecord, onSaveCount: ((WallBallEdit) -> Bool)? = nil,
+  public init(record: SessionRecord, recovered: Bool = false, onSaveCount: ((WallBallEdit) -> Bool)? = nil,
               onShare: @escaping () -> Void = {}, onExport: @escaping () -> Void = {}) {
     self.record = record
+    self.recovered = recovered
     self.onSaveCount = onSaveCount
     self.onShare = onShare
     self.onExport = onExport
@@ -129,12 +131,17 @@ public struct SessionDetailScreen: View {
       HeroCard(type: record.type) {
         VStack(alignment: .leading, spacing: 8) {
           Text("\(record.type.title) \u{00B7} \(HistoryFormat.shortDate(record.date))").scaledKicker(color: PhoneTheme.sessionText(record.type))
+          if let label = CoachCopy.sessionLabel(early: r.early, recovered: recovered) {
+            Text(label.uppercased()).scaledKicker(color: PhoneTheme.sessionText(record.type))
+          }
           Text(insight.headline).scaledFont(30, .heavy).fontWidth(.condensed)
-          Text(Fmt.clock(r.totalSeconds)).scaledHero()
-          if let words = record.targetWords {
-            Text(words.text).scaledFont(17, .semibold)
+          // An early session has no finish time, so the hero is how far it got.
+          if r.early {
+            Text("\(r.completedStationCount) of \(r.plan.stationCount)").scaledHero()
+            Text("stations").scaledFont(17, .semibold)
           } else {
-            Text("\(r.completedStationCount) of \(r.plan.stationCount) stations").scaledFont(17, .semibold)
+            Text(Fmt.clock(r.totalSeconds)).scaledHero()
+            if let words = record.targetWords { Text(words.text).scaledFont(17, .semibold) }
           }
         }
       }
