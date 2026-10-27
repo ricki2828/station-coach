@@ -107,13 +107,18 @@ public final class CoachService {
   private struct RegisterReply: Decodable { let deviceToken: String }
   private struct CoachReplyBody: Decodable { let reply: String }
   private struct DeleteReply: Decodable { let deletedSessions: Int }
+  private struct ErrorBody: Decodable { let currentConsentVersion: Int? }
 
   static let consentKey = "coach.consent"
   static let queueKey = "coach.queue"
   static let repliesKey = "coach.replies"
   static let statesKey = "coach.states"
   static let pendingDeleteKey = "coach.pendingDelete"
+  static let serverVersionKey = "coach.serverVersion"
+  static let resetKey = "coach.reset"
   static let maxAttempts = 3
+  /// Facts waiting for a connection. Past this the oldest is dropped (shown as the error state).
+  static let maxQueue = 20
 
   private static func encoded<T: Encodable>(_ value: T, emptyIsNil: Bool) -> Data? {
     if emptyIsNil { return nil }
@@ -125,6 +130,8 @@ public final class CoachService {
   private let store: CoachStore
   private let calendar: Calendar
   private let now: () -> Date
+  /// Bumped whenever consent is replaced or cleared. A send that was in flight when it changed drops its result.
+  private var epoch = 0
 
   public init(config: CoachConfig, transport: CoachTransport, store: CoachStore, calendar: Calendar = .current, now: @escaping () -> Date = Date.init) {
     self.config = config
@@ -142,8 +149,19 @@ public final class CoachService {
 
   public var state: CoachState {
     guard config.isAvailable, let c = consent else { return .off }
-    return c.version == CoachConsent.currentVersion ? .on(since: c.since) : .needsReconsent
+    if c.version != CoachConsent.currentVersion { return .needsReconsent }
+    if let sv = serverVersion, sv > c.version { return .needsReconsent }   // the service moved ahead of this consent
+    return .on(since: c.since)
   }
+
+  /// The consent version the service last said it wants, when it is ahead of this build's.
+  private var serverVersion: Int? {
+    store.data(forKey: Self.serverVersionKey).flatMap { try? JSONDecoder().decode(Int.self, from: $0) }
+  }
+
+  /// The service forgot this install (for example after 30 idle days) and the coach was switched off. Replies already
+  /// read are kept; the athlete can turn the coach on again. Cleared by turning on or off.
+  public var wasReset: Bool { store.data(forKey: Self.resetKey) != nil }
 
   var queue: [QueueItem] {
     get { store.data(forKey: Self.queueKey).flatMap { try? JSONDecoder().decode([QueueItem].self, from: $0) } ?? [] }
@@ -194,6 +212,7 @@ public final class CoachService {
     let req = request("POST", "/v1/register", body: RegisterBody(installId: install, consentVersion: CoachConsent.currentVersion))
     guard let res = try? await transport.send(req), res.status == 200,
           let token = try? JSONDecoder().decode(RegisterReply.self, from: res.body).deviceToken else { return .failed }
+    store.set(nil, forKey: Self.resetKey)
     save(CoachConsentRecord(version: CoachConsent.currentVersion, installId: install, since: day(), token: token))
     return .on
   }
@@ -207,6 +226,9 @@ public final class CoachService {
     c.version = CoachConsent.currentVersion
     c.token = token
     save(c)
+    store.set(nil, forKey: Self.serverVersionKey)
+    // Facts queued under the old version would be refused: stamp them with the one the athlete just accepted.
+    queue = queue.map { QueueItem(sessionId: $0.sessionId, facts: $0.facts.withConsentVersion(c.version), attempts: 0) }
     return .on
   }
 
@@ -214,7 +236,11 @@ public final class CoachService {
   public func turnOff() async -> TurnOffResult {
     guard let c = consent else { clearLocal(); return .deleted(0) }
     clearLocal()
-    guard config.isAvailable else { return .pending }
+    // Even with the flag off in this build, remember the delete so a later build can finish it.
+    guard config.isAvailable else {
+      store.set(try? JSONEncoder().encode(PendingDelete(token: c.token)), forKey: Self.pendingDeleteKey)
+      return .pending
+    }
     return await deleteRemote(token: c.token)
   }
 
@@ -241,13 +267,24 @@ public final class CoachService {
     return .pending
   }
 
-  private func save(_ c: CoachConsentRecord) { store.set(try? JSONEncoder().encode(c), forKey: Self.consentKey) }
+  private func save(_ c: CoachConsentRecord) {
+    epoch += 1
+    store.set(try? JSONEncoder().encode(c), forKey: Self.consentKey)
+  }
 
+  /// Turning off: everything held locally goes.
   private func clearLocal() {
-    store.set(nil, forKey: Self.consentKey)
-    store.set(nil, forKey: Self.queueKey)
-    store.set(nil, forKey: Self.repliesKey)
-    store.set(nil, forKey: Self.statesKey)
+    epoch += 1
+    for key in [Self.consentKey, Self.queueKey, Self.repliesKey, Self.statesKey, Self.serverVersionKey, Self.resetKey] {
+      store.set(nil, forKey: key)
+    }
+  }
+
+  /// The service no longer knows this install: consent and the queue go, replies already read stay.
+  private func resetAfterServerForgot() {
+    epoch += 1
+    for key in [Self.consentKey, Self.queueKey, Self.statesKey, Self.serverVersionKey] { store.set(nil, forKey: key) }
+    store.set(Data("1".utf8), forKey: Self.resetKey)
   }
 
   // MARK: Debriefs
@@ -261,17 +298,29 @@ public final class CoachService {
     var states = endStates
     states[sessionId] = nil
     endStates = states
-    queue = queue + [QueueItem(sessionId: sessionId, facts: facts, attempts: 0)]
+    var q = queue + [QueueItem(sessionId: sessionId, facts: facts, attempts: 0)]
+    while q.count > Self.maxQueue {
+      var s = endStates
+      s[q[0].sessionId] = "error"
+      endStates = s
+      q.removeFirst()
+    }
+    queue = q
     await flush()
     return debriefState(for: sessionId)
   }
 
   /// Send what is queued, oldest first. Stops at the first network failure so the rest wait for a connection.
+  /// Turning the coach off (or replacing consent) while a send is in flight stops the loop and drops the result:
+  /// no further request goes out and no reply is written.
   public func flush() async {
     guard case .on = state, let c = consent else { return }
+    let epoch0 = epoch
     for item in queue {
+      guard epoch == epoch0, queue.contains(where: { $0.sessionId == item.sessionId }) else { return }
       guard let body = try? JSONEncoder().encode(item.facts),
             let res = try? await transport.send(CoachHTTPRequest(method: "POST", path: "/v1/coach", bearer: c.token, body: body)) else { return }
+      guard epoch == epoch0 else { return }
       switch res.status {
       case 200:
         if let reply = try? JSONDecoder().decode(CoachReplyBody.self, from: res.body).reply {
@@ -284,11 +333,20 @@ public final class CoachService {
         }
       case 429:   // today's debriefs are used up: show the cap state and do not retry this session
         finish(item.sessionId, endState: "cap")
-      case 401:   // the service no longer knows this install (for example after 30 idle days): start from off
-        clearLocal()
+      case 401:   // the service no longer knows this install (for example after 30 idle days): back to off, keep read replies
+        resetAfterServerForgot()
         return
-      case 403:   // consent version mismatch: keep the queue and stop until the athlete answers
-        return
+      case 403:
+        if let sv = (try? JSONDecoder().decode(ErrorBody.self, from: res.body))?.currentConsentVersion, sv > CoachConsent.currentVersion {
+          // The service wants a newer consent than this build knows: ask again, send nothing until answered.
+          store.set(try? JSONEncoder().encode(sv), forKey: Self.serverVersionKey)
+          return
+        }
+        if item.facts.consentVersion != c.version {   // stamped under an older consent: fix this item, do not block the rest
+          queue = queue.map { $0.sessionId == item.sessionId ? QueueItem(sessionId: $0.sessionId, facts: $0.facts.withConsentVersion(c.version), attempts: $0.attempts + 1) : $0 }
+        } else {
+          fail(item)
+        }
       default:
         fail(item)
       }

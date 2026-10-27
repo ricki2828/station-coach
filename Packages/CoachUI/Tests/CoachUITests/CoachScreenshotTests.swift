@@ -15,7 +15,7 @@ final class CoachScreenshotTests: XCTestCase {
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
     let entries = ScreenCatalog.coachScreens
     XCTAssertEqual(Set(entries.map(\.name)).count, entries.count)
-    XCTAssertEqual(entries.count, 14)
+    XCTAssertEqual(entries.count, 16)
     for entry in entries {
       let renderer = ImageRenderer(content: entry.view.environment(\.colorScheme, .light))
       renderer.scale = 2
@@ -48,8 +48,11 @@ final class CoachScreenshotTests: XCTestCase {
   }
 
   func testProviderSentenceFollowsTheRetentionAnswer() {
-    XCTAssertTrue(CoachConsentCopy.whoSees(zeroRetentionConfirmed: false).contains("may keep it for up to 30 days"))
-    XCTAssertTrue(CoachConsentCopy.whoSees(zeroRetentionConfirmed: true).contains("doesn\u{2019}t keep it"))
+    let kept = CoachConsentCopy.whoSees(zeroRetentionConfirmed: false)
+    XCTAssertTrue(kept.contains("may keep them for up to 30 days"))
+    XCTAssertTrue(kept.contains("OpenRouter") && kept.contains("Anthropic"), "both parties that receive the facts are named")
+    let zdr = CoachConsentCopy.whoSees(zeroRetentionConfirmed: true)
+    XCTAssertTrue(zdr.contains("Neither keeps them") && zdr.contains("OpenRouter") && zdr.contains("Anthropic"))
   }
 
   func testCopyHasNoRaceBrandTerm() {

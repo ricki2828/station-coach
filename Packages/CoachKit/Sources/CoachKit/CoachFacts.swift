@@ -7,9 +7,11 @@ public struct CoachFacts: Codable, Equatable {
   public struct Step: Codable, Equatable {
     public let activity: Activity
     public let targetSeconds: Int
-    /// Absent for a skipped step. Never 0.
+    /// Absent for a skipped or quit step. Never 0.
     public let actualSeconds: Int?
     public let skipped: Bool
+    /// Present (true) only for the step that was started and abandoned when the session ended early.
+    public let quit: Bool?
   }
 
   public struct WallBalls: Codable, Equatable {
@@ -47,15 +49,27 @@ public struct CoachFacts: Codable, Equatable {
 
   private static func clamp(_ v: Int, _ hi: Int = maxSeconds) -> Int { min(max(0, v), hi) }
 
+  /// The same facts under another consent version (queued items are re-stamped when the athlete re-consents).
+  public func withConsentVersion(_ v: Int) -> CoachFacts {
+    CoachFacts(consentVersion: v, installId: installId, date: date, sessionType: sessionType, division: division,
+               raceTargetSeconds: raceTargetSeconds, totalSeconds: totalSeconds, plannedSeconds: plannedSeconds, early: early,
+               steps: steps, wallBalls: wallBalls, fadeSeconds: fadeSeconds, reference: reference,
+               referenceDeltaSeconds: referenceDeltaSeconds)
+  }
+
   /// Facts for one finished session. `calendar` decides which day the session belongs to.
   public static func make(from result: CoachResult, installId: String, consentVersion: Int, calendar: Calendar = .current) -> CoachFacts {
     let rows = result.rows
-    // An early session lists the steps up to the last one finished; a step before it that was not done is skipped.
-    let lastDone = rows.lastIndex { $0.actualSeconds != nil }
-    let included = result.early ? (lastDone.map { Array(rows[...$0]) } ?? []) : rows
-    let steps = included.map { r in
-      Step(activity: r.step.activity, targetSeconds: clamp(r.step.targetSeconds), actualSeconds: r.actualSeconds.map { clamp($0) },
-           skipped: r.actualSeconds == nil)
+    // An early session's last started step was quit, not completed, even if the watch closed its split: it is sent
+    // as quit with no time. Steps before it that were not done are skipped.
+    let quitIndex = result.early ? result.splits.max { $0.startMs < $1.startMs }?.stepIndex : nil
+    let lastIncluded = result.early ? rows.lastIndex { $0.actualSeconds != nil || $0.step.index == quitIndex } : rows.indices.last
+    let included = lastIncluded.map { Array(rows[...$0]) } ?? []
+    let steps = included.map { r -> Step in
+      let isQuit = r.step.index == quitIndex
+      let done = r.actualSeconds != nil && !isQuit
+      return Step(activity: r.step.activity, targetSeconds: clamp(r.step.targetSeconds), actualSeconds: done ? r.actualSeconds.map { clamp($0) } : nil,
+                  skipped: !done && !isQuit, quit: isQuit ? true : nil)
     }
 
     var wallBalls: WallBalls?

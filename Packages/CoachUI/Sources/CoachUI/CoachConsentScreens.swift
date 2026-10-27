@@ -26,17 +26,18 @@ public enum CoachConsentCopy {
 
   /// D10: the no-retention sentence ships only once zero-retention is confirmed on the provider account.
   public static func whoSees(zeroRetentionConfirmed: Bool) -> String {
-    let base = "Our coach service and the AI provider that writes the reply (Anthropic\u{2019}s Claude)."
-    return base + (zeroRetentionConfirmed ? " The provider doesn\u{2019}t keep it or train on it." : " The provider may keep it for up to 30 days.")
+    let base = "Our coach service passes these facts to OpenRouter, a routing service, and to the AI model that writes the reply (Anthropic\u{2019}s Claude)."
+    return base + (zeroRetentionConfirmed ? " Neither keeps them or trains on them." : " Either may keep them for up to 30 days.")
   }
 
   public static let howLong = "We keep your sessions for 30 days so the coach can compare them, then delete them. Turn the coach off to delete them now."
   public static let turnOn = "Turn on AI coach"
   public static let turningOn = "Turning on\u{2026}"
-  public static let onFailed = "Couldn\u{2019}t reach our server. Nothing was sent. Try again."
+  public static let onFailed = "Couldn\u{2019}t reach our server. Your sessions weren\u{2019}t sent. Try again."
 
   public static let turnOffRow = "Turn off and delete my data"
   public static let turnOffConfirm = "Turn off the AI coach? We delete the sessions we hold for you."
+  public static let resetNotice = "AI coach was reset after 30 days without use. Your earlier debriefs are kept. Turn it on again if you want more."
   public static let revokedPending = "AI coach is off. We\u{2019}ll delete your data as soon as we can reach our server."
 
   public static let reconsentStatement = "What\u{2019}s sent has changed"
@@ -132,8 +133,8 @@ public struct CoachOfferCard: View {
             .fixedSize(horizontal: false, vertical: true)
           Text(CoachConsentCopy.offerBody).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
             .fixedSize(horizontal: false, vertical: true)
-          PrimaryButton(CoachConsentCopy.seeWhatsSent, action: onSee)
-          TextLinkButton(CoachConsentCopy.notNow, action: onNotNow)
+          CoachPrimaryButton(CoachConsentCopy.seeWhatsSent, action: onSee)
+          CoachLinkButton(CoachConsentCopy.notNow, action: onNotNow)
         }
       }
     }
@@ -183,7 +184,7 @@ public struct CoachFactsScreen: View {
           ForEach(CoachConsentCopy.neverSent, id: \.self) { item in
             HStack(alignment: .firstTextBaseline, spacing: 10) {
               Text("\u{2715}").scaledFont(15, .heavy).foregroundStyle(PhoneTheme.inkText).accessibilityHidden(true)
-              Text(item).scaledFont(17, .semibold).strikethrough().foregroundStyle(PhoneTheme.inkText)
+              Text(item).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText)
                 .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
@@ -197,9 +198,9 @@ public struct CoachFactsScreen: View {
       if mode == .failed {
         Text(CoachConsentCopy.onFailed).scaledFont(15, .heavy).foregroundStyle(PhoneTheme.amberText).fixedSize(horizontal: false, vertical: true)
       }
-      PrimaryButton(mode == .turningOn ? CoachConsentCopy.turningOn : CoachConsentCopy.turnOn, action: onTurnOn)
+      CoachPrimaryButton(mode == .turningOn ? CoachConsentCopy.turningOn : CoachConsentCopy.turnOn, action: onTurnOn)
         .opacity(mode == .turningOn ? 0.6 : 1).disabled(mode == .turningOn)
-      TextLinkButton(CoachConsentCopy.notNow, action: onNotNow)
+      CoachLinkButton(CoachConsentCopy.notNow, action: onNotNow)
     }
   }
 
@@ -234,6 +235,8 @@ public enum CoachSettingsState: Equatable {
   case on(since: String)
   case revoked(deleted: Int)
   case revokedPending
+  /// The service forgot this install after 30 idle days.
+  case reset
 }
 
 public struct CoachSettingsCard: View {
@@ -254,14 +257,16 @@ public struct CoachSettingsCard: View {
           switch state {
           case .on(let since):
             Text(CoachConsentCopy.onSince(since)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
-            TextLinkButton("What\u{2019}s sent", action: onWhatsSent)
+            CoachLinkButton("What\u{2019}s sent", action: onWhatsSent)
             Button(action: onTurnOff) {
-              Text(CoachConsentCopy.turnOffRow).font(.system(size: 15, weight: .semibold)).underline().foregroundStyle(PhoneTheme.amberText)
+              Text(CoachConsentCopy.turnOffRow).underline().scaledFont(15, .semibold).foregroundStyle(PhoneTheme.amberText)
                 .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
           case .revoked(let n):
             Text(CoachConsentCopy.revoked(deleted: n)).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+          case .reset:
+            Text(CoachConsentCopy.resetNotice).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
           case .revokedPending:
             Text(CoachConsentCopy.revokedPending).scaledFont(19, .heavy).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
           }
@@ -294,8 +299,8 @@ public struct CoachReconsentScreen: View {
         }
       }
       Text("Nothing is sent until you answer.").scaledFont(15, .semibold).foregroundStyle(PhoneTheme.muted)
-      PrimaryButton(CoachConsentCopy.keepItOn, action: onKeep)
-      SecondaryButton(CoachConsentCopy.turnOff, action: onTurnOff)
+      CoachPrimaryButton(CoachConsentCopy.keepItOn, action: onKeep)
+      CoachSecondaryButton(CoachConsentCopy.turnOff, action: onTurnOff)
     }
   }
 }
@@ -345,5 +350,61 @@ public struct DebriefCard: View {
 
   private func line(_ text: String) -> some View {
     Text(text).scaledFont(17, .semibold).foregroundStyle(PhoneTheme.inkText).fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+// Buttons that follow Dynamic Type (the shared ones use fixed sizes, which stayed small at the largest text size).
+private struct CoachPrimaryButton: View {
+  let title: String
+  let action: () -> Void
+  init(_ title: String, action: @escaping () -> Void) {
+    self.title = title
+    self.action = action
+  }
+
+  var body: some View {
+    Button(action: action) {
+      Text(title).scaledFont(17, .heavy).foregroundStyle(Theme.bone).multilineTextAlignment(.center)
+        .padding(.vertical, 12).padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: PhoneTheme.buttonHeight)
+        .background(PhoneTheme.inkText, in: RoundedRectangle(cornerRadius: PhoneTheme.buttonRadius))
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct CoachSecondaryButton: View {
+  let title: String
+  let action: () -> Void
+  init(_ title: String, action: @escaping () -> Void) {
+    self.title = title
+    self.action = action
+  }
+
+  var body: some View {
+    Button(action: action) {
+      Text(title).scaledFont(17, .heavy).foregroundStyle(PhoneTheme.inkText).multilineTextAlignment(.center)
+        .padding(.vertical, 12).padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: PhoneTheme.buttonHeight)
+        .overlay(RoundedRectangle(cornerRadius: PhoneTheme.buttonRadius).stroke(PhoneTheme.inkText, lineWidth: 2))
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct CoachLinkButton: View {
+  let title: String
+  let action: () -> Void
+  init(_ title: String, action: @escaping () -> Void) {
+    self.title = title
+    self.action = action
+  }
+
+  var body: some View {
+    Button(action: action) {
+      Text(title).underline().scaledFont(15, .semibold).foregroundStyle(PhoneTheme.inkText)
+        .frame(minHeight: 44, alignment: .leading)
+    }
+    .buttonStyle(.plain)
   }
 }

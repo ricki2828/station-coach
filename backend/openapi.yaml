@@ -161,8 +161,11 @@ components:
           type: integer
           minimum: 0
           maximum: 36000
-          description: Required when skipped is false. Must be absent (never 0) when skipped is true.
+          description: Required when neither skipped nor quit. Must be absent (never 0) when skipped or quit is true.
         skipped: { type: boolean }
+        quit:
+          type: boolean
+          description: The step was started and abandoned when the session ended early. Carries no actualSeconds; not both skipped and quit.
     WallBalls:
       type: object
       additionalProperties: false

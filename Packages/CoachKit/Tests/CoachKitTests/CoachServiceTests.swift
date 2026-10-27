@@ -25,6 +25,26 @@ private final class FakeTransport: CoachTransport {
 
 private struct Offline: Error {}
 
+/// Suspends the first debrief POST until the test lets it go, so a turn-off can run while a send is in flight.
+private final class GatedTransport: CoachTransport {
+  var offline = false
+  var posts = 0
+  var gate: CheckedContinuation<Void, Never>?
+  var gateFirstPost = false
+
+  func send(_ r: CoachHTTPRequest) async throws -> CoachHTTPResponse {
+    if offline { throw Offline() }
+    switch r.path {
+    case "/v1/register": return CoachHTTPResponse(status: 200, body: Data(#"{"deviceToken":"tok"}"#.utf8))
+    case "/v1/coach":
+      posts += 1
+      if gateFirstPost && posts == 1 { await withCheckedContinuation { gate = $0 } }
+      return CoachHTTPResponse(status: 200, body: Data(#"{"reply":"A debrief.","kind":"debrief","remainingToday":1}"#.utf8))
+    default: return CoachHTTPResponse(status: 200, body: Data(#"{"deletedSessions":2}"#.utf8))
+    }
+  }
+}
+
 final class CoachServiceTests: XCTestCase {
   private let on = CoachConfig(enabled: true, baseURL: "https://coach.invalid")
 
@@ -203,5 +223,120 @@ final class CoachServiceTests: XCTestCase {
     _ = await svc.submit(sessionId: "s1", result: result())
     XCTAssertEqual(svc.state, .off)
     XCTAssertEqual(svc.queuedCount, 0)
+  }
+
+  func testTurnOffWhileASendIsInFlightStopsTheQueueAndWritesNoReply() async {
+    let net = GatedTransport()
+    let store = MemoryCoachStore()
+    let svc = CoachService(config: on, transport: net, store: store)
+    _ = await svc.turnOn()
+    net.offline = true
+    _ = await svc.submit(sessionId: "s1", result: result())
+    _ = await svc.submit(sessionId: "s2", result: result())
+    XCTAssertEqual(svc.queuedCount, 2)
+    net.offline = false
+    net.gateFirstPost = true
+    let flushing = Task { await svc.flush() }
+    while net.gate == nil { await Task.yield() }          // the first POST is now suspended in the transport
+    _ = await svc.turnOff()                                // the athlete turns the coach off meanwhile
+    net.gate?.resume()
+    await flushing.value
+    XCTAssertEqual(net.posts, 1, "no further POST after turn-off")
+    XCTAssertEqual(svc.debriefState(for: "s1"), .none, "no reply is written after turn-off")
+    XCTAssertEqual(svc.debriefState(for: "s2"), .none)
+    XCTAssertEqual(svc.queuedCount, 0)
+    XCTAssertEqual(store.keys, [])
+  }
+
+  func testReconsentRestampsQueuedFactsSoTheyAreNotRefused() async throws {
+    let net = FakeTransport.ok()
+    let store = MemoryCoachStore()
+    let svc = CoachService(config: on, transport: net, store: store)
+    _ = await svc.turnOn()
+    net.handler = { _ in throw Offline() }
+    _ = await svc.submit(sessionId: "s1", result: result())
+    // consent on disk is from an older version, and the queued facts carry it
+    var rec = try JSONDecoder().decode(CoachConsentRecord.self, from: store.data(forKey: "coach.consent")!)
+    rec.version = CoachConsent.currentVersion - 1
+    store.set(try JSONEncoder().encode(rec), forKey: "coach.consent")
+    var q = try JSONDecoder().decode([CoachService.QueueItem].self, from: store.data(forKey: "coach.queue")!)
+    q[0].facts = q[0].facts.withConsentVersion(CoachConsent.currentVersion - 1)
+    store.set(try JSONEncoder().encode(q), forKey: "coach.queue")
+    net.handler = FakeTransport.ok().handler
+    _ = await svc.acceptReconsent()
+    XCTAssertEqual(svc.queue.first?.facts.consentVersion, CoachConsent.currentVersion)
+    await svc.flush()
+    XCTAssertEqual(svc.debriefState(for: "s1"), .reply("Sled push took 4:20."))
+  }
+
+  func testAServerSideVersionBumpAsksAgainAndSendsNothing() async {
+    let net = FakeTransport.ok()
+    let svc = CoachService(config: on, transport: net, store: MemoryCoachStore())
+    _ = await svc.turnOn()
+    net.handler = { r in
+      r.path == "/v1/coach" ? CoachHTTPResponse(status: 403, body: Data(#"{"error":"consent_required","currentConsentVersion":9}"#.utf8))
+                            : CoachHTTPResponse(status: 200, body: Data(#"{"deviceToken":"tok"}"#.utf8))
+    }
+    _ = await svc.submit(sessionId: "s1", result: result())
+    XCTAssertEqual(svc.state, .needsReconsent)
+    let before = net.requests.count
+    _ = await svc.submit(sessionId: "s2", result: result())
+    XCTAssertEqual(net.requests.count, before, "nothing is sent until the athlete answers")
+  }
+
+  func testOneRefusedItemDoesNotBlockTheOthers() async {
+    let net = FakeTransport.ok()
+    let svc = CoachService(config: on, transport: net, store: MemoryCoachStore())
+    _ = await svc.turnOn()
+    net.handler = { _ in throw Offline() }
+    _ = await svc.submit(sessionId: "s1", result: result())
+    _ = await svc.submit(sessionId: "s2", result: result())
+    var calls = 0
+    net.handler = { _ in
+      calls += 1
+      return calls == 1 ? CoachHTTPResponse(status: 403, body: Data(#"{"error":"install_mismatch"}"#.utf8))
+                        : CoachHTTPResponse(status: 200, body: Data(#"{"reply":"ok","kind":"debrief","remainingToday":1}"#.utf8))
+    }
+    await svc.flush()
+    XCTAssertEqual(svc.debriefState(for: "s2"), .reply("ok"))
+  }
+
+  func testQueueIsCapped() async {
+    let net = FakeTransport.ok()
+    let svc = CoachService(config: on, transport: net, store: MemoryCoachStore())
+    _ = await svc.turnOn()
+    net.handler = { _ in throw Offline() }
+    for i in 0..<(CoachService.maxQueue + 3) { _ = await svc.submit(sessionId: "s\(i)", result: result()) }
+    XCTAssertEqual(svc.queuedCount, CoachService.maxQueue)
+    XCTAssertEqual(svc.debriefState(for: "s0"), .error)
+  }
+
+  func testTurnOffFromAFlagOffBuildStillRemembersTheServerDelete() async {
+    let store = MemoryCoachStore()
+    let first = CoachService(config: on, transport: FakeTransport.ok(), store: store)
+    _ = await first.turnOn()
+    let off = CoachService(config: CoachConfig(), transport: FakeTransport.ok(), store: store)
+    let out = await off.turnOff()
+    XCTAssertEqual(out, .pending)
+    XCTAssertTrue(off.hasPendingDelete)
+    let later = CoachService(config: on, transport: FakeTransport.ok(), store: store)
+    let retried = await later.retryPendingDelete()
+    XCTAssertEqual(retried, .deleted(2))
+  }
+
+  func testServerForgettingTheInstallKeepsRepliesAlreadyRead() async {
+    let net = FakeTransport.ok()
+    let svc = CoachService(config: on, transport: net, store: MemoryCoachStore())
+    _ = await svc.turnOn()
+    _ = await svc.submit(sessionId: "s1", result: result())
+    XCTAssertEqual(svc.debriefState(for: "s1"), .reply("Sled push took 4:20."))
+    net.handler = { _ in CoachHTTPResponse(status: 401) }
+    _ = await svc.submit(sessionId: "s2", result: result())
+    XCTAssertEqual(svc.state, .off)
+    XCTAssertTrue(svc.wasReset)
+    XCTAssertEqual(svc.debriefState(for: "s1"), .reply("Sled push took 4:20."))
+    net.handler = FakeTransport.ok().handler
+    _ = await svc.turnOn()
+    XCTAssertFalse(svc.wasReset)
   }
 }

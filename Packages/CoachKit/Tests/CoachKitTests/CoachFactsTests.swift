@@ -79,8 +79,32 @@ final class CoachFactsTests: XCTestCase {
     let facts = CoachFacts.make(from: session(until: 5), installId: "i", consentVersion: 1, calendar: utc)
     XCTAssertTrue(facts.early)
     XCTAssertEqual(facts.steps.count, 5)
+    XCTAssertEqual(facts.steps[4].quit, true, "the last started step was quit")
+    XCTAssertNil(facts.steps[4].actualSeconds, "a quit step carries no time")
+    XCTAssertFalse(facts.steps[4].skipped)
+    XCTAssertTrue(facts.steps[..<4].allSatisfy { $0.quit == nil && $0.actualSeconds != nil })
     XCTAssertNil(facts.reference)
     XCTAssertNil(facts.referenceDeltaSeconds)
+  }
+
+  func testQuitStepIsNeverSentAsCompletedEvenWhenTheWatchClosedItsSplit() throws {
+    var r = session(until: 4)
+    // the watch closed the last split with an end time at the moment of the quit
+    XCTAssertNotNil(r.splits.last?.endMs)
+    r.early = true
+    let facts = CoachFacts.make(from: r, installId: "i", consentVersion: 1, calendar: utc)
+    let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(facts)) as! [String: Any]
+    let steps = json["steps"] as! [[String: Any]]
+    XCTAssertEqual(steps.last?["quit"] as? Bool, true)
+    XCTAssertNil(steps.last?["actualSeconds"])
+    XCTAssertNil(steps.first?["quit"], "quit is only present when true")
+  }
+
+  func testWithConsentVersionOnlyChangesTheVersion() {
+    let a = CoachFacts.make(from: session(), installId: "i", consentVersion: 1, calendar: utc)
+    let b = a.withConsentVersion(2)
+    XCTAssertEqual(b.consentVersion, 2)
+    XCTAssertEqual(b.withConsentVersion(1), a)
   }
 
   func testSkippedStepHasNoActualSecondsAndNeverZero() throws {

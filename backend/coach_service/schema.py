@@ -53,13 +53,17 @@ class Step(Strict):
     targetSeconds: Secs
     actualSeconds: Secs | None = None   # absent for a skipped step, never 0
     skipped: StrictBool
+    quit: StrictBool | None = None      # started and abandoned when the session ended early; never completed
 
     @model_validator(mode="after")
     def _actual_iff_done(self):
-        if self.skipped and self.actualSeconds is not None:
-            raise ValueError("a skipped step carries no actualSeconds")
-        if not self.skipped and self.actualSeconds is None:
-            raise ValueError("actualSeconds is required unless the step was skipped")
+        if self.skipped and self.quit:
+            raise ValueError("a step is skipped or quit, not both")
+        not_done = self.skipped or bool(self.quit)
+        if not_done and self.actualSeconds is not None:
+            raise ValueError("a skipped or quit step carries no actualSeconds")
+        if not not_done and self.actualSeconds is None:
+            raise ValueError("actualSeconds is required unless the step was skipped or quit")
         return self
 
 
