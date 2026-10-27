@@ -36,8 +36,8 @@ def allowed_numbers(f: CoachFacts) -> set[str]:
     secs: list[int] = [f.raceTargetSeconds, f.totalSeconds, f.plannedSeconds]
     secs.append(f.totalSeconds - f.plannedSeconds)
     for st in f.steps:
-        if st.skipped:
-            continue   # a skipped step has no time to quote
+        if st.skipped or st.quit:
+            continue   # a skipped or abandoned step has no time to quote
         secs += [st.targetSeconds, st.actualSeconds, st.actualSeconds - st.targetSeconds]
     if f.fadeSeconds is not None:
         secs.append(f.fadeSeconds)

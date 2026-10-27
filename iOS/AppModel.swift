@@ -27,6 +27,10 @@ final class AppModel: ObservableObject {
   /// Onboarding was skipped before the watch app was confirmed, and the nudge has not been dismissed.
   @Published private(set) var watchNudge: Bool
 
+  /// The optional AI coach. Off unless the build sets `CoachEnabled` and `CoachBaseURL`; with the flag off nothing is sent.
+  let coach: CoachService = CoachBuild.makeService()
+  @Published private(set) var coachState: CoachState = .off
+
   private let defaults = UserDefaults.standard
   private static let seenKey = "momentsSeen"
 
@@ -145,6 +149,37 @@ final class AppModel: ObservableObject {
   private func store(_ choice: NotifyChoice) {
     defaults.set(choice.rawValue, forKey: WeeklyNotifier.defaultsKey)
     notifyChoice = choice
+  }
+
+  // MARK: AI coach
+
+  var coachAvailable: Bool { coach.config.isAvailable }
+
+  func refreshCoach() {
+    coachState = coach.state
+    Task {
+      await coach.retryPendingDelete()
+      await coach.flush()
+      coachState = coach.state
+    }
+  }
+
+  func turnOnCoach() async -> TurnOnResult {
+    let r = await coach.turnOn()
+    coachState = coach.state
+    return r
+  }
+
+  func turnOffCoach() async -> TurnOffResult {
+    let r = await coach.turnOff()
+    coachState = coach.state
+    return r
+  }
+
+  /// A new finished session: send its facts when (and only when) the coach is on.
+  func submitCoach(sessionId: String, result: CoachResult) {
+    guard case .on = coach.state else { return }
+    Task { await coach.submit(sessionId: sessionId, result: result) }
   }
 
   // MARK: Moments

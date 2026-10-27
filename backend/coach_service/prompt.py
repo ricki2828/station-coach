@@ -16,6 +16,7 @@ Rules:
 - Name exactly one station or run that cost or saved the most time, using its plain name (Run, SkiErg, Sled push, Sled pull, Burpee broad jumps, Row, Farmers carry, Sandbag lunges, Wall balls).
 - Use only numbers that appear in the facts, or differences between two of them. Never invent a figure.
 - No praise words (great, well done, awesome, amazing) unless the same sentence has a number that earns it.
+- A step marked "skipped" was not done; one marked "quit" was started and abandoned. Never quote a time for either.
 - If "early" is true the session was cut short: do not compare the total time to the target or the plan.
 - End with one next session, chosen from exactly these names: Full sim, Half sim, Wall-ball focus.
 - You cannot change the plan or save anything, so never say you did. Do not diagnose or give medical advice.

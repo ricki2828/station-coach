@@ -222,3 +222,16 @@ def test_server_timestamps_are_day_precision(env):
     for table, col in (("sessions", "created_at"), ("ledger", "ts"), ("devices", "created_at"), ("devices", "last_seen")):
         v = db.execute(f"SELECT {col} FROM {table}").fetchone()[0]
         assert len(v) == 10, (table, col, v)
+
+
+def test_quit_step_has_no_actual_seconds_and_is_not_quotable(make_env):
+    e = make_env(FakeLlm("Sled push took 4:20 before you stopped. Next, Half sim."))
+    steps = make_facts(e.install)["steps"]
+    steps[1] = {"activity": "sled_push", "targetSeconds": 210, "skipped": False, "quit": True}
+    assert e.coach(steps=steps, early=True).status_code == 502   # 4:20 is not a quotable figure any more
+    ok = dict(steps[1], actualSeconds=70)
+    assert e.coach(steps=[steps[0], ok, steps[2]]).status_code == 422
+    both = dict(steps[1], skipped=True)
+    assert e.coach(steps=[steps[0], both, steps[2]]).status_code == 422
+    done = {"activity": "sled_push", "targetSeconds": 210, "skipped": False}
+    assert e.coach(steps=[steps[0], done, steps[2]]).status_code == 422

@@ -1,0 +1,20 @@
+{
+  "consentVersion": 1,
+  "installId": "6f1c2a4e-3b7d-4c59-9a10-2d8e5f0b7a31",
+  "date": "2026-10-27",
+  "sessionType": "half_sim",
+  "division": "open_men",
+  "raceTargetSeconds": 4800,
+  "totalSeconds": 2472,
+  "plannedSeconds": 2400,
+  "early": false,
+  "steps": [
+    {"activity": "run", "targetSeconds": 312, "actualSeconds": 325, "skipped": false},
+    {"activity": "sled_push", "targetSeconds": 210, "skipped": true},
+    {"activity": "wall_balls", "targetSeconds": 300, "actualSeconds": 310, "skipped": false}
+  ],
+  "wallBalls": {"reps": 100, "noReps": 3, "setSizes": [15, 15, 20], "restSeconds": [12, 18]},
+  "fadeSeconds": 27,
+  "reference": "plan",
+  "referenceDeltaSeconds": 72
+}
