@@ -121,7 +121,8 @@ final class ShareLoopTests: XCTestCase {
     let asset = AVURLAsset(url: url)
     let duration = try await asset.load(.duration).seconds
     XCTAssertEqual(duration, 5.0, accuracy: 0.1)
-    let track = try XCTUnwrap(try await asset.loadTracks(withMediaType: .video).first)
+    let tracks = try await asset.loadTracks(withMediaType: .video)
+    let track = try XCTUnwrap(tracks.first)
     let natural = try await track.load(.naturalSize)
     XCTAssertEqual(natural.width, 1080)
     XCTAssertEqual(natural.height, 1350)
