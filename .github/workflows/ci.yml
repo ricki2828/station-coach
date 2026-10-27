@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install numpy
+      - run: pip install numpy jsonschema
       - run: python3 -m unittest discover -s tools/tests -v
       - name: TestFlight gate names every missing secret and stays green
         run: tools/ci/test-testflight-gate.sh

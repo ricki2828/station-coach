@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://station-coach.invalid/schema/plan.schema.json",
+  "title": "SessionPlan",
+  "description": "CoachKit SessionPlan, as stored in coach.json under `plan` and sent to the watch as application context. Keep in step with Packages/CoachKit/Sources/CoachKit/Plan.swift; tools/tests/test_schema.py checks the enums.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["division", "type", "raceTargetSeconds", "steps", "transitionSeconds"],
+  "properties": {
+    "division": { "enum": ["open_men", "open_women", "pro_men", "pro_women"] },
+    "type": { "enum": ["full_sim", "half_sim", "wall_ball_focus"] },
+    "raceTargetSeconds": { "type": "integer", "minimum": 0 },
+    "transitionSeconds": { "type": "integer", "minimum": 0 },
+    "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
+  },
+  "definitions": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activity", "index", "targetSeconds", "sets"],
+      "properties": {
+        "activity": {
+          "enum": ["run", "transition", "skierg", "sled_push", "sled_pull", "burpee_broad_jump", "row", "farmers_carry", "sandbag_lunges", "wall_balls", "rest"]
+        },
+        "index": { "type": "integer", "minimum": 0 },
+        "runNumber": { "type": ["integer", "null"], "minimum": 1, "description": "1-based, runs only. Swift omits nil keys; null is also accepted." },
+        "targetSeconds": { "type": "integer", "minimum": 0 },
+        "reps": { "type": ["integer", "null"], "minimum": 0 },
+        "sets": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Wall-ball set sizes; empty for other steps." }
+      }
+    }
+  }
+}

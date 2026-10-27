@@ -14,6 +14,9 @@ One folder per session: `<UTC start as yyyyMMdd'T'HHmmss'Z'>-<6 hex>`. Everythin
 | `rates.csv` | `epoch_ms,stream,raw_samples,raw_hz,stored_samples,stored_hz` | every 60 s, one row per stream, for that window |
 | `events.csv` | `epoch_ms,kind,detail` | session start/end, motion API, workout state, audio route changes, errors |
 
+## Schemas
+The JSON files are described by JSON Schema (draft 7) in `docs/schema/`: `manifest.schema.json`, `coach.schema.json` and `plan.schema.json` (coach.json embeds the plan). They are strict (`additionalProperties: false`), so a new field needs a schema change; `tools/tests/test_schema.py` validates the fixtures against them and checks that the schema's enums and manifest property names still match the Swift sources. The CSV files are described by the table above and `SessionStream` headers. A non-Apple source (see `SessionSource.swift`) is conformant if its folder passes these schemas.
+
 ## Coached sessions
 A session started from the coach (plan from the phone) is the same folder plus `coach.json`, written at the end by the watch:
 `plan` (division, session type, race target, `steps` with per-step targets and wall-ball set structure, `transitionSeconds`), `splits` (`stepIndex`, `startMs`, `endMs`; a step never started has no split, a step not finished has no `endMs`, except that `SessionMachine.end` closes the step in progress when a session ends early, so on an early session the last split has an `endMs` but was quit, not completed), `early`, `repTimesMs` (heuristic wall-ball rep times, epoch ms), `repCorrection` (net manual +/-), `startedAtEpochMs`, `endedAtEpochMs`.
