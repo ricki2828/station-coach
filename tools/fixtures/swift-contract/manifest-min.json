@@ -1,0 +1,13 @@
+{
+  "appVersion": "a",
+  "cueIntervalSec": 45,
+  "device": "d",
+  "formatVersion": 1,
+  "motionApi": "CMMotionManager",
+  "osVersion": "o",
+  "requestedHz": 100,
+  "sessionId": "s",
+  "startedAtEpochMs": 1,
+  "storeHz": 50,
+  "workoutActivityType": "w"
+}

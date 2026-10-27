@@ -23,7 +23,7 @@ def test_attestation_hook_is_called_with_the_install_and_blob():
             seen.append((install_id, attestation))
             return attestation == "good"
 
-    c = TestClient(create_app(Settings(), None, None, Fake()))
+    c = TestClient(create_app(Settings(ip_secret="x"), None, None, Fake()))
     iid = str(uuid.uuid4())
     assert c.post("/v1/register", json={"installId": iid, "consentVersion": 1, "attestation": "bad"}).status_code == 403
     assert c.post("/v1/register", json={"installId": iid, "consentVersion": 1, "attestation": "good"}).status_code == 200
@@ -113,3 +113,26 @@ def test_active_device_is_not_purged(env):
         env.clock.advance(days=20)
         assert env.coach().status_code == 200
         env.clock.advance(days=0)
+
+
+def test_refuses_to_start_without_ip_secret_outside_dev_mode():
+    import pytest
+    from coach_service.app import create_app
+    with pytest.raises(RuntimeError):
+        create_app(Settings(dev_mode=False))
+    create_app(Settings(dev_mode=False, ip_secret="x" * 32))
+    create_app(Settings(dev_mode=True))
+
+
+def test_ip_hash_is_keyed(tmp_path):
+    import hashlib
+    from coach_service.store import Store
+    t = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    a, b = Store(str(tmp_path / "a"), b"k1"), Store(str(tmp_path / "b"), b"k2")
+    a.note_registration("203.0.113.9", t)
+    b.note_registration("203.0.113.9", t)
+    ha = a._db.execute("SELECT ip_hash FROM registrations").fetchone()[0]
+    hb = b._db.execute("SELECT ip_hash FROM registrations").fetchone()[0]
+    assert ha != hb
+    assert ha != hashlib.sha256(b"ip:203.0.113.9").hexdigest() and ha != hashlib.sha256(b"203.0.113.9").hexdigest()
+    assert a.registrations_today(t, "203.0.113.9") == 1 and a.registrations_today(t, "203.0.113.10") == 0

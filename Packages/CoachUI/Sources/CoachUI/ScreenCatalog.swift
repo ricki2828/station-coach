@@ -31,13 +31,35 @@ public struct CatalogEntry {
   public let name: String
   public let size: CGSize?
   public let view: AnyView
+  /// Watch entries only: the same screen inside the chrome of another case size.
+  public let sized: ((CGSize) -> AnyView)?
+
+  public init(name: String, size: CGSize?, view: AnyView, sized: ((CGSize) -> AnyView)? = nil) {
+    self.name = name
+    self.size = size
+    self.view = view
+    self.sized = sized
+  }
 }
 
 /// Every screen state, by name, for the screenshot tests. Watch screens are 46 mm (208 x 248 pt).
 @MainActor
 public enum ScreenCatalog {
-  private static func watch(_ name: String, _ view: some View) -> CatalogEntry {
-    CatalogEntry(name: "watch-\(name)", size: Theme.watch46, view: AnyView(WatchChrome { view }))
+  private static func watch(_ name: String, _ view: some View, dimmed: Bool = false) -> CatalogEntry {
+    CatalogEntry(name: "watch-\(name)", size: Theme.watch46,
+                 view: AnyView(WatchChrome { view }.environment(\.watchDimmed, dimmed)),
+                 sized: { size in AnyView(WatchChrome(size: size) { view }.environment(\.watchDimmed, dimmed)) })
+  }
+
+  /// Every watch screen state at the five case sizes (40, 41, 42, 45, 46 mm), named `watch-<name>-<mm>mm`.
+  /// The 46 mm base entries keep their plain names in `watchScreens`.
+  public static var watchSizeSweep: [CatalogEntry] {
+    (watchScreens + NoRepScreens.watchScreens).flatMap { entry in
+      WatchSizes.all.compactMap { s -> CatalogEntry? in
+        guard let sized = entry.sized else { return nil }
+        return CatalogEntry(name: "\(entry.name)-\(s.mm)mm", size: s.points, view: sized(s.points))
+      }
+    }
   }
 
   private static func phone(_ name: String, _ view: some View) -> CatalogEntry {
@@ -51,6 +73,9 @@ public enum ScreenCatalog {
                     secondary: secondary, secondaryLabel: secondaryLabel, next: next, isLast: isLast, deltaSeconds: delta,
                     hrBpm: hr, toast: toast, alarm: alarm, approximate: approx)
   }
+
+  /// A plan position for the ladder: `index` steps done of the full sim's 16.
+  private static func ladder(_ index: Int) -> [LadderTick] { LadderTick.ladder(for: SampleData.plan, currentIndex: index) }
 
   public static var watchScreens: [CatalogEntry] {
     let allStations = FinishScreenModel.stations(from: SampleData.result(extra: [1: -25, 5: 41]))
@@ -89,6 +114,13 @@ public enum ScreenCatalog {
       watch("toast-headphones", CoachStepScreen(model: { var m = station; m.toast = "Headphones lost, vibrating instead"; return m }(), onMissed: {})),
       watch("toast-no-headphones", CoachStepScreen(model: { var m = run; m.toast = "No headphones: cues by vibration"; return m }(), onMissed: {})),
       watch("alarm-workout-lost", CoachStepScreen(model: { var m = run; m.alarm = "Workout session ended"; return m }(), onMissed: {})),
+      watch("run-dimmed", CoachStepScreen(model: run, onMissed: {}), dimmed: true),
+      watch("station-time-dimmed", CoachStepScreen(model: sled, onMissed: {}), dimmed: true),
+      watch("station-reps-dimmed", CoachStepScreen(model: walls, onMissed: {}), dimmed: true),
+      watch("run-ladder", CoachStepScreen(model: { var m = run; m.ladder = ladder(6); return m }(), onMissed: {})),
+      watch("station-time-ladder", CoachStepScreen(model: { var m = station; m.ladder = ladder(7); return m }(), onMissed: {})),
+      watch("station-reps-ladder", CoachStepScreen(model: { var m = walls; m.ladder = ladder(15); return m }(), onMissed: {})),
+      watch("run-ladder-dimmed", CoachStepScreen(model: { var m = run; m.ladder = ladder(6); return m }(), onMissed: {}), dimmed: true),
       watch("menu", CoachMenuScreen()),
       watch("finish-undo-window", CoachFinishScreen(model: FinishScreenModel(
         mode: .saved, totalText: "1:18:42", line: "1:18 under target", early: false, best: "Row \u{2212}0:25", worst: "Sled pull +0:41",

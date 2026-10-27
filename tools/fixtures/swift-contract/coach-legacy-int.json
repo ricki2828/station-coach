@@ -1,0 +1,44 @@
+{
+  "early": false,
+  "endedAtEpochMs": 2,
+  "noReps": [
+    {
+      "setIndex": 0,
+      "tMs": 5
+    },
+    {
+      "setIndex": 1,
+      "tMs": 9
+    }
+  ],
+  "plan": {
+    "division": "open_men",
+    "raceTargetSeconds": 5400,
+    "steps": [
+      {
+        "activity": "run",
+        "index": 0,
+        "runNumber": 1,
+        "sets": [],
+        "targetSeconds": 300
+      },
+      {
+        "activity": "wall_balls",
+        "index": 1,
+        "reps": 50,
+        "sets": [
+          25,
+          25
+        ],
+        "targetSeconds": 240
+      }
+    ],
+    "transitionSeconds": 10,
+    "type": "wall_ball_focus"
+  },
+  "repCorrection": 0,
+  "repTimesMs": [],
+  "splits": [],
+  "startedAtEpochMs": 1,
+  "wallBallCorrection": 20
+}

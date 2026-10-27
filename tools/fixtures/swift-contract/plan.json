@@ -1,0 +1,27 @@
+{
+  "division": "open_men",
+  "raceTargetSeconds": 5400,
+  "steps": [
+    {
+      "activity": "run",
+      "index": 0,
+      "reps": 1,
+      "runNumber": 1,
+      "sets": [],
+      "targetSeconds": 300
+    },
+    {
+      "activity": "wall_balls",
+      "index": 1,
+      "reps": 50,
+      "runNumber": 2,
+      "sets": [
+        25,
+        25
+      ],
+      "targetSeconds": 240
+    }
+  ],
+  "transitionSeconds": 10,
+  "type": "wall_ball_focus"
+}

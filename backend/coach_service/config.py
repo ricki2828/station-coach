@@ -26,6 +26,7 @@ class Settings:
     register_per_ip_day: int = 5         # new installs per client address per UTC day
     register_global_day: int = 200       # new installs across everyone per UTC day
     max_body_bytes: int = 8192           # a valid payload is under 5 KB
+    ip_secret: str = ""                  # HMAC key for the client-address hash. Required unless dev_mode; never in the repo
     dev_mode: bool = False               # True accepts any attestation. Never set outside local development
 
     @classmethod
@@ -41,5 +42,6 @@ class Settings:
             est_call_usd=float(e.get("COACH_EST_CALL_USD", 0.02)),
             register_per_ip_day=int(e.get("COACH_REGISTER_PER_IP_DAY", 5)),
             register_global_day=int(e.get("COACH_REGISTER_GLOBAL_DAY", 200)),
+            ip_secret=e.get("COACH_IP_SECRET", ""),
             dev_mode=_flag("COACH_DEV_MODE"),
         )

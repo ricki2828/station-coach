@@ -9,7 +9,7 @@ python3 tools/desk_check.py ~/station-coach-data/A1/<sessionId>
 ```
 
 ## Torn rows
-After a crash-resume a CSV can hold a short or garbled row in the middle, not only at the end. `m1_report.py`, `gymday.py`, `desk_check.py` and `ingest.py` skip any row with the wrong number of columns or an unparsable timestamp/number, and say how many per file ("skipped malformed rows", also `tornRows` in the JSON). They never fail on it. Those samples are simply absent, so a heavily torn motion file shows up as a lower Hz coverage.
+After a crash-resume a CSV can hold a short or garbled row in the middle, not only at the end. `m1_report.py`, `gymday.py`, `desk_check.py` and `ingest.py` skip any row with the wrong number of columns or an unparsable timestamp/number, and say how many per file ("skipped malformed rows", also `tornRows` in the JSON). A quoted field holding a newline is one row, not two; an unterminated quote counts as one torn row and does not swallow the rows after it. They never fail on it. Those samples are simply absent, so a heavily torn motion file shows up as a lower Hz coverage.
 
 ## ingest
 Unzips (or copies, never following symlinks; a zip that expands past 2 GB is refused) every session it finds and files it as `<athlete>/<sessionId>/`. It checks that every file in `manifest.files` exists and is not empty, that CSV headers match `FORMAT.md`, and that `coach.json` parses. A session with no `files` list never finished and is skipped. A sessionId already filed is skipped as a duplicate (re-running is safe). Exit code 1 if anything other than a duplicate was skipped.
@@ -22,15 +22,15 @@ Athlete codes (A1, A2, ...) are labels typed on the watch home screen before rec
 | Mark | Rule |
 |---|---|
 | 1 Cues | Every session: >= 95% of cues spoken to headphones and finished (interval sessions also need 90% of the expected cues issued). |
-| 2 Battery | >= 30% at 90 min, in every session that started at >= 95% and reached 90 min. A comparable session that ended before 90 min FAILs if its last reading is <= 5% or its projection to 90 min is under 30%; otherwise it is NOT RUN. A start below 95% is flagged "mark not comparable". With no comparable session that reached 90 minutes (and none failed) the mark is NOT RUN, and the verdict is not PASS. |
+| 2 Battery | >= 30% at 90 min, in every session that started at >= 95% and reached 90 min. A comparable session that ended before 90 min FAILs if its last reading is <= 5% (battery ran out), or its straight-line projection to 90 min is under 30% and it ran at least 20 minutes; otherwise it is NOT RUN. A start below 95% is flagged "mark not comparable". With no comparable session that reached 90 minutes (and none failed) the mark is NOT RUN, and the verdict is not PASS. |
 | 3 Motion | Every session: median stored rate >= 50 Hz and >= 95% of session seconds at >= 50 Hz, for accel and motion. |
 | 4 Coverage | At least 3 athlete codes including A1, each with all 10 activities across their sessions. |
 
 Coached sessions (`coach.json`) also get these checks, printed in a separate "Coached checks (not M1 gates)" section. They do not change the verdict or exit code; read them anyway:
-- finish cue: the first cue issued at or after `coach.json` `endedAtEpochMs` must exist and have a `finished` row ("never issued" is a FAIL).
+- finish cue: the first cue issued at or after `coach.json` `endedAtEpochMs` must exist and have a `finished` row ("never issued" is a FAIL). A session salvaged from a checkpoint (`recovered: true` and either `early` or no cue after the end) reads NOT RUN: no finish cue is expected. A recovered session that finished normally is still checked.
 - splits: every plan step has an end, or the session is `early`.
 - phantom reps: counted reps outside the wall-ball steps.
-- wall-ball count: the watch's uncorrected count against `--wb-truth <sessionId or unique prefix>=N`, +-5%. Without the flag it prints the count and is NOT RUN. A key that matches no session, or more than one, is an error (exit 2).
+- wall-ball count: the watch's uncorrected count against `--wb-truth <sessionId or unique prefix>=N`, +-5%. Without the flag it prints the count and is NOT RUN. A key that matches no session, more than one, or a session without `coach.json` is an error (exit 2).
 - A `coach.json` without `endedAtEpochMs` gives NOT RUN with that reason for the session.
 - If `tools/wallball_replay.py` (PR #15) is present, `gymday.py` uses it: the replayed count and its warnings print beside the watch's (information only, NOT RUN if the replay fails), and the "corrected" figure uses its `corrected_counts` rule, `phone-correction.json` included, so both tools agree. Without it, "corrected" comes from `coach.json` alone.
 

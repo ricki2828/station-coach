@@ -13,6 +13,7 @@ Needs only the stdlib and numpy.
 """
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -45,23 +46,51 @@ def _number(text):
         return False
 
 
+ROW_START = re.compile(r"^-?\d{9,}(,|$)")  # a data row begins with an epoch timestamp
+
+
+def logical_lines(f):
+    """Lines of an open CSV, with a quoted field that holds a newline kept as one record. A record with an odd
+    number of quotes is continued on the next line unless that line starts like a new data row (an unterminated
+    quote in a torn row must not swallow the rows after it). Yields (record, ok); ok is False for such a torn record."""
+    buf = None
+    for raw in f:
+        line = raw.rstrip("\r\n")
+        if buf is not None:
+            if ROW_START.match(line):
+                yield buf, False  # the open quote was a torn row, not a multi-line field
+                buf = None
+            else:
+                buf += "\n" + line
+                if buf.count('"') % 2 == 0:
+                    yield buf, True
+                    buf = None
+                continue
+        if line.count('"') % 2:
+            buf = line
+        else:
+            yield line, True
+    if buf is not None:
+        yield buf, False
+
+
 def parse_csv(path):
     """(rows as dicts, number of skipped rows). A row is skipped when it is short or long for the header or a
     timestamp / numeric column does not parse: after a crash-resume a torn row can sit mid-file, not only at
-    the end. Parsed line by line so an unclosed quote in a torn row cannot swallow the rows after it."""
+    the end. Quoted fields with newlines are one row."""
     p = Path(path)
     if not p.exists():
         return [], 0
     rows, skipped = [], 0
     with p.open(newline="", errors="replace") as f:
-        header = next(csv.reader([f.readline()]), [])
+        lines = logical_lines(f)
+        header = next(csv.reader([next(lines, ("", True))[0]]), [])
         numeric = [i for i, h in enumerate(header) if h in NUMERIC.get(p.name, ())]
-        for line in f:
-            line = line.rstrip("\r\n")
+        for line, whole in lines:
             if not line:
                 continue
             fields = next(csv.reader([line]), [])
-            if len(fields) != len(header) or not fields[0].strip().lstrip("-").isdigit() or not all(_number(fields[i]) for i in numeric):
+            if not whole or len(fields) != len(header) or not fields[0].strip().lstrip("-").isdigit() or not all(_number(fields[i]) for i in numeric):
                 skipped += 1
                 continue
             rows.append(dict(zip(header, fields)))
