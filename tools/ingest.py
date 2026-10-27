@@ -18,6 +18,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import m1_report  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_INTO = Path("~/station-coach-data").expanduser()
 MAX_UNCOMPRESSED = 2 * 1024**3  # per zip; real 90-minute exports are tens of MB
@@ -55,7 +58,8 @@ def find_sessions(root):
 
 
 def validate(folder):
-    """Return (manifest, problems). No problems means the session is fit to file."""
+    """Return (manifest, problems). No problems means the session is fit to file. Torn rows are not a problem
+    (a crash-resume can leave one mid-file); they are counted and the readers skip them."""
     problems = []
     links = [p.name for p in folder.rglob("*") if p.is_symlink()]
     if links:
@@ -140,7 +144,8 @@ def ingest(inputs, into):
                     continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(folder, dest)
-                filed.append(f"{name} -> {dest}")
+                torn = m1_report.torn_rows(dest)
+                filed.append(f"{name} -> {dest}" + (f" ({m1_report.torn_note(torn)})" if torn else ""))
     return filed, skipped
 
 

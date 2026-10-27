@@ -140,6 +140,7 @@ def analyse_session(folder, truth):
         return s
     s["minutes"] = (end - start) / 60_000
     s["thermal"] = thermal_worst(folder)
+    s["tornRows"] = m1.torn_rows(folder)
 
     cues = m1.cue_delivery(m1.read_rows(Path(folder) / "cues.csv"))
     s["mark1"] = {"ok": m1.cues_ok(manifest, cues, start, end),
@@ -242,6 +243,8 @@ def render_text(v):
         if s.get("thermal"):
             flags.append(f"thermal worst {s['thermal']}")
         out.append(f"  {s['sessionId']}  {s['athlete']}  {s['minutes']:.0f} min" + (f"  [{', '.join(flags)}]" if flags else ""))
+        if s.get("tornRows"):
+            out.append("     " + m1.torn_note(s["tornRows"]))
         out.append(f"     1 {PASS if s['mark1']['ok'] else FAIL}: {s['mark1']['detail']}")
         out.append(f"     2 {s['mark2']['status']}: {s['mark2']['detail']}")
         out.append(f"     3 {PASS if s['mark3']['ok'] else FAIL}: {s['mark3']['detail']}")
@@ -261,7 +264,8 @@ def render_md(v):
     out += ["", "## Sessions", ""]
     for s in v["sessions"]:
         out.append(f"- `{s['sessionId']}` {s['athlete']}, {s['minutes']:.0f} min"
-                   + (f", thermal worst {s['thermal']}" if s.get("thermal") else "") + (", recovered" if s["recovered"] else ""))
+                   + (f", thermal worst {s['thermal']}" if s.get("thermal") else "") + (", recovered" if s["recovered"] else "")
+                   + (f", {sum(s['tornRows'].values())} malformed row(s) skipped" if s.get("tornRows") else ""))
     out += ["", "## Coached checks (not M1 gates)", ""]
     out += [f"- `{s['sessionId']}` {c['name']}: {c['status']} ({c['detail']})" for s in v["sessions"] for c in s.get("checks", [])] or ["- none"]
     if v["ignored"]:

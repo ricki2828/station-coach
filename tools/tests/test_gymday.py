@@ -254,6 +254,81 @@ class VerdictTests(Base):
         self.assertIn("host replay counted 3, watch counted 20", out)
 
 
+class TornRowTests(Base):
+    """After a crash-resume a CSV can hold a short or garbled row mid-file; every reader must skip it and say so."""
+
+    TEARS = {
+        "labels.csv": "1790000010000,se\n",
+        "cues.csv": "1790000010000,3,issued,speech,1\n",
+        "battery.csv": "1790000010000,xx,unplugged\n",
+        "hr.csv": "17900000100\n",
+        "rates.csv": "1790000010000,accel\n",
+        "events.csv": "garbled,thermal,nominal\n",
+        "accel.csv": "1790000010000000,0.01000,-0.02\n",
+        "motion.csv": "1790000010000000,0.01000,0.00000,0.000001790000010010000,0.01\n",
+    }
+
+    def tear(self, folder):
+        for name, bad in self.TEARS.items():
+            p = Path(folder) / name
+            lines = p.read_text().splitlines(keepends=True)
+            mid = len(lines) // 2
+            p.write_text("".join(lines[:mid]) + bad + "".join(lines[mid:]))
+
+    def test_torn_rows_are_skipped_counted_and_do_not_change_the_verdict(self):
+        clean = self.data_dir()
+        torn = self.tmp / "torn"
+        shutil.copytree(clean, torn)
+        for a in ("A1", "A2", "A3"):
+            self.tear(torn / a / f"{a.lower()}-session")
+        code_clean, out_clean = self.run_gymday(clean, "--wb-truth", "a1-session=20")
+        code, out = self.run_gymday(torn, "--wb-truth", "a1-session=20")
+        self.assertEqual((code, code_clean), (0, 0), out)
+        self.assertIn("skipped malformed rows", out)
+        for name in self.TEARS:
+            self.assertIn(f"{name} 1", out)
+        self.assertNotIn("skipped malformed rows", out_clean)
+        for n in "1234":
+            self.assertRegex(out, rf"Mark {n}  PASS")
+
+    def test_json_carries_the_count(self):
+        root = self.data_dir()
+        self.tear(root / "A1" / "a1-session")
+        j = self.tmp / "v.json"
+        self.run_gymday(root, "--json", str(j))
+        a1 = next(s for s in json.loads(j.read_text())["sessions"] if s["athlete"] == "A1")
+        self.assertEqual(a1["tornRows"], {k: 1 for k in self.TEARS})
+
+    def test_m1_report_skips_and_reports(self):
+        s = self.session(self.tmp, "A1")
+        self.tear(s)
+        out = subprocess.run([sys.executable, str(TOOLS / "m1_report.py"), str(s)], capture_output=True, text=True, check=True).stdout
+        self.assertIn("skipped malformed rows", out)
+        self.assertIn("1. Cue delivery: 17/17", out)
+        self.assertIn("100.0% of session seconds >= 50 Hz", out)
+
+    def test_desk_check_survives_torn_rows(self):
+        s = self.session(self.tmp, "A1")
+        self.tear(s)
+        self.assertEqual({st for _, st, _ in desk_check.run(s)}, {"PASS"})
+
+    def test_ingest_files_a_torn_session_and_says_so(self):
+        src = self.session(self.tmp / "src", "A2", "sid-torn")
+        self.tear(src)
+        filed, skipped = ingest.ingest([src], self.tmp / "out")
+        self.assertEqual(skipped, [])
+        self.assertIn("skipped malformed rows", filed[0])
+
+    def test_unterminated_quote_does_not_swallow_following_rows(self):
+        s = self.session(self.tmp, "A1")
+        cues = s / "cues.csv"
+        lines = cues.read_text().splitlines(keepends=True)
+        cues.write_text("".join(lines[:5]) + '1790000020000,9,issued,speech,1,"BluetoothA2DPOutput/Air\n' + "".join(lines[5:]))
+        rows, skipped = m1_report.parse_csv(cues)
+        self.assertEqual(skipped, 1)
+        self.assertEqual(len(rows), len(lines) - 1)
+
+
 class IngestTests(Base):
     def make_zip(self, folder, name, prefix=None):
         z = self.tmp / name

@@ -1,12 +1,15 @@
 # Gym day: from recordings to an M1 verdict
 
-Python 3 and numpy, on the host. Recordings hold heart rate: keep them in `~/station-coach-data`, outside this repository (`ingest.py` refuses to write inside it), and never commit them.
+Python 3 and numpy (`ingest.py` imports the reader from `m1_report.py`), on the host. Recordings hold heart rate: keep them in `~/station-coach-data`, outside this repository (`ingest.py` refuses to write inside it), and never commit them.
 
 ```
 python3 tools/ingest.py ~/Downloads/*.zip --into ~/station-coach-data
 python3 tools/gymday.py ~/station-coach-data --wb-truth <sessionId>=20 --md verdict.md --json verdict.json
 python3 tools/desk_check.py ~/station-coach-data/A1/<sessionId>
 ```
+
+## Torn rows
+After a crash-resume a CSV can hold a short or garbled row in the middle, not only at the end. `m1_report.py`, `gymday.py`, `desk_check.py` and `ingest.py` skip any row with the wrong number of columns or an unparsable timestamp/number, and say how many per file ("skipped malformed rows", also `tornRows` in the JSON). They never fail on it. Those samples are simply absent, so a heavily torn motion file shows up as a lower Hz coverage.
 
 ## ingest
 Unzips (or copies, never following symlinks; a zip that expands past 2 GB is refused) every session it finds and files it as `<athlete>/<sessionId>/`. It checks that every file in `manifest.files` exists and is not empty, that CSV headers match `FORMAT.md`, and that `coach.json` parses. A session with no `files` list never finished and is skipped. A sessionId already filed is skipped as a duplicate (re-running is safe). Exit code 1 if anything other than a duplicate was skipped.
