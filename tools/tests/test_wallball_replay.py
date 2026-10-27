@@ -229,6 +229,25 @@ class ReplayTests(unittest.TestCase):
             self.assertIn("skipped 3", warn[0])
             self.assertEqual(wb.count_reps(tmp / "motion.csv", T0, T0 + 50_000), reps)  # no warnings list: still fine
 
+    def test_torn_rows_mid_file_after_crash_resume(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self.make_session(tmp)
+            lines = (tmp / "motion.csv").read_text().split("\n")
+            n = len(lines)
+            # A resumed writer appends after a torn line: a short row, a torn fragment glued onto the next row
+            # (extra fields), and a fragment glued on so the field count looks right but the timestamp is wild.
+            lines[n // 3] = lines[n // 3][:20]
+            lines[n // 2] = lines[n // 2][:25] + lines[n // 2 + 1]
+            del lines[n // 2 + 1]
+            lines[2 * n // 3] = "17" + lines[2 * n // 3]
+            (tmp / "motion.csv").write_text("\n".join(lines))
+            warn = []
+            reps = wb.count_reps(tmp / "motion.csv", T0, T0 + 40_000, warnings=warn)
+            self.assertGreaterEqual(len(reps), 9)  # a few lost samples may cost a rep, never the rest of the file
+            self.assertTrue(reps[-1] > T0 + 25_000, "replay continued past the torn rows")
+            self.assertRegex(warn[0], r"skipped [3-9] torn")
+
     def test_rep_ms_rounds_half_away_from_zero(self):
         self.assertEqual(wb.rep_ms(2.5e-3), 3)
 

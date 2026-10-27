@@ -155,11 +155,12 @@ def count_reps(motion_csv, start_ms, end_ms, skip=(), warnings=None):
                 except (ValueError, KeyError, TypeError):
                     bad += 1
                     continue
-                ms = t * 1000
-                if ms < start_ms:
+                if not 1e9 < t < 1e11:  # a torn row glued to the next can leave a wild timestamp
+                    bad += 1
                     continue
-                if ms > end_ms:
-                    break
+                ms = t * 1000
+                if ms < start_ms or ms > end_ms:
+                    continue  # no early exit: one wild row must not end the replay
                 if any(a <= ms < b for a, b in skip):
                     continue
                 c.add(t, math.sqrt(x * x + y * y + z * z))
