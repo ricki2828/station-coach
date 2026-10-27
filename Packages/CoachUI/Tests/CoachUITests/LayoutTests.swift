@@ -10,6 +10,17 @@ import XCTest
 final class LayoutTests: XCTestCase {
   private let scale: CGFloat = 3
 
+  /// The measurements behind every assertion, written next to the PNGs as `layout-report.txt` so a failure in CI
+  /// can be read without the truncated xcodebuild log.
+  private static var report: [String] = []
+
+  private func note(_ line: String) {
+    Self.report.append(line)
+    guard let dir = ProcessInfo.processInfo.environment["SCREENS_DIR"], !dir.isEmpty else { return }
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    try? Self.report.joined(separator: "\n").write(toFile: dir + "/layout-report.txt", atomically: true, encoding: .utf8)
+  }
+
   /// Bounding box, in points, of pure-red pixels in a render of the screen inside the chrome of the given case size.
   private func probeBox(_ model: StepScreenModel, size: CGSize = Theme.watch46, dimmed: Bool = false) -> CGSize {
     let view = WatchChrome(size: size) { CoachStepScreen(model: model, onMissed: {}) }
@@ -75,6 +86,7 @@ final class LayoutTests: XCTestCase {
     for size in WatchSizes.all {
       for (name, m) in probeCases {
         let box = probeBox(m, size: size.points)
+        note("ink \(size.mm) mm \(name): \(box.width) x \(box.height)")
         XCTAssertGreaterThanOrEqual(box.height, 40, "\(size.mm) mm, \(name): dominant ink is \(box)")
         XCTAssertGreaterThan(box.width, 40, "\(size.mm) mm, \(name): dominant ink is \(box)")
         XCTAssertLessThanOrEqual(box.width, size.points.width - 2 * Theme.Space.watchEdge, "\(size.mm) mm, \(name): \(box)")
@@ -86,6 +98,7 @@ final class LayoutTests: XCTestCase {
     for size in WatchSizes.all {
       for (name, m) in probeCases {
         let box = probeBox(m, size: size.points, dimmed: true)
+        note("ink dimmed \(size.mm) mm \(name): \(box.width) x \(box.height)")
         XCTAssertGreaterThanOrEqual(box.height, 40, "\(size.mm) mm dimmed, \(name): dominant ink is \(box)")
       }
     }
@@ -115,6 +128,7 @@ final class LayoutTests: XCTestCase {
     for size in WatchSizes.all {
       let budget = size.points.height - WatchChrome<EmptyView>.topInset
       let h = naturalHeight(view, size.points, dimmed: dimmed)
+      note("height \(size.mm) mm (budget \(budget)) \(name): \(h)")
       XCTAssertLessThanOrEqual(h, budget, "\(name) at \(size.mm) mm is \(h) pt tall; \(budget) under the clock")
     }
   }
