@@ -65,13 +65,18 @@ public enum CoachCopy {
   /// Said as a run begins. After a heavy station it carries the legs line; after any station a plan check.
   /// The spoken target is the kilometre alone: the plan's run target also holds two changeover allowances.
   public static func runStart(run: PlanStep, after station: PlanStep?, deltaSeconds: Int, transitionSeconds: Int = 0,
-                              reference: DeltaReference = .plan) -> String {
+                              reference: DeltaReference = .plan, referenceSeconds: Int? = nil) -> String {
     var parts: [String] = []
     if station != nil { parts.append(planCheck(deltaSeconds: deltaSeconds, reference: reference)) }
     if let station, heavyLegs.contains(station.activity) {
       parts.append("Legs feel heavy for 200 metres. Short quick steps.")
     }
-    parts.append("Target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds))) for this kilometre.")
+    if case .last = reference, let referenceSeconds {
+      // One reference: against a ghost the kilometre is the ghost's, not the plan's.
+      parts.append("Last time \(Fmt.clock(max(0, referenceSeconds - 2 * transitionSeconds))) for this kilometre.")
+    } else {
+      parts.append("Target \(Fmt.clock(max(0, run.targetSeconds - 2 * transitionSeconds))) for this kilometre.")
+    }
     return parts.joined(separator: " ")
   }
 
@@ -86,12 +91,13 @@ public enum CoachCopy {
   /// "1:18:42. 1:18 under target. Best: Row, 0:25 under. Worst: Sled pull, 0:41 over."
   /// Racing a ghost (`reference` is `.last`), the gap is to its finish time, not the target: "0:48 faster than your last full sim."
   public static func finish(totalSeconds: Int, plannedSeconds: Int, best: (String, Int)?, worst: (String, Int)?, early: Bool,
-                            reference: DeltaReference = .plan, referenceTotalSeconds: Int? = nil, sessionName: String = "sim") -> String {
+                            reference: DeltaReference = .plan, referenceTotalSeconds: Int? = nil, sessionName: String = "sim",
+                            comparedSeconds: Int? = nil) -> String {
     let d = totalSeconds - plannedSeconds
     var s = "\(Fmt.clock(totalSeconds))."
     if !early {
       if case .last = reference, let ghostTotal = referenceTotalSeconds {
-        let g = totalSeconds - ghostTotal
+        let g = (comparedSeconds ?? totalSeconds) - ghostTotal // like with like: whole-second steps on both sides
         s += DeltaBandWords.isLevel(g) ? " Level with your last \(sessionName)." : " \(Fmt.gap(g)) \(g < 0 ? "faster" : "slower") than your last \(sessionName)."
       } else {
         s += d == 0 ? " On target." : " \(Fmt.gap(d)) \(d < 0 ? "under" : "over") target."

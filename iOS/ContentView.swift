@@ -137,10 +137,12 @@ struct PlanHost: View {
   @EnvironmentObject var app: AppModel
 
   /// The Plan tab's model: the stored choices, the send state and the ghost on offer from History.
+  @State private var offers = GhostOfferCache()
+
   private var model: SetupModel {
     var m = app.setup
     m.send = phone.sendState
-    m.ghost = Ghost.offer(for: m.basePlan, records: phone.coachSessions)
+    m.ghost = offers.offer(for: m.basePlan, records: phone.coachSessions, excluding: phone.recoveredIds)
     return m
   }
 

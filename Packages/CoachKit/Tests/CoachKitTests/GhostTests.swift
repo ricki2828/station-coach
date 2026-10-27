@@ -223,4 +223,88 @@ final class GhostTests: XCTestCase {
     r.early = true
     XCTAssertNil(Ghost.comparisonLine(r))
   }
+
+  // MARK: Like with like
+
+  /// Every step takes 100.5 s: the session total floors to n*100 + n/2, the sum of whole-second steps is n*100.
+  private func halfSecondRecord(_ id: String, start: Int64) -> SessionRecord {
+    let p = plan()
+    var t = start
+    var splits: [StepSplit] = []
+    for step in p.steps {
+      splits.append(StepSplit(stepIndex: step.index, startMs: t, endMs: t + 100_500))
+      t += 100_500
+    }
+    return SessionRecord(id: id, result: CoachResult(plan: p, splits: splits, early: false, repTimesMs: [], repCorrection: 0, startedAtEpochMs: start, endedAtEpochMs: t))
+  }
+
+  func testAnIdenticalRerunFinishesLevelNotSlower() throws {
+    let ghost = halfSecondRecord("ghost", start: sat17)
+    var rerun = halfSecondRecord("rerun", start: sat24).result
+    XCTAssertGreaterThan(rerun.totalSeconds, try XCTUnwrap(Ghost.comparedSeconds(rerun)), "the floor of the sum is the bigger one")
+    rerun.plan.ghostSplits = Ghost.stepSeconds(ghost.result)
+    XCTAssertEqual(Ghost.comparisonLine(rerun), "vs your last half sim: level")
+    let ghostTotal = rerun.plan.referenceTotalSeconds
+    let spoken = CoachCopy.finish(totalSeconds: rerun.totalSeconds, plannedSeconds: 0, best: nil, worst: nil, early: false,
+                                  reference: rerun.plan.reference, referenceTotalSeconds: ghostTotal, sessionName: "half sim",
+                                  comparedSeconds: Ghost.comparedSeconds(rerun))
+    XCTAssertTrue(spoken.hasSuffix("Level with your last half sim."), spoken)
+    // The live delta agrees: whole seconds per step on both sides.
+    var m = SessionMachine(plan: rerun.plan)
+    m.start(at: 0)
+    var t: Int64 = 0
+    for _ in rerun.plan.steps.dropLast() { t += 100_500; m.advance(at: t) }
+    XCTAssertEqual(m.deltaSeconds(at: t), 0)
+  }
+
+  // MARK: Resumed sessions, cache, one reference
+
+  func testResumedSessionsAreNotGhosts() {
+    let p = plan()
+    let old = record("old", start: sat17)
+    let resumed = record("resumed", start: sat24)
+    let pick = Ghost.pick(for: p, from: [old, resumed], excluding: ["resumed"])
+    XCTAssertEqual(pick.chosen?.id, "old")
+    XCTAssertEqual(pick.passedOver?.id, "resumed")
+    let offer = Ghost.offer(for: p, records: [old, resumed], excluding: ["resumed"], calendar: utc)
+    XCTAssertTrue(offer.sub.hasPrefix("Sat 24 Oct was resumed after a restart. Racing Sat 17 Oct"), offer.sub)
+    let only = Ghost.offer(for: p, records: [resumed], excluding: ["resumed"], calendar: utc)
+    XCTAssertFalse(only.available)
+  }
+
+  func testOfferCacheBuildsOncePerChange() {
+    let cache = GhostOfferCache()
+    let p = plan()
+    let records = [record("a", start: sat24)]
+    let first = cache.offer(for: p, records: records, calendar: utc)
+    XCTAssertEqual(cache.offer(for: p, records: records, calendar: utc), first)
+    XCTAssertEqual(cache.builds, 1)
+    _ = cache.offer(for: plan(.fullSim), records: records, calendar: utc)
+    XCTAssertEqual(cache.builds, 2, "a new plan rebuilds")
+    _ = cache.offer(for: plan(.fullSim), records: records + [record("b", .fullSim, start: sat17)], calendar: utc)
+    XCTAssertEqual(cache.builds, 3, "a new session rebuilds")
+    _ = cache.offer(for: plan(.fullSim), records: records + [record("b", .fullSim, start: sat17)], excluding: ["b"], calendar: utc)
+    XCTAssertEqual(cache.builds, 4, "a changed exclusion rebuilds")
+  }
+
+  func testSecondaryShowsTheGhostsStepTimeNotThePlanTarget() {
+    var p = plan()
+    let target = p.steps[0].targetSeconds
+    XCTAssertEqual(Ghost.targetLine(plan: p, stepIndex: 0).text, "/ \(Fmt.clock(target))")
+    XCTAssertEqual(Ghost.targetLine(plan: p, stepIndex: 0).label, "Target \(Fmt.spoken(target))")
+    p.ghostSplits = p.steps.map { $0.targetSeconds + 12 }
+    XCTAssertEqual(Ghost.targetLine(plan: p, stepIndex: 0).text, "/ \(Fmt.clock(target + 12))")
+    XCTAssertEqual(Ghost.targetLine(plan: p, stepIndex: 0).label, "Last time \(Fmt.spoken(target + 12))")
+  }
+
+  func testRunStartSaysTheGhostsKilometre() {
+    let p = plan()
+    let run = p.steps[2]
+    let station = p.steps[1]
+    let plain = CoachCopy.runStart(run: run, after: station, deltaSeconds: 0, transitionSeconds: 10)
+    XCTAssertTrue(plain.hasSuffix("Target \(Fmt.clock(run.targetSeconds - 20)) for this kilometre."), plain)
+    let ghost = CoachCopy.runStart(run: run, after: station, deltaSeconds: 0, transitionSeconds: 10, reference: .last(name: "sim"), referenceSeconds: 400)
+    XCTAssertTrue(ghost.hasSuffix("Last time 6:20 for this kilometre."), ghost)
+    XCTAssertFalse(ghost.contains("Target"))
+  }
 }

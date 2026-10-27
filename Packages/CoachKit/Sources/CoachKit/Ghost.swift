@@ -86,6 +86,18 @@ public enum Ghost {
     return out
   }
 
+  /// The secondary line under a step's dominant number: "/ 5:24" with its VoiceOver label. Racing a ghost it is the ghost's
+  /// time for the step ("Last time"), never the plan target: one reference on the watch.
+  public static func targetLine(plan: SessionPlan, stepIndex: Int) -> (text: String, label: String) {
+    let seconds = plan.referenceSeconds(at: stepIndex)
+    return ("/ \(Fmt.clock(seconds))", (plan.validGhostSplits != nil ? "Last time " : "Target ") + Fmt.spoken(seconds))
+  }
+
+  /// A session's total as the ghost comparison measures it: the sum of its whole-second step times, exactly how a ghost's
+  /// total is built, so an identical rerun is "level". (`CoachResult.totalSeconds` floors the sum instead, up to a second
+  /// per step different.) Nil when a step has no recorded end.
+  public static func comparedSeconds(_ r: CoachResult) -> Int? { stepSeconds(r)?.reduce(0, +) }
+
   /// A session that can be raced against `plan`: same type, same step structure (same wall-ball reps), finished
   /// (never ended early, never a skipped step: it would not be comparable).
   public static func isEligible(_ r: CoachResult, for plan: SessionPlan) -> Bool {
@@ -94,15 +106,17 @@ public enum Ghost {
   }
 
   /// The newest eligible session, and the newest same-type session if it was passed over (so the phone can say why).
-  public static func pick(for plan: SessionPlan, from records: [SessionRecord]) -> (chosen: SessionRecord?, passedOver: SessionRecord?) {
+  /// `excluding` holds the ids of sessions that were resumed or recovered after an app restart: the time lost around the
+  /// kill is in one of their steps, so they are not comparable.
+  public static func pick(for plan: SessionPlan, from records: [SessionRecord], excluding: Set<String> = []) -> (chosen: SessionRecord?, passedOver: SessionRecord?) {
     let sameType = SessionRecord.sorted(records.filter { $0.result.plan.type == plan.type })
-    let chosen = sameType.first { isEligible($0.result, for: plan) }
+    let chosen = sameType.first { isEligible($0.result, for: plan) && !excluding.contains($0.id) }
     guard let newest = sameType.first, newest.id != chosen?.id else { return (chosen, nil) }
     return (chosen, newest)
   }
 
   /// The Plan-tab offer for `plan`. `calendar` fixes the zone the dates are written in.
-  public static func offer(for plan: SessionPlan, records: [SessionRecord], calendar: Calendar = .current) -> GhostOffer {
+  public static func offer(for plan: SessionPlan, records: [SessionRecord], excluding: Set<String> = [], calendar: Calendar = .current) -> GhostOffer {
     let noun = plan.type.title.lowercased()
     let title = "Last \(noun)"
     let f = DateFormatter()
@@ -110,14 +124,14 @@ public enum Ghost {
     f.calendar = calendar
     f.timeZone = calendar.timeZone
     f.dateFormat = "EEE d MMM"
-    let (chosen, passedOver) = pick(for: plan, from: records)
+    let (chosen, passedOver) = pick(for: plan, from: records, excluding: excluding)
     guard let chosen, let splits = stepSeconds(chosen.result) else {
       let sub = passedOver == nil ? "Finish one \(noun) to race it" : "No complete \(noun) yet"
       return GhostOffer(available: false, title: title, sub: sub)
     }
     let racing = "\(f.string(from: chosen.date)) \u{00B7} \(Fmt.clock(splits.reduce(0, +)))"
     guard let passedOver else { return GhostOffer(available: true, title: title, sub: racing, splits: splits) }
-    let why = passedOver.result.early ? "ended early" : "isn't comparable"
+    let why = excluding.contains(passedOver.id) ? "was resumed after a restart" : (passedOver.result.early ? "ended early" : "isn't comparable")
     return GhostOffer(available: true, title: title, sub: "\(f.string(from: passedOver.date)) \(why). Racing \(racing)", splits: splits)
   }
 
@@ -130,9 +144,34 @@ public enum Ghost {
 
   /// "vs your last half sim: 0:48 faster", for a session that raced a ghost; nil otherwise.
   public static func comparisonLine(_ r: CoachResult) -> String? {
-    guard !r.early, let ghostTotal = r.plan.validGhostSplits?.reduce(0, +) else { return nil }
-    let d = r.totalSeconds - ghostTotal
+    guard !r.early, let ghostTotal = r.plan.validGhostSplits?.reduce(0, +), let mine = comparedSeconds(r) else { return nil }
+    let d = mine - ghostTotal
     let tail = DeltaBandWords.isLevel(d) ? "level" : "\(Fmt.gap(d)) \(d < 0 ? "faster" : "slower")"
     return "vs your last \(r.plan.type.title.lowercased()): \(tail)"
+  }
+}
+
+/// Keeps the last `Ghost.offer`, so the Plan tab does not re-pick (and rebuild a date formatter) on every render.
+public final class GhostOfferCache {
+  private struct Key: Equatable {
+    var plan: SessionPlan
+    var ids: [String]
+    var excluded: Set<String>
+  }
+
+  private var key: Key?
+  private var value = GhostOffer.none
+  /// How many times the offer was really built (tests).
+  public private(set) var builds = 0
+
+  public init() {}
+
+  public func offer(for plan: SessionPlan, records: [SessionRecord], excluding: Set<String> = [], calendar: Calendar = .current) -> GhostOffer {
+    let k = Key(plan: plan, ids: records.map(\.id), excluded: excluding)
+    if k == key { return value }
+    builds += 1
+    value = Ghost.offer(for: plan, records: records, excluding: excluding, calendar: calendar)
+    key = k
+    return value
   }
 }
