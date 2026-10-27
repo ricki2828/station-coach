@@ -10,9 +10,13 @@ struct ShareItem: Identifiable {
 
 struct ShareSheet: UIViewControllerRepresentable {
   let url: URL
+  /// Called when the activity finishes, whether or not the user chose a target (the documented "done" signal).
+  var onDone: (() -> Void)?
 
   func makeUIViewController(context: Context) -> UIActivityViewController {
-    UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    let c = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    c.completionWithItemsHandler = { _, _, _, _ in onDone?() }
+    return c
   }
 
   func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
@@ -254,8 +258,14 @@ struct SessionDetailHost: View {
     }
     .background(PhoneTheme.paper)
     .navigationBarTitleDisplayMode(.inline)
-    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: dropZip) { item in
+      ShareSheet(url: item.url, onDone: { if item.url == exportedZip { dropZip() } })
+    }
     .alert("Couldn't make the card", isPresented: $shareError) { Button("OK", role: .cancel) {} } message: { Text("Try again.") }
+  }
+
+  private func dropZip() {
+    if let url = exportedZip { phone.discardExport(url); exportedZip = nil }
   }
 
   private func makeCard(_ record: SessionRecord) {
@@ -315,7 +325,7 @@ struct RawFilesHost: View {
                 Text(phone.exporting ? "Preparing zip\u{2026}" : "Export all").font(.headline)
                 if phone.exporting { ProgressView() }
               }
-              Text(phone.exporting ? "Files arriving from the watch wait until this is done." : "\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
+              Text(phone.exporting ? "Delete is off and files from the watch wait until this is done." : "\(phone.sessions.count) \(phone.sessions.count == 1 ? "session" : "sessions"), \(size(totalBytes)). One zip, shared through the share sheet.")
                 .font(.footnote).foregroundStyle(.secondary)
             }
           }
@@ -330,6 +340,7 @@ struct RawFilesHost: View {
               Text(id).font(.subheadline.monospaced())
               Text("Waiting for the watch. Not on this phone yet; keep both apps open.").font(.footnote).foregroundStyle(.secondary)
             }
+            .swipeActions { Button("Forget") { phone.forgetWatchOnly(id) } }
           }
         }
       }
@@ -343,7 +354,7 @@ struct RawFilesHost: View {
             }
           }
           .disabled(phone.exporting)
-          .swipeActions { Button("Delete", role: .destructive) { toDelete = s } }
+          .swipeActions { if !phone.exporting { Button("Delete", role: .destructive) { toDelete = s } } }
         }
       }
       if let error { Text(error).foregroundStyle(.red).font(.footnote) }
@@ -351,7 +362,7 @@ struct RawFilesHost: View {
     .navigationTitle("Raw files")
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { phone.refresh() }
-    .sheet(item: $share, onDismiss: { if let url = exportedZip { phone.discardExport(url); exportedZip = nil } }) { ShareSheet(url: $0.url) }
+    .sheet(item: $share, onDismiss: dropZip) { item in ShareSheet(url: item.url, onDone: dropZip) }
     .confirmationDialog(deleteTitle, isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } }), titleVisibility: .visible) {
       Button("Delete", role: .destructive) { if let s = toDelete { phone.delete(s.id) }; toDelete = nil }
       Button("Cancel", role: .cancel) { toDelete = nil }
@@ -365,6 +376,10 @@ struct RawFilesHost: View {
     let d = phone.describe(s.id)
     let when = d.date.map { HistoryFormat.shortDate($0) } ?? s.id
     return "Delete \([d.athlete, when].compactMap { $0 }.joined(separator: ", ")), \(size(s.bytes))?"
+  }
+
+  private func dropZip() {
+    if let url = exportedZip { phone.discardExport(url); exportedZip = nil }
   }
 
   private func export(_ id: String) { run { try await phone.exportZip(sessionId: id) } }
