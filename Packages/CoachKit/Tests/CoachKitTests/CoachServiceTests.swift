@@ -31,11 +31,19 @@ private final class GatedTransport: CoachTransport {
   var posts = 0
   var gate: CheckedContinuation<Void, Never>?
   var gateFirstPost = false
+  var gateNextRegister = false
+  var registers = 0
 
   func send(_ r: CoachHTTPRequest) async throws -> CoachHTTPResponse {
     if offline { throw Offline() }
     switch r.path {
-    case "/v1/register": return CoachHTTPResponse(status: 200, body: Data(#"{"deviceToken":"tok"}"#.utf8))
+    case "/v1/register":
+      registers += 1
+      if gateNextRegister {
+        gateNextRegister = false
+        await withCheckedContinuation { gate = $0 }
+      }
+      return CoachHTTPResponse(status: 200, body: Data(#"{"deviceToken":"tok\#(registers)"}"#.utf8))
     case "/v1/coach":
       posts += 1
       if gateFirstPost && posts == 1 { await withCheckedContinuation { gate = $0 } }
@@ -45,6 +53,7 @@ private final class GatedTransport: CoachTransport {
   }
 }
 
+@MainActor
 final class CoachServiceTests: XCTestCase {
   private let on = CoachConfig(enabled: true, baseURL: "https://coach.invalid")
 
@@ -278,10 +287,16 @@ final class CoachServiceTests: XCTestCase {
                             : CoachHTTPResponse(status: 200, body: Data(#"{"deviceToken":"tok"}"#.utf8))
     }
     _ = await svc.submit(sessionId: "s1", result: result())
-    XCTAssertEqual(svc.state, .needsReconsent)
-    let before = net.requests.count
+    XCTAssertEqual(svc.state, .needsUpdate, "this build cannot show consent version 9: no re-consent dead end")
+    var before = net.requests.count
     _ = await svc.submit(sessionId: "s2", result: result())
-    XCTAssertEqual(net.requests.count, before, "nothing is sent until the athlete answers")
+    XCTAssertEqual(net.requests.count, before, "nothing is sent until the athlete updates")
+    before = net.requests.count
+    let kept = await svc.acceptReconsent()
+    XCTAssertEqual(kept, .unavailable)
+    XCTAssertEqual(net.requests.count, before, "no register call from a build that cannot show the new consent")
+    _ = await svc.turnOff()                      // turning off is still possible
+    XCTAssertEqual(svc.state, .off)
   }
 
   func testOneRefusedItemDoesNotBlockTheOthers() async {
@@ -338,5 +353,41 @@ final class CoachServiceTests: XCTestCase {
     net.handler = FakeTransport.ok().handler
     _ = await svc.turnOn()
     XCTAssertFalse(svc.wasReset)
+  }
+
+  func testKeepItOnThenTurnOffCannotResurrectConsent() async throws {
+    let net = GatedTransport()
+    let store = MemoryCoachStore()
+    let svc = CoachService(config: on, transport: net, store: store)
+    _ = await svc.turnOn()
+    var rec = try JSONDecoder().decode(CoachConsentRecord.self, from: store.data(forKey: "coach.consent")!)
+    rec.version = CoachConsent.currentVersion - 1
+    store.set(try JSONEncoder().encode(rec), forKey: "coach.consent")
+    XCTAssertEqual(svc.state, .needsReconsent)
+    net.gateNextRegister = true
+    let keeping = Task { await svc.acceptReconsent() }
+    while net.gate == nil { await Task.yield() }       // "Keep it on" is in flight
+    _ = await svc.turnOff()                             // then "Turn off"
+    net.gate?.resume()
+    let result = await keeping.value
+    XCTAssertEqual(result, .failed)
+    XCTAssertEqual(svc.state, .off)
+    XCTAssertEqual(store.keys, [], "consent is not written back after turn-off")
+  }
+
+  func testTurnOnInFlightThenTurnOffStaysOff() async {
+    let net = GatedTransport()
+    let store = MemoryCoachStore()
+    let svc = CoachService(config: on, transport: net, store: store)
+    _ = await svc.turnOn()
+    net.gateNextRegister = true
+    let second = Task { await svc.turnOn() }
+    while net.gate == nil { await Task.yield() }
+    _ = await svc.turnOff()
+    net.gate?.resume()
+    let r = await second.value
+    XCTAssertEqual(r, .failed)
+    XCTAssertEqual(svc.state, .off)
+    XCTAssertEqual(store.keys, [])
   }
 }

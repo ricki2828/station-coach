@@ -36,6 +36,7 @@ final class DefaultsCoachStore: CoachStore {
   }
 }
 
+@MainActor
 enum CoachBuild {
   static func config(_ bundle: Bundle = .main) -> CoachConfig {
     CoachConfig(enabled: bundle.object(forInfoDictionaryKey: "CoachEnabled") as? Bool ?? false,

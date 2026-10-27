@@ -22,6 +22,7 @@ extension ScreenCatalog {
       coachW("coach-on-failed", CoachFactsScreen(facts: last, mode: .failed)),
       coachW("coach-revoked", CoachSettingsCard(state: .revoked(deleted: 6))),
       coachW("coach-revoked-pending", CoachSettingsCard(state: .revokedPending)),
+      coachW("coach-update", CoachSettingsCard(state: .needsUpdate)),
       coachW("coach-reset", CoachSettingsCard(state: .reset)),
       coachW("coach-reconsent", CoachReconsentScreen(changed: changed)),
       coachW("debrief-queued", DebriefCard(display: .queued)),

@@ -71,6 +71,8 @@ public enum CoachState: Equatable {
   case on(since: String)
   /// The consent text changed. Nothing is sent until the athlete answers.
   case needsReconsent
+  /// The service wants a newer consent than this build can show. Only "Turn off" makes sense until the app is updated.
+  case needsUpdate
 }
 
 /// How one session's debrief looks on the session detail.
@@ -95,6 +97,7 @@ public enum TurnOffResult: Equatable {
   case pending
 }
 
+@MainActor
 public final class CoachService {
   struct QueueItem: Codable, Equatable {
     var sessionId: String
@@ -149,8 +152,8 @@ public final class CoachService {
 
   public var state: CoachState {
     guard config.isAvailable, let c = consent else { return .off }
+    if let sv = serverVersion, sv > CoachConsent.currentVersion { return .needsUpdate }
     if c.version != CoachConsent.currentVersion { return .needsReconsent }
-    if let sv = serverVersion, sv > c.version { return .needsReconsent }   // the service moved ahead of this consent
     return .on(since: c.since)
   }
 
@@ -208,10 +211,12 @@ public final class CoachService {
   /// Turn the coach on. Consent is recorded only once the service confirms it.
   public func turnOn() async -> TurnOnResult {
     guard config.isAvailable else { return .unavailable }
+    let epoch0 = epoch
     let install = UUID().uuidString.lowercased()
     let req = request("POST", "/v1/register", body: RegisterBody(installId: install, consentVersion: CoachConsent.currentVersion))
     guard let res = try? await transport.send(req), res.status == 200,
           let token = try? JSONDecoder().decode(RegisterReply.self, from: res.body).deviceToken else { return .failed }
+    guard epoch == epoch0 else { return .failed }   // consent was turned off or replaced while this was in flight
     store.set(nil, forKey: Self.resetKey)
     save(CoachConsentRecord(version: CoachConsent.currentVersion, installId: install, since: day(), token: token))
     return .on
@@ -220,9 +225,12 @@ public final class CoachService {
   /// Answer the re-consent screen with "Keep it on": re-register this install with its current token at the new version.
   public func acceptReconsent() async -> TurnOnResult {
     guard config.isAvailable, var c = consent else { return .unavailable }
+    if case .needsUpdate = state { return .unavailable }   // this build cannot show the newer consent
+    let epoch0 = epoch
     let req = request("POST", "/v1/register", bearer: c.token, body: RegisterBody(installId: c.installId, consentVersion: CoachConsent.currentVersion))
     guard let res = try? await transport.send(req), res.status == 200,
           let token = try? JSONDecoder().decode(RegisterReply.self, from: res.body).deviceToken else { return .failed }
+    guard epoch == epoch0, consent?.installId == c.installId else { return .failed }   // turned off while in flight: stay off
     c.version = CoachConsent.currentVersion
     c.token = token
     save(c)
