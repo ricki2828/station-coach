@@ -1,6 +1,23 @@
 import CoachKit
 import Foundation
 
+/// One tick on the edge progress ladder: a step of the plan, in its station colour.
+public struct LadderTick: Equatable {
+  public enum State: Equatable { case done, current, upcoming }
+  public let activity: Activity
+  public let state: State
+
+  public init(activity: Activity, state: State) {
+    self.activity = activity
+    self.state = state
+  }
+
+  /// One tick per step of the plan: earlier steps done, `currentIndex` current, the rest upcoming.
+  public static func ladder(for plan: SessionPlan, currentIndex: Int) -> [LadderTick] {
+    plan.steps.map { LadderTick(activity: $0.activity, state: $0.index < currentIndex ? .done : ($0.index == currentIndex ? .current : .upcoming)) }
+  }
+}
+
 /// What the watch shows for one moment of a coached session. Plain values so the same views render
 /// in the app and in CI snapshots.
 public struct StepScreenModel: Equatable {
@@ -33,11 +50,13 @@ public struct StepScreenModel: Equatable {
   public var noRepCount: Int
   /// Within a few seconds of a tap: an UNDO chip takes the set block's place.
   public var noRepUndo: Bool
+  /// The edge progress ladder. Nil keeps it off until the coach fills it.
+  public var ladder: [LadderTick]?
 
   public init(kind: Kind, activity: Activity, title: String, badge: String? = nil, dominant: String, dominantLabel: String,
               secondary: String, secondaryLabel: String, next: String, isLast: Bool = false, deltaSeconds: Int,
               hrBpm: Int? = nil, hrOff: Bool = false, toast: String? = nil, alarm: String? = nil, approximate: Bool = false,
-              noRepVisible: Bool = false, noRepCount: Int = 0, noRepUndo: Bool = false) {
+              noRepVisible: Bool = false, noRepCount: Int = 0, noRepUndo: Bool = false, ladder: [LadderTick]? = nil) {
     self.kind = kind
     self.activity = activity
     self.title = title
@@ -57,6 +76,7 @@ public struct StepScreenModel: Equatable {
     self.noRepVisible = noRepVisible
     self.noRepCount = noRepCount
     self.noRepUndo = noRepUndo
+    self.ladder = ladder
   }
 }
 

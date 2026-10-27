@@ -13,27 +13,20 @@ public enum NoRepScreens {
   /// 41 mm: 176 x 215 pt.
   public static let watch41 = CGSize(width: 176, height: 215)
 
+  /// The 46 mm base states; `ScreenCatalog.watchSizeSweep` renders them at every case size, 41 mm included.
   public static var watchScreens: [CatalogEntry] {
-    func watch(_ name: String, _ model: StepScreenModel, size: CGSize = Theme.watch46) -> CatalogEntry {
-      CatalogEntry(name: "watch-\(name)", size: size, view: AnyView(WatchChrome(size: size) { CoachStepScreen(model: model, onMissed: {}) }))
+    func watch(_ name: String, _ model: StepScreenModel) -> CatalogEntry {
+      let screen = CoachStepScreen(model: model, onMissed: {})
+      return CatalogEntry(name: "watch-\(name)", size: Theme.watch46, view: AnyView(WatchChrome { screen }),
+                          sized: { size in AnyView(WatchChrome(size: size) { screen }) })
     }
-    let first = walls(left: 45, set: 4, noReps: 0)
-    let two = walls(left: 47, set: 4, noReps: 2)
-    let undo = walls(left: 46, set: 4, noReps: 1, undo: true)
-    var plain = walls(left: 45, set: 4, noReps: 0)
-    plain.noRepVisible = false
     var resumed = walls(left: 46, set: 4, noReps: 1, undo: true)
     resumed.noRepVisible = false
     return [
-      watch("station-reps-rest-norep", first),
-      watch("station-reps-rest-norep-two", two),
-      watch("station-reps-rest-norep-undo", undo),
-      watch("station-reps-rest-norep-41mm", first, size: watch41),
-      watch("station-reps-rest-norep-two-41mm", two, size: watch41),
-      watch("station-reps-rest-norep-undo-41mm", undo, size: watch41),
-      watch("station-reps-41mm", plain, size: watch41),
+      watch("station-reps-rest-norep", walls(left: 45, set: 4, noReps: 0)),
+      watch("station-reps-rest-norep-two", walls(left: 47, set: 4, noReps: 2)),
+      watch("station-reps-rest-norep-undo", walls(left: 46, set: 4, noReps: 1, undo: true)),
       watch("station-reps-undo-resumed", resumed),
-      watch("station-reps-undo-resumed-41mm", resumed, size: watch41),
     ]
   }
 }

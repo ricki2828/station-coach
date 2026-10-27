@@ -53,6 +53,27 @@ final class ScreenshotTests: XCTestCase {
     }
   }
 
+  /// Every watch screen state at 40, 41, 42, 45 and 46 mm (the NO REP rest states included): `watch-<name>-<mm>mm.png`.
+  func testRenderWatchScreensAtEveryCaseSize() throws {
+    try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+    let entries = ScreenCatalog.watchSizeSweep
+    XCTAssertEqual(Set(entries.map(\.name)).count, entries.count, "sweep names must be unique")
+    XCTAssertEqual(entries.count, (ScreenCatalog.watchScreens.count + NoRepScreens.watchScreens.count) * WatchSizes.all.count)
+    let base = Set(ScreenCatalog.all.map(\.name))
+    for entry in entries {
+      XCTAssertFalse(base.contains(entry.name), "\(entry.name) clashes with the catalog")
+      let size = try XCTUnwrap(entry.size)
+      XCTAssertTrue(WatchSizes.all.contains { $0.points == size }, entry.name)
+      let png = try render(entry)
+      XCTAssertGreaterThan(png.count, 3_000, "\(entry.name) looks blank")
+      try png.write(to: outDir.appendingPathComponent("\(entry.name).png"))
+      let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+      attachment.name = entry.name
+      attachment.lifetime = .keepAlways
+      add(attachment)
+    }
+  }
+
   func testWatchScreensAreThe46mmSize() throws {
     for entry in ScreenCatalog.watchScreens {
       XCTAssertEqual(entry.size, Theme.watch46, entry.name)
